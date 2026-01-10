@@ -1,0 +1,82 @@
+窗口高度	750.4
+窗口宽度	966.4
+窗口坐标X	656
+窗口坐标Y	127.2
+发文区字体大小	40
+跟打区字体大小	40
+成绩区字体大小	15
+主题模式	明
+窗体背景色	F7F7F7
+窗体字体色	333333
+跟打区背景色	EDEDED
+跟打区字体色	000000
+发文区字体色	000000
+打对色	A2CCD7
+打错色	FF6347
+按钮背景色	EBEBEB
+按钮字体色	000000
+菜单背景色	EBEBEB
+菜单字体色	000000
+标题栏进度条颜色	007ACC
+显示进度条	是
+极速用户名	鸣人君
+极速密码	fuchuxuan1
+极速显示名称	鸣人君
+极速最后载文日期	
+极速杯用户名	鸣人君
+极速杯密码	fuchuxuan1
+极速杯显示名称	鸣人君
+赛文用户名	
+赛文密码	
+赛文显示名称	
+赛文用户ID	
+赛文当前文章ID	
+赛文最后载文日期	
+禁止F3重打	否
+速度跟随提示	是
+盲打模式	否
+看打模式	否
+字体	霞鹜文楷 GB 屏幕阅读版
+行距	0.35
+贪吃蛇模式	是
+贪吃蛇前显字数	20
+贪吃蛇后显字数	30
+自动发送成绩	是
+鼠标中键载文	否
+错字重打	是
+错字重复次数	1
+慢字重打	是
+慢字标准(单位:秒)	2.0
+慢字重复次数	1
+QQ窗口切换模式(1-2)	1
+载文模式(1-4)	2
+成绩面板展开	是
+成绩签名	晴
+成绩屏蔽(逗号分隔)	无
+软件更新Q群	715187175
+作者邮箱QQ	810439322
+文来字数	10
+文来难度	2
+文来接口地址	https://typing.xydcg.cn/
+赛文服务器地址	https://typing.xydcg.cn/
+赛文服务器配置	{
+  "servers": [
+    {
+      "Id": "25b715c1-3057-4c96-b6c1-95f647102bfc",
+      "Name": "默认服务器",
+      "Url": "https://typing.xydcg.cn/",
+      "Username": "",
+      "Password": "",
+      "DisplayName": "",
+      "UserId": 0,
+      "Races": [],
+      "CurrentRaceId": -1,
+      "CurrentArticleId": 0,
+      "LastLoadTime": "0001-01-01T00:00:00",
+      "ClientKeyXml": ""
+    }
+  ],
+  "current_server_id": "25b715c1-3057-4c96-b6c1-95f647102bfc"
+}
+赛文输入法	虎码
+账号体系配置	{"赛文":{"ServiceName":"赛文","Domain":"http://127.0.0.1:8000","Username":"晴","Password":"fuchuxuan1","DisplayName":"晴","UserId":2,"Cookies":"session_id=ORUIF1p-HyJ2HvTn5vL1uU5wRJ8zWpVm76QCKVg9iZ4","ClientKeyXml":"<RSAKeyValue><Modulus>w314AJJ7MjjvnTOLmEyZ8T+FBJiSFBLsdfuoJNgeaq9Y9KmMG7TKYWfMpBy9Z4eMzXu4v6aP0TqC2UWN+vpxqWsoWKXTz5f0mylBoC1xFp1CBe3jf/meu9nmS+aX47NVtbc1apLx6Oy3nKekXlzrVWPhtUKZKjXyF0lMNE8Yr0bqL8nzyJW4gtF73F2k4WuImder0jCO0TCOITgQ3rU4ZQSTNyMDBCMveT11z1knQ4gthdt7p58NwjNEJGxhjIJ16FzkXsY++HNmddfbtHh5Bqq7IiRNvtPtTZ2e1Au65R2ZwiYxfNo92tAdOkd9nUN1KG02SLtZvS14n9EdmssxVQ==</Modulus><Exponent>AQAB</Exponent><P>57GjPmCTKUzjapWvaeQG1X5ayMVnfXf3GnFuvJTepkwre5YgH/YFRocfLRk23/i5/Ssw9iV+i46pIOTX5ev+nrIiaPQ8OgyYooSb5FljnHv35tjwkhIm0vf+aoA1L1etpyTPwm0aYAJ4asnuWhwd+Aim5f9yxC/be2SDzZGXI5M=</P><Q>1/+LLFZDLupf81zUDQDwPYrcNKEfJ+YFaH3esb4F7ok+0GgjoLvu3mvh6lyrJXqenFUeBLMr7uYqGiHkaO0qQizF+HzjskNJiuX9Y6f4g9Q6jACJC1DPwxc3/ADAKOTOWrW58oiz5vB4L7RfVpEAYX/JZJ2b+ZNWeBKYoG8ouHc=</Q><DP>h8jLatseY63z+ZsP2ncQqj4K5m8KX7XW02B3DX4RnlQ1h5BL828zWEoIM137kvcpyP1vDFKc/xz0cZqsDMtpxYeQMwIv6bVIHraoxgK9JhBhEKFDG9gXeLxuFexdPwmbc8FXIRLfyjSoba06SwT/a0VmypQSpneFoaMeu3L/qJE=</DP><DQ>cPYB8OQEKqsEFx/6/fn5qhXO5+9Dffg759O7/TSloYRBR3jO+SaP296LvadNEkK4ZIXXNxoE5eGVLyl+bKlrqkQEHNojsnyiH3P8OnwD6d256LH2+eX/YcXoz3ANDtXqXWIgpwh7HVGxaTFpkroues77ohUTF0jIte7zxyObJi0=</DQ><InverseQ>P2FruCeYYzoKGfsdZAqS5ivp0DBZwOTdNVeRw8OygTvC8O89N5TPlc9ZowEOL7WABH2f2qKG09dNhigLbZ0W2mM3QFCaev+2gE80mzrvGUHCS9PBjWTQgtaiRsYX4mQkc6opsHmECpbRebomdH6e8EfJzl4QdGotg41KD5FIFXU=</InverseQ><D>iP7ZZNVCPmzGBo1Dy2QLEZRo/FKLNEQar4e/Sqqlji/5j+NtS1FD7kTWlT+KwA2u76U/UBdCe+acIfTrTbHKi2aL7KuxJq6ffUjJM54EvUtRJGSUZG+i/JP0HsanNKvNab3NUjVOD+QrvD2DI5nMVZfcabEVMw6A7C6yl4nCi7lV0UngIa7SpcAfWG1Mgrl+Ve80rEBzWAdlvQJoDMEWjiEYvlM+3+cVYgLWP64L5SAihEz1S5L702J0oPht8n/ZwLmEs1Q2Yuj6Z9XfncpEpQLf7QSo+IfBhvrA7wEl/HTZxjbU0bLhwZbRwDeLldL7a//LjBA3clT/+Qm+cZ51lQ==</D></RSAKeyValue>","LastLoginTime":"2026-01-06T18:43:10.0966485+08:00"},"文来":{"ServiceName":"文来","Domain":"http://127.0.0.1:8000","Username":"","Password":"","DisplayName":"","UserId":-1,"Cookies":"","ClientKeyXml":"","LastLoginTime":"0001-01-01T00:00:00"}}
