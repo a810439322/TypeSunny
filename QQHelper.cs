@@ -99,15 +99,15 @@ namespace TypeSunny
         static DateTime QunCacheTime = DateTime.MinValue;
         static readonly TimeSpan QunCacheExpiry = TimeSpan.FromSeconds(30); // 缓存30秒
 
-        // 保存调试信息到文件
-        private static void SaveDebugInfo(string info, string prefix = "")
+        // 保存调试信息到文件（追加模式）
+        private static void SaveDebugInfo(string info, string prefix = "QQ发送")
         {
             try
             {
                 string appDir = AppDomain.CurrentDomain.BaseDirectory;
                 string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string logFile = System.IO.Path.Combine(appDir, $"QQ群列表诊断_{timestamp}.txt");
-                System.IO.File.WriteAllText(logFile, info, Encoding.UTF8);
+                string logFile = System.IO.Path.Combine(appDir, $"{prefix}_调试_{timestamp}.txt");
+                System.IO.File.AppendAllText(logFile, info + "\r\n", Encoding.UTF8);
             }
             catch { }
         }
@@ -227,8 +227,11 @@ namespace TypeSunny
         /// </summary>
         static private void SendMessage(IUIAutomationElement q, bool useEnterIfDisabled = false)
         {
-            // 等待发送按钮启用（每隔10ms检测一次，最多等待2秒）
-            int maxWaitTime = 2000;
+            // System.Text.StringBuilder sendLog = new System.Text.StringBuilder();
+            // sendLog.AppendLine($"[SendMessage] 开始查找发送按钮...");
+
+            // 等待发送按钮启用（每隔10ms检测一次，最多等待5秒）
+            int maxWaitTime = 5000;
             int waitInterval = 10;
             int waitedTime = 0;
             IUIAutomationElement sendButton = null;
@@ -239,12 +242,15 @@ namespace TypeSunny
                 if (sendButton != null)
                 {
                     bool sendButtonEnabled = sendButton.CurrentIsEnabled != 0;
+                    // sendLog.AppendLine($"[SendMessage] 找到发送按钮 (Enabled={sendButtonEnabled}, Waited={waitedTime}ms)");
                     if (sendButtonEnabled)
                     {
                         // 按钮已启用，点击发送
                         var sp = sendButton.GetCurrentPattern(UIA_PatternIds.UIA_InvokePatternId) as IUIAutomationInvokePattern;
                         if (sp != null)
                         {
+                            // sendLog.AppendLine($"[SendMessage] 点击发送按钮成功");
+                            // SaveDebugInfo(sendLog.ToString(), "QQ发送");
                             sp.Invoke();
                             return;  // 发送成功，直接返回
                         }
@@ -256,9 +262,14 @@ namespace TypeSunny
                 waitedTime += waitInterval;
             }
 
+            // sendLog.AppendLine($"[SendMessage] 等待超时({maxWaitTime}ms)，降级处理");
+            // SaveDebugInfo(sendLog.ToString(), "QQ发送");
+
             // 如果等待后仍未成功，降级使用回车键
             if (useEnterIfDisabled)
             {
+                // sendLog.AppendLine($"[SendMessage] 使用回车键发送");
+                // SaveDebugInfo(sendLog.ToString(), "QQ发送");
                 Win32.Enter();
             }
         }
@@ -517,25 +528,93 @@ namespace TypeSunny
                     }
                     // debugLog.AppendLine($"[成功] 找到会话列表");
 
+                    // debugLog.AppendLine($"--- [步骤1] 检测是否已在目标群 ---");
+                    // SaveDebugInfo(debugLog.ToString(), "QQ发送");
+
                     // 优化：先检查是否已在目标群（提前检测）
                     IUIAutomationElement edits = null;
                     bool alreadyInTargetGroup = false;
 
-                    // 策略0：优先检查是否已有输入框（最快路径）
-                    var allEdits = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId));
-                    if (allEdits != null && allEdits.Length > 0)
+                    // 策略0：优先通过按钮检测是否已在目标群（适用于新旧版本QQ）
+                    var allButtons = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_ButtonControlTypeId));
+                    // debugLog.AppendLine($"[按钮检测] 找到 {allButtons?.Length ?? 0} 个按钮");
+                    if (allButtons != null && allButtons.Length > 0)
                     {
-                        for (int i = 0; i < allEdits.Length; i++)
+                        for (int i = 0; i < allButtons.Length; i++)
                         {
-                            var edit = allEdits.GetElement(i);
-                            string editName = edit.CurrentName;
-
-                            // 使用前缀匹配查找输入框
-                            if (!string.IsNullOrWhiteSpace(editName) && editName.StartsWith(groupName))
+                            var btn = allButtons.GetElement(i);
+                            string btnName = btn.CurrentName;
+                            // debugLog.AppendLine($"  按钮[{i}]: Name=\"{btnName}\"");
+                            // 检测是否有按钮Name等于目标群名
+                            if (!string.IsNullOrWhiteSpace(btnName) && btnName == groupName)
                             {
-                                edits = edit;
                                 alreadyInTargetGroup = true;
+                                // debugLog.AppendLine($"[检测成功] 已在目标群: [{groupName}]");
                                 break;
+                            }
+                        }
+                    }
+                    // SaveDebugInfo(debugLog.ToString(), "QQ发送");
+
+                    // 如果已在目标群，直接查找输入框，跳过点击群
+                    if (alreadyInTargetGroup)
+                    {
+                        // 策略1：优先查找Edit控件（旧版QQ）
+                        var allEdits = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId));
+                        if (allEdits != null && allEdits.Length > 0)
+                        {
+                            for (int i = 0; i < allEdits.Length; i++)
+                            {
+                                var edit = allEdits.GetElement(i);
+                                string editName = edit.CurrentName;
+                                // 跳过搜索框
+                                if (!string.IsNullOrWhiteSpace(editName) && editName.Contains("搜索"))
+                                {
+                                    continue;
+                                }
+                                edits = edit;
+                                break;
+                            }
+                        }
+
+                        // 策略2：如果没找到Edit，查找Document控件（新版QQ）
+                        if (edits == null)
+                        {
+                            var allDocuments = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId));
+                            if (allDocuments != null && allDocuments.Length > 0)
+                            {
+                                for (int i = 0; i < allDocuments.Length; i++)
+                                {
+                                    var doc = allDocuments.GetElement(i);
+                                    bool isOffscreen = doc.CurrentIsOffscreen != 0;
+                                    // 跳过不可见的Document
+                                    if (!isOffscreen)
+                                    {
+                                        edits = doc;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 不在目标群，使用前缀匹配查找输入框（兼容旧逻辑）
+                        var allEdits = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId));
+                        if (allEdits != null && allEdits.Length > 0)
+                        {
+                            for (int i = 0; i < allEdits.Length; i++)
+                            {
+                                var edit = allEdits.GetElement(i);
+                                string editName = edit.CurrentName;
+
+                                // 使用前缀匹配查找输入框
+                                if (!string.IsNullOrWhiteSpace(editName) && editName.StartsWith(groupName))
+                                {
+                                    edits = edit;
+                                    alreadyInTargetGroup = true;
+                                    break;
+                                }
                             }
                         }
                     }
@@ -543,13 +622,20 @@ namespace TypeSunny
                     // 如果找到输入框，直接使用，跳过后续所有查找
                     if (edits != null)
                     {
-                        // debugLog.AppendLine($"[快速路径] 已找到目标群的输入框，跳过群查找");
+                        // debugLog.AppendLine($"[快速路径] 已找到输入框，跳过群查找 (alreadyInTargetGroup={alreadyInTargetGroup})");
+                        // SaveDebugInfo(debugLog.ToString(), "QQ发送");
+                    }
+                    else if (alreadyInTargetGroup)
+                    {
+                        // debugLog.AppendLine($"[错误] 已在目标群但找不到输入框!");
+                        // SaveDebugInfo(debugLog.ToString(), "QQ发送");
                     }
 
-                    // 第二步：如果没找到输入框，去会话列表点击群
-                    if (edits == null)
+                    // 第二步：如果没找到输入框且不在目标群，去会话列表点击群
+                    if (edits == null && !alreadyInTargetGroup)
                     {
-                        // debugLog.AppendLine($"--- [点击群] 第二步：去会话列表查找并点击群 ---");
+                        // debugLog.AppendLine($"--- [步骤2] 不在目标群，去会话列表查找并点击群 ---");
+                        // SaveDebugInfo(debugLog.ToString(), "QQ发送");
 
                         // 优化：检查缓存是否有效
                         IUIAutomationElement cachedGroupElem = null;
@@ -678,23 +764,24 @@ namespace TypeSunny
                                     var sp = elem.GetCurrentPattern(UIA_PatternIds.UIA_InvokePatternId) as IUIAutomationInvokePattern;
                                     if (sp != null)
                                     {
-                                        // 检查当前是否已在目标群（优化：复用已有的allEdits）
-                                        alreadyInTargetGroup = false;
-                                        if (allEdits != null)
+                                        // 检查当前是否已在目标群（重新获取allEdits检查）
+                                        bool currentlyInGroup = false;
+                                        var checkEdits = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId));
+                                        if (checkEdits != null && checkEdits.Length > 0)
                                         {
-                                            for (int ei = 0; ei < allEdits.Length; ei++)
+                                            for (int ei = 0; ei < checkEdits.Length; ei++)
                                             {
-                                                var edit = allEdits.GetElement(ei);
+                                                var edit = checkEdits.GetElement(ei);
                                                 string editName = edit.CurrentName;
                                                 if (!string.IsNullOrWhiteSpace(editName) && editName.StartsWith(groupName))
                                                 {
-                                                    alreadyInTargetGroup = true;
+                                                    currentlyInGroup = true;
                                                     break;
                                                 }
                                             }
                                         }
 
-                                        if (!alreadyInTargetGroup)
+                                        if (!currentlyInGroup)
                                         {
                                             sp.Invoke();
 
@@ -765,45 +852,39 @@ namespace TypeSunny
 
                     if (edits != null)
                     {
-                        // debugLog.AppendLine($"--- [发送消息] 找到输入框，开始发送 ---");
+                        // debugLog.AppendLine($"--- [步骤3] 找到输入框，开始发送 ---");
+                        // debugLog.AppendLine($"[输入框类型] {GetControlTypeName(edits.CurrentControlType)} (Name=\"{edits.CurrentName}\")");
+                        // SaveDebugInfo(debugLog.ToString(), "QQ发送");
+
                         // debugLog.AppendLine($"[焦点] 设置输入框焦点...");
                         edits.SetFocus();
-                        // Win32.Delay(50);  // 等待焦点切换到QQ输入框
 
                         // 如果使用的是Document控件，需要额外激活输入框
                         // 新版QQ的输入框在Document底部，需要点击Document才能激活
                         ActivateDocumentInput(edits);
-                        // Win32.Delay(100);  // 等待输入框激活
 
                         // debugLog.AppendLine($"[粘贴] 执行 Ctrl+V 粘贴消息内容...");
+                        // SaveDebugInfo(debugLog.ToString(), "QQ发送");
                         Win32.CtrlV();
 
-                        // Win32.Delay(10);  // 等待粘贴完成
-                        // debugLog.AppendLine($"[粘贴] 粘贴完成");
-                        if (Config.GetBool("自动发送成绩"))
-                        {
-                            // 使用优化后的SendMessage方法（内部有等待循环）
-                            SendMessage(q);
-                        }
-                        else
-                        {
-                            // debugLog.AppendLine($"[发送] 自动发送未启用，跳过发送");
-                        }
+                        // debugLog.AppendLine($"[发送] 调用SendMessage点击发送按钮...");
+                        // SaveDebugInfo(debugLog.ToString(), "QQ发送");
+                        // SendQQMessage用于发送文章内容，始终发送
+                        SendMessage(q);
 
-                        // Win32.Delay(50);  // 等待所有操作完成再切换焦点
                         // debugLog.AppendLine($"[完成] 切换回TypeSunny窗口");
+                        // debugLog.AppendLine($"========== QQ消息发送成功 ==========");
+                        // SaveDebugInfo(debugLog.ToString(), "QQ发送");
                         caller.Dispatcher.Invoke(() => {
                             MainWindow.Current.FocusInput();
                         });
-                        // debugLog.AppendLine($"========== QQ消息发送完成 ==========");
-                        // ShowDebugLog(debugLog.ToString());
 
                     }
                     else
                     {
                         // debugLog.AppendLine($"[错误] 未找到输入框，发送失败");
                         // debugLog.AppendLine($"========== QQ消息发送失败 ==========");
-                        // ShowDebugLog(debugLog.ToString());
+                        // SaveDebugInfo(debugLog.ToString(), "QQ发送");
                     }
             }
             catch (Exception ex)
@@ -820,8 +901,8 @@ namespace TypeSunny
 
         public static void SendQQMessageD(string groupName, string msgContent1, string msgContent2, int delayTime, Window caller)
         {
-
             Win32SetText(msgContent1);
+
             if (msgContent1 == "" || msgContent1 == ""  || groupName == "")
                 return;
 
@@ -852,22 +933,86 @@ namespace TypeSunny
                     return;
                 }
 
-                    // 第一步：查找已打开的输入框（使用前缀匹配，兼容特殊字符）
+                    // 第一步：智能检测是否已在目标群（兼容新旧版本QQ）
                     IUIAutomationElement edits = null;
-                    var allEdits = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId));
+                    bool alreadyInTargetGroup = false;
 
-                    if (allEdits != null && allEdits.Length > 0)
+                    // 策略0：优先通过按钮检测是否已在目标群（适用于新旧版本QQ）
+                    var allButtons = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_ButtonControlTypeId));
+                    if (allButtons != null && allButtons.Length > 0)
                     {
-                        for (int i = 0; i < allEdits.Length; i++)
+                        for (int i = 0; i < allButtons.Length; i++)
                         {
-                            var edit = allEdits.GetElement(i);
-                            string editName = edit.CurrentName;
-
-                            // 使用前缀匹配查找输入框
-                            if (!string.IsNullOrWhiteSpace(editName) && editName.StartsWith(groupName))
+                            var btn = allButtons.GetElement(i);
+                            string btnName = btn.CurrentName;
+                            // 检测是否有按钮Name等于目标群名
+                            if (!string.IsNullOrWhiteSpace(btnName) && btnName == groupName)
                             {
+                                alreadyInTargetGroup = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // 如果已在目标群，直接查找输入框，跳过点击群
+                    if (alreadyInTargetGroup)
+                    {
+                        // 策略1：优先查找Edit控件（旧版QQ）
+                        var allEdits = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId));
+                        if (allEdits != null && allEdits.Length > 0)
+                        {
+                            for (int i = 0; i < allEdits.Length; i++)
+                            {
+                                var edit = allEdits.GetElement(i);
+                                string editName = edit.CurrentName;
+                                // 跳过搜索框
+                                if (!string.IsNullOrWhiteSpace(editName) && editName.Contains("搜索"))
+                                {
+                                    continue;
+                                }
                                 edits = edit;
                                 break;
+                            }
+                        }
+
+                        // 策略2：如果没找到Edit，查找Document控件（新版QQ）
+                        if (edits == null)
+                        {
+                            var allDocuments = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId));
+                            if (allDocuments != null && allDocuments.Length > 0)
+                            {
+                                for (int i = 0; i < allDocuments.Length; i++)
+                                {
+                                    var doc = allDocuments.GetElement(i);
+                                    bool isOffscreen = doc.CurrentIsOffscreen != 0;
+                                    // 跳过不可见的Document
+                                    if (!isOffscreen)
+                                    {
+                                        edits = doc;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 不在目标群，使用前缀匹配查找输入框（兼容旧逻辑）
+                        var allEdits = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId));
+                        if (allEdits != null && allEdits.Length > 0)
+                        {
+                            for (int i = 0; i < allEdits.Length; i++)
+                            {
+                                var edit = allEdits.GetElement(i);
+                                string editName = edit.CurrentName;
+
+                                // 使用前缀匹配查找输入框
+                                if (!string.IsNullOrWhiteSpace(editName) && editName.StartsWith(groupName))
+                                {
+                                    edits = edit;
+                                    alreadyInTargetGroup = true;
+                                    break;
+                                }
                             }
                         }
                     }
@@ -977,7 +1122,7 @@ namespace TypeSunny
                                 {
                                     // 在点击群之前，先检测当前是否已经在目标群（优化：复用按钮检查结果）
                                     var allButtonsForCheck = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_ButtonControlTypeId));
-                                    bool alreadyInTargetGroup = false;
+                                    alreadyInTargetGroup = false;  // 重置状态
                                     if (allButtonsForCheck != null)
                                     {
                                         for (int bi = 0; bi < allButtonsForCheck.Length; bi++)
@@ -1075,23 +1220,35 @@ namespace TypeSunny
                         Win32.Win32SetText(msgContent1);
                         Win32.CtrlV();
 
+                        // 新版QQ的发送成绩逻辑
                         if (Config.GetBool("自动发送成绩"))
                         {
-                            SendMessage(q);
+                            var send = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "发送"));
+                            if (send != null)
+                            {
+                                var sp = send.GetCurrentPattern(UIA_PatternIds.UIA_InvokePatternId) as IUIAutomationInvokePattern;
+                                if (sp != null)
+                                {
+                                    sp.Invoke();
+                                }
+                            }
                         }
 
                         // 第二次：发送msgContent2（新文章）
                         if (!string.IsNullOrWhiteSpace(msgContent2))
                         {
-                            edits.SetFocus();
-                            ActivateDocumentInput(edits);
-
                             Win32.Win32SetText(msgContent2);
                             Win32.CtrlV();
 
-                            if (Config.GetBool("自动发送成绩"))
+                            // 始终发送文章
+                            var send = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "发送"));
+                            if (send != null)
                             {
-                                SendMessage(q);
+                                var sp = send.GetCurrentPattern(UIA_PatternIds.UIA_InvokePatternId) as IUIAutomationInvokePattern;
+                                if (sp != null)
+                                {
+                                    sp.Invoke();
+                                }
                             }
                         }
 

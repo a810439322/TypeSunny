@@ -572,7 +572,7 @@ namespace TypeSunny
 
 
 
-                // 滚动逻辑
+                // 滚动逻辑（统一使用 paindutch-main 方案）
                 {
                     int NextBlockIndex = (nextToType - TextInfo.PageStartIndex);
 
@@ -580,20 +580,11 @@ namespace TypeSunny
                     double currentPosY = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
                         + TextInfo.Blocks[NextBlockIndex].ActualHeight / 2;
 
-                    // 计算内容总高度：最后一个Block的底部位置
-                    int lastBlockIndex = TextInfo.Blocks.Count - 1;
-                    double totalContentHeight = TextInfo.Blocks[lastBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
-                        + TextInfo.Blocks[lastBlockIndex].ActualHeight;
+                    // 使用统一方法计算目标滚动位置（始终居中显示）
+                    double targetOffset = CalculateScrollOffset(currentPosY);
 
-                    // 使用统一方法计算目标滚动位置
-                    double targetOffset = CalculateScrollOffset(currentPosY, totalContentHeight);
-
-                    // 判断是否需要强制滚动（换行或起始位置）
-                    bool forceScroll = (nextToType == 0) ||
-                                       (NextBlockIndex > 0 && TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[NextBlockIndex - 1]).X <= 0);
-
-                    // 执行滚动
-                    SmoothScrollTo(targetOffset, forceScroll);
+                    // 执行滚动（起始位置强制滚动，其他时候由 SmoothScrollTo 自动判断）
+                    SmoothScrollTo(targetOffset, forceScroll: (nextToType == 0));
 
 
                     //跟随显示速度
@@ -683,20 +674,11 @@ namespace TypeSunny
                             double currentPosY = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
                                 + TextInfo.Blocks[NextBlockIndex].ActualHeight / 2;
 
-                            // 计算内容总高度：最后一个Block的底部位置
-                            int lastBlockIndex = TextInfo.Blocks.Count - 1;
-                            double totalContentHeight = TextInfo.Blocks[lastBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
-                                + TextInfo.Blocks[lastBlockIndex].ActualHeight;
+                            // 使用统一方法计算目标滚动位置（始终居中显示）
+                            double targetOffset = CalculateScrollOffset(currentPosY);
 
-                            // 使用统一方法计算目标滚动位置
-                            double targetOffset = CalculateScrollOffset(currentPosY, totalContentHeight);
-
-                            // 判断是否需要强制滚动（换行或起始位置）
-                            bool forceScroll = (nextToType == 0) ||
-                                               (NextBlockIndex > 0 && TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[NextBlockIndex - 1]).X <= 0);
-
-                            // 执行滚动
-                            SmoothScrollTo(targetOffset, forceScroll);
+                            // 执行滚动（起始位置强制滚动，其他时候由 SmoothScrollTo 自动判断）
+                            SmoothScrollTo(targetOffset, forceScroll: (nextToType == 0));
 
                             // 跟随显示速度
                             bool showSpeed = Config.GetBool("速度跟随提示") && !Config.GetBool("盲打模式") && !double.IsNaN(Score.GetValidSpeed()) && Score.GetValidSpeed() > 0;
@@ -806,35 +788,22 @@ namespace TypeSunny
         }
 
         /// <summary>
-        /// 统一的滚动位置计算方法
+        /// 统一的滚动位置计算方法（参考 paindutch-main）
+        /// 始终将当前字符保持在屏幕中心位置
         /// </summary>
         /// <param name="currentPosY">当前字符的Y坐标（相对于内容顶部）</param>
-        /// <param name="totalContentHeight">内容总高度</param>
         /// <returns>目标滚动偏移量</returns>
-        private double CalculateScrollOffset(double currentPosY, double totalContentHeight)
+        private double CalculateScrollOffset(double currentPosY)
         {
-            // 判断当前位置距离底部的距离
-            double distanceToBottom = totalContentHeight - currentPosY;
+            // 将当前字符保持在屏幕中心位置（48%位置）
+            double center = ScDisplay.ViewportHeight * 0.48;
+            double offset = currentPosY - center;
 
-            double offset;
-
-            // 如果距离底部小于可视区域高度的60%，说明居中显示会导致底部内容不完整
-            if (distanceToBottom < ScDisplay.ViewportHeight * 0.60)
-            {
-                // 直接滚动到底部
+            // 限制滚动范围
+            if (offset < 0)
+                offset = 0;
+            if (offset > ScDisplay.ScrollableHeight)
                 offset = ScDisplay.ScrollableHeight;
-            }
-            else
-            {
-                // 否则将当前位置居中显示（40% viewport位置）
-                double center = ScDisplay.ViewportHeight * 0.40;
-                offset = currentPosY - center;
-
-                if (offset < 0)
-                    offset = 0;
-                if (offset > ScDisplay.ScrollableHeight)
-                    offset = ScDisplay.ScrollableHeight;
-            }
 
             return offset;
         }
@@ -1016,57 +985,18 @@ namespace TypeSunny
                 {
                     try
                     {
-                        // 第一次进入贪吃蛇模式时，延迟滚动让布局先完成
-                        if (isFirstTime)
-                        {
-                            Dispatcher.BeginInvoke(new Action(() =>
-                            {
-                                try
-                                {
-                                    // 计算当前字符的Y坐标（相对于第一个Block）
-                                    double currentPosY = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
-                                        + TextInfo.Blocks[nextToType].ActualHeight / 2;
+                        // 计算当前字符的Y坐标（相对于第一个Block）
+                        double currentPosY = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
+                            + TextInfo.Blocks[nextToType].ActualHeight / 2;
 
-                                    // 计算内容总高度：最后一个Block的底部位置
-                                    int lastBlockIndex = TextInfo.Blocks.Count - 1;
-                                    double totalContentHeight = TextInfo.Blocks[lastBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
-                                        + TextInfo.Blocks[lastBlockIndex].ActualHeight;
+                        // 使用统一方法计算目标滚动位置（始终居中显示）
+                        double targetOffset = CalculateScrollOffset(currentPosY);
 
-                                    // 使用统一方法计算目标滚动位置
-                                    double targetOffset = CalculateScrollOffset(currentPosY, totalContentHeight);
+                        // 贪吃蛇模式：使用条件判断滚动（起始位置强制滚动，避免跳动）
+                        SmoothScrollTo(targetOffset, forceScroll: (nextToType == 0));
 
-                                    // 强制滚动到正确位置
-                                    ScDisplay.ScrollToVerticalOffset(targetOffset);
-
-                                    // 更新速度跟随提示位置
-                                    UpdateSpeedFollowHint(nextToType);
-                                }
-                                catch
-                                {
-                                    // 忽略布局异常
-                                }
-                            }), System.Windows.Threading.DispatcherPriority.Loaded);
-                        }
-                        else
-                        {
-                            // 计算当前字符的Y坐标（相对于第一个Block）
-                            double currentPosY = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
-                                + TextInfo.Blocks[nextToType].ActualHeight / 2;
-
-                            // 计算内容总高度：最后一个Block的底部位置
-                            int lastBlockIndex = TextInfo.Blocks.Count - 1;
-                            double totalContentHeight = TextInfo.Blocks[lastBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
-                                + TextInfo.Blocks[lastBlockIndex].ActualHeight;
-
-                            // 使用统一方法计算目标滚动位置
-                            double targetOffset = CalculateScrollOffset(currentPosY, totalContentHeight);
-
-                            // 贪吃蛇模式：使用条件判断滚动（不是每次都强制滚动，避免跳动）
-                            SmoothScrollTo(targetOffset, forceScroll: (nextToType == 0));
-
-                            // 更新速度跟随提示位置
-                            UpdateSpeedFollowHint(nextToType);
-                        }
+                        // 更新速度跟随提示位置
+                        UpdateSpeedFollowHint(nextToType);
                     }
                     catch
                     {
@@ -1268,13 +1198,10 @@ namespace TypeSunny
                             // 获取目标位置的矩形区域
                             Rect rect = targetPointer.GetCharacterRect(LogicalDirection.Forward);
 
-                            // 内容总高度
-                            double totalContentHeight = textBlock.ActualHeight;
+                            // 使用统一方法计算目标滚动位置（始终居中显示）
+                            double targetOffset = CalculateScrollOffset(rect.Top);
 
-                            // 使用统一方法计算目标滚动位置
-                            double targetOffset = CalculateScrollOffset(rect.Top, totalContentHeight);
-
-                            // 执行滚动（带条件判断）
+                            // 执行滚动（起始位置强制滚动，其他时候由 SmoothScrollTo 自动判断）
                             SmoothScrollTo(targetOffset, forceScroll: (nextToType == 0));
 
                             // 更新速度跟随提示
@@ -2682,7 +2609,10 @@ namespace TypeSunny
                         }
                         else //有错字，只发成绩
                         {
-                            QQHelper.SendQQMessage(QQGroupName, result, 250, this);
+                            if (Config.GetBool("自动发送成绩"))
+                            {
+                                QQHelper.SendQQMessage(QQGroupName, result, 250, this);
+                            }
                         }
                     }
 
@@ -2697,9 +2627,12 @@ namespace TypeSunny
                 {
                     if (StateManager.retypeType != RetypeType.wrongRetype) // 正文
                     {
-                        if (TextInfo.WrongRec.Count > 0) // 有错字，只发送成绩
+                        if (TextInfo.WrongRec.Count > 0) // 有错字，根据"自动发送成绩"开关决定是否发送成绩
                         {
-                            SendContentToClipboardOrQQ(result);
+                            if (Config.GetBool("自动发送成绩"))
+                            {
+                                SendContentToClipboardOrQQ(result);
+                            }
                         }
                     }
                     // 如果是错字重打或正文有错字，后续会在3088-3134行统一处理
@@ -3058,12 +2991,24 @@ namespace TypeSunny
             // 发送成绩和下一段内容
             if (QQGroupName != "")
             {
-                QQHelper.SendQQMessageD(QQGroupName, lastResult, content2, 150, this);
+                if (Config.GetBool("自动发送成绩"))
+                {
+                    QQHelper.SendQQMessageD(QQGroupName, lastResult, content2, 150, this);
+                }
+                else
+                {
+                    QQHelper.SendQQMessage(QQGroupName, content2, 150, this);
+                }
             }
             else
             {
-                // 复制成绩和下一段内容到剪切板
-                string messageToSend = lastResult + "\n" + content2;
+                // 复制下一段内容到剪切板
+                // 根据"自动发送成绩"开关决定是否复制成绩
+                string messageToSend = content2;
+                if (Config.GetBool("自动发送成绩"))
+                {
+                    messageToSend = lastResult + "\n" + content2;
+                }
                 Win32SetText(messageToSend);
                 FocusInput();
             }
@@ -3171,8 +3116,17 @@ namespace TypeSunny
                 {
                     if (!string.IsNullOrEmpty(lastResult))
                     {
-                        // 有成绩：先发成绩，再发下一段
-                        QQHelper.SendQQMessageD(QQGroupName, lastResult, formattedContent, 150, this);
+                        // 有成绩：根据"自动发送成绩"开关决定
+                        if (Config.GetBool("自动发送成绩"))
+                        {
+                            // 开启自动发送成绩：先发成绩，再发下一段
+                            QQHelper.SendQQMessageD(QQGroupName, lastResult, formattedContent, 150, this);
+                        }
+                        else
+                        {
+                            // 未开启自动发送成绩：只发下一段文章
+                            QQHelper.SendQQMessage(QQGroupName, formattedContent, 250, this);
+                        }
                     }
                     else
                     {
@@ -3183,8 +3137,9 @@ namespace TypeSunny
                 else
                 {
                     // 没有选群：复制到剪切板
+                    // 根据"自动发送成绩"开关决定是否复制成绩
                     string messageToSend = formattedContent;
-                    if (!string.IsNullOrEmpty(lastResult))
+                    if (!string.IsNullOrEmpty(lastResult) && Config.GetBool("自动发送成绩"))
                     {
                         messageToSend = lastResult + "\n" + formattedContent;
                     }
@@ -4153,7 +4108,8 @@ namespace TypeSunny
 
         private void TbxInput_TextChanged(object sender, TextChangedEventArgs e)
         {
-            // 调试：打印所有可用数据
+            // 调试：打印所有可用数据（已禁用，避免文件写入错误）
+            /*
             if (StateManager.typingState == TypingState.typing && e.Changes.Count > 0)
             {
                 var change = e.Changes.First();
@@ -4175,6 +4131,7 @@ namespace TypeSunny
                     $"Current expected word: '{currentWord}'\n" +
                     $"==================\n");
             }
+            */
 
             //启动 - TextChanged 事件中也需触发计时开始（兼容 TSF 输入法）
             if ((StateManager.typingState == TypingState.pause || StateManager.typingState == TypingState.ready)
@@ -6315,8 +6272,17 @@ namespace TypeSunny
                     {
                         if (!string.IsNullOrEmpty(lastResult))
                         {
-                            // 有成绩：先发成绩，再发新文章第一段
-                            QQHelper.SendQQMessageD(QQGroupName, lastResult, formattedContent, 150, this);
+                            // 有成绩：根据"自动发送成绩"开关决定
+                            if (Config.GetBool("自动发送成绩"))
+                            {
+                                // 开启自动发送成绩：先发成绩，再发新文章第一段
+                                QQHelper.SendQQMessageD(QQGroupName, lastResult, formattedContent, 150, this);
+                            }
+                            else
+                            {
+                                // 未开启自动发送成绩：只发新文章第一段
+                                QQHelper.SendQQMessage(QQGroupName, formattedContent, 250, this);
+                            }
                         }
                         else
                         {
@@ -6327,8 +6293,9 @@ namespace TypeSunny
                     else
                     {
                         // 没有选群：复制到剪切板
+                        // 根据"自动发送成绩"开关决定是否复制成绩
                         string messageToSend = formattedContent;
-                        if (!string.IsNullOrEmpty(lastResult))
+                        if (!string.IsNullOrEmpty(lastResult) && Config.GetBool("自动发送成绩"))
                         {
                             messageToSend = lastResult + "\n" + formattedContent;
                         }
