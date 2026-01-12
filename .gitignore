@@ -1,0 +1,56 @@
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Build results
+bin/
+obj/
+Release/
+Debug/
+*.dll
+*.exe
+*.pdb
+*.log
+
+# NuGet Packages
+packages/
+*.nupkg
+.nuget/
+project.lock.json
+project.fragment.lock.json
+
+# User configuration (contains personal settings)
+config.txt
+
+# Rider/IDEA
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+.claude/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Backup files
+*.bak
+*.tmp
+*.swp
+*~
+
+# Build scripts output
+*.zip
+*.rar

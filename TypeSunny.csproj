@@ -134,6 +134,7 @@
     <Compile Include="Snake.cs" />
     <Compile Include="SplitedDiffRes.cs" />
     <Compile Include="StateManager.cs" />
+    <Compile Include="ZiTiHelper.cs" />
     <Compile Include="StringToFontFamily.cs" />
     <Compile Include="TextInfo.cs" />
     <Compile Include="ThemeHelper.cs" />
@@ -263,6 +264,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Resources\DIC\9.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\字提.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Resource Include="Resources\logo-512.png" />

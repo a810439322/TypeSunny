@@ -826,6 +826,55 @@ namespace TypeSunny
         }
 
         /// <summary>
+        /// 更新字提显示
+        /// </summary>
+        private void UpdateZiTi()
+        {
+            // 检查是否启用字提功能
+            if (!Config.GetBool("启用字提"))
+            {
+                TbkZiTi.Text = "";
+                return;
+            }
+
+            // 极速杯模式不显示字提
+            if (StateManager.txtSource == TxtSource.jisucup)
+            {
+                TbkZiTi.Text = "";
+                return;
+            }
+
+            // 没有载文时清空字提
+            if (TextInfo.Words.Count == 0)
+            {
+                TbkZiTi.Text = "";
+                return;
+            }
+
+            // 获取下一个需要打的字
+            StringInfo si = new StringInfo(TbxInput.Text);
+            int nextIndex = si.LengthInTextElements;
+
+            if (nextIndex >= TextInfo.Words.Count)
+            {
+                TbkZiTi.Text = "";
+                return;
+            }
+
+            string nextChar = TextInfo.Words[nextIndex];
+            string hint = ZiTiHelper.GetZiTi(nextChar);
+
+            if (!string.IsNullOrEmpty(hint))
+            {
+                TbkZiTi.Text = hint;
+            }
+            else
+            {
+                TbkZiTi.Text = "";
+            }
+        }
+
+        /// <summary>
         /// 贪吃蛇模式更新 - 流动式显示前后字符
         /// </summary>
         private void SnakeModeUpdate(int nextToType)
@@ -1731,6 +1780,11 @@ namespace TypeSunny
             TbxInput.FontFamily = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体")); ;
             SldZoom.Value = Config.GetDouble("发文区字体大小");
 
+            // 设置字提控件字体
+            TbkZiTi.FontFamily = GetCurrentFontFamily();
+            TbkZiTi.FontSize = Config.GetDouble("发文区字体大小") * 0.5;
+            TbkZiTi.Foreground = Colors.FromString(Config.GetString("发文区字体色"));
+
             InitFontFamilySelector();
 
 
@@ -1846,6 +1900,10 @@ namespace TypeSunny
 
             TbxInput.FontFamily = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体")); ;
 
+            // 设置字提控件字体
+            TbkZiTi.FontFamily = GetCurrentFontFamily();
+            TbkZiTi.FontSize = Config.GetDouble("发文区字体大小") * 0.5;
+            TbkZiTi.Foreground = Colors.FromString(Config.GetString("发文区字体色"));
 
             ReadBlindType();
 
@@ -2872,7 +2930,8 @@ namespace TypeSunny
 
             UpdateDisplay(UpdateLevel.Progress);
 
-
+            // 更新字提显示
+            UpdateZiTi();
 
             void Stop()
             {
@@ -3887,6 +3946,9 @@ namespace TypeSunny
                 currentDifficultyText = "难度:" + difficultyDict.DiffText(difficulty);
                 TbkDifficulty.Text = currentDifficultyText;
 
+                // 更新字提显示
+                UpdateZiTi();
+
                 // 更新标题显示（所有模式，初始字数为0）
                 UpdateWindowTitle(0, TextInfo.Words.Count);
 
@@ -4165,6 +4227,9 @@ namespace TypeSunny
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            // 初始化字提功能
+            ZiTiHelper.Initialize();
+
             InitDisplay();
 
             // 加载文来Cookie（登录后下次启动自动登录）
