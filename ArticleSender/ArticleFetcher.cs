@@ -157,6 +157,29 @@ namespace TypeSunny.ArticleSender
 
             try
             {
+                // 使用异步方法的同步版本
+                return GetDifficultiesAsync().GetAwaiter().GetResult();
+            }
+            catch (Exception)
+            {
+                return GetDefaultDifficulties();
+            }
+        }
+
+        /// <summary>
+        /// 异步获取难度列表
+        /// </summary>
+        /// <returns>难度列表</returns>
+        public static async Task<List<DifficultyInfo>> GetDifficultiesAsync()
+        {
+            // 如果有缓存，直接返回
+            if (cachedDifficulties != null)
+            {
+                return cachedDifficulties;
+            }
+
+            try
+            {
                 string apiUrl = Config.GetString("文来接口地址");
 
                 if (string.IsNullOrWhiteSpace(apiUrl))
@@ -170,11 +193,11 @@ namespace TypeSunny.ArticleSender
                 // 构建难度API URL
                 string difficultyUrl = apiUrl + "/api/stats_by_difficulty";
 
-                // 发送GET请求
-                var response = httpClient.GetAsync(difficultyUrl).Result;
+                // 发送GET请求（使用真正的异步）
+                var response = await httpClient.GetAsync(difficultyUrl);
 
-                // 先读取响应体内容，不管状态码是什么
-                string responseBody = response.Content.ReadAsStringAsync().Result;
+                // 读取响应体内容
+                string responseBody = await response.Content.ReadAsStringAsync();
 
                 // 尝试解析JSON响应
                 JObject result;
