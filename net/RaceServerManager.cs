@@ -236,7 +236,7 @@ namespace TypeSunny.Net
 
                 if (string.IsNullOrWhiteSpace(defaultUrl))
                 {
-                    defaultUrl = "https://typing.xydcg.cn/";  // 使用默认值
+                    defaultUrl = "https://typing.fcxxz.com/";  // 使用默认值
                 }
 
                 var server = new RaceServer

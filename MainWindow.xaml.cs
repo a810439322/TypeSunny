@@ -5881,7 +5881,7 @@ namespace TypeSunny
 
             var txtUrl = new TextBox
             {
-                Text = Config.GetString("赛文服务器地址") ?? "https://typing.xydcg.cn/",
+                Text = Config.GetString("赛文服务器地址") ?? "https://typing.fcxxz.com/",
                 Padding = new Thickness(5),
                 Margin = new Thickness(90, 0, 0, 0)
             };

@@ -383,7 +383,7 @@
                    
                     <ScrollViewer  x:Name="ScDisplay"  Grid.Row="0"  Grid.Column="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden"  IsDeferredScrollingEnabled="True" PreviewMouseWheel="Control_PreviewMouseWheel">
 
-                        <WrapPanel  Focusable="False"  Margin="10,5,10,0" x:Name="TbDispay"  Grid.Row="0"  Grid.Column="0" HorizontalAlignment="Stretch" VerticalAlignment="Top"     Language="zh-CN" PreviewMouseWheel="Control_PreviewMouseWheel"     ></WrapPanel>
+                        <WrapPanel  Focusable="False"  Margin="10,5,10,25" x:Name="TbDispay"  Grid.Row="0"  Grid.Column="0" HorizontalAlignment="Stretch" VerticalAlignment="Top"     Language="zh-CN" PreviewMouseWheel="Control_PreviewMouseWheel"     ></WrapPanel>
                     </ScrollViewer>
                 </Border>
 

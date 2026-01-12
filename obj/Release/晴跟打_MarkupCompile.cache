@@ -4,17 +4,17 @@
 winexe
 C#
 .cs
-Z:\项目代码\TypeSunny\obj\Release\
+E:\nas同步\项目代码\SynologyDrive\TypeSunny\obj\Release\
 TypeSunny
 none
 false
 TRACE;EPUB_SUPPORT
-Z:\项目代码\TypeSunny\App.xaml
+E:\nas同步\项目代码\SynologyDrive\TypeSunny\App.xaml
 6-1504490434
 15-1593448427
 581981471648
-19-1102853464
+191166800408
 Article\WinArticle.xaml;MainWindow.xaml;WinConfig\WinColorPicker.xaml;WinConfig\WinConfig.xaml;WinRaceLeaderboard.xaml;WinTrainer\WinTrainer.xaml;
 
-False
+True
 
