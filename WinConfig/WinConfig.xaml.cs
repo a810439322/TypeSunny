@@ -88,11 +88,10 @@ namespace TypeSunny
                         "贪吃蛇前显字数",
                         "贪吃蛇后显字数",
                         "启用字提",
+                        "字提字体",
+                        "字提字体大小",
                         "显示进度条",
-                        "自动发送成绩",
-                        "跟打区字体大小",
-                        "发文区字体大小",
-                        "成绩区字体大小"
+                        "自动发送成绩"
                     }
                 },
                 new
@@ -231,6 +230,70 @@ namespace TypeSunny
                             VerticalAlignment = VerticalAlignment.Center,
                             Margin = new Thickness(10, 3, 10, 3),
                             Tag = "Font"
+                        };
+
+                        // 添加自定义字体
+                        System.Globalization.CultureInfo cn = System.Globalization.CultureInfo.GetCultureInfo("zh-CN");
+                        System.Globalization.CultureInfo en = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+                        System.IO.DirectoryInfo dr = new System.IO.DirectoryInfo("字体");
+                        if (dr.Exists)
+                        {
+                            foreach (var f in dr.GetFiles("*.ttf"))
+                            {
+                                try
+                                {
+                                    var fullname = f.FullName;
+                                    System.Windows.Media.GlyphTypeface gf = new System.Windows.Media.GlyphTypeface(new Uri(fullname));
+                                    var s = gf.FamilyNames;
+                                    string fontname = "";
+                                    if (s.ContainsKey(cn))
+                                        fontname = s[cn];
+                                    else if (s.ContainsKey(en))
+                                        fontname = s[en];
+                                    if (fontname != "")
+                                        cb.Items.Add("#" + fontname);
+                                }
+                                catch { }
+                            }
+                        }
+
+                        // 添加系统字体
+                        foreach (System.Windows.Media.FontFamily fontfamily in System.Windows.Media.Fonts.SystemFontFamilies)
+                        {
+                            LanguageSpecificStringDictionary lsd = fontfamily.FamilyNames;
+                            if (lsd.ContainsKey(System.Windows.Markup.XmlLanguage.GetLanguage("zh-cn")))
+                            {
+                                string fontname = null;
+                                if (lsd.TryGetValue(System.Windows.Markup.XmlLanguage.GetLanguage("zh-cn"), out fontname))
+                                    cb.Items.Add(fontname);
+                            }
+                            else
+                            {
+                                string fontname = null;
+                                if (lsd.TryGetValue(System.Windows.Markup.XmlLanguage.GetLanguage("en-us"), out fontname))
+                                    cb.Items.Add(fontname);
+                            }
+                        }
+
+                        // 设置当前选中项
+                        for (int i = 0; i < cb.Items.Count; i++)
+                        {
+                            if (cb.Items[i].ToString() == itemValue)
+                            {
+                                cb.SelectedIndex = i;
+                                break;
+                            }
+                        }
+                        valueControl = cb;
+                    }
+                    else if (itemKey == "字提字体")
+                    {
+                        var cb = new ComboBox
+                        {
+                            Width = 200,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            Margin = new Thickness(10, 3, 10, 3),
+                            Tag = "ZiTiFont"
                         };
 
                         // 添加自定义字体
@@ -601,6 +664,14 @@ namespace TypeSunny
                         else
                             value.Add("微软雅黑");
                     }
+                    else if (labelText == "字提字体")
+                    {
+                        key.Add(labelText);
+                        if (cb.SelectedIndex >= 0 && cb.SelectedIndex < cb.Items.Count)
+                            value.Add(cb.Items[cb.SelectedIndex].ToString());
+                        else
+                            value.Add("霞鹜文楷 GB 屏幕阅读版");
+                    }
                     else if (labelText == "盲打模式")
                     {
                         key.Add(labelText);
@@ -730,6 +801,14 @@ namespace TypeSunny
                             value.Add(cb.Items[cb.SelectedIndex].ToString());
                         else
                             value.Add("微软雅黑");
+                    }
+                    else if (labelText == "字提字体")
+                    {
+                        key.Add(labelText);
+                        if (cb.SelectedIndex >= 0 && cb.SelectedIndex < cb.Items.Count)
+                            value.Add(cb.Items[cb.SelectedIndex].ToString());
+                        else
+                            value.Add("霞鹜文楷 GB 屏幕阅读版");
                     }
                     else if (labelText == "盲打模式")
                     {

@@ -267,7 +267,7 @@ namespace TypeSunny
 
                 double y = (this.ActualHeight - 95.74 - 0.5 - 15) * 0.75 - (expd.IsExpanded ? 145 : 0);
                 double x = (this.ActualWidth - 52);
-                Paginator.ArrangePage(x, y, Config.GetDouble("发文区字体大小"), TextInfo.Words.Count);
+                Paginator.ArrangePage(x, y, 40.0, TextInfo.Words.Count);
 
                 TextInfo.PageNum = -1;
             }
@@ -340,9 +340,9 @@ namespace TypeSunny
                     var fm = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体"));
 
 
-                    double fs = Config.GetDouble("发文区字体大小");
+                    double fs = 40.0;
                     double height = fs * (1.0 + Config.GetDouble("行距"));
-                    double MinWidth = Config.GetDouble("发文区字体大小") * 0.9;
+                    double MinWidth = 40.0 * 0.9;
 
                     ScDisplay.FontFamily = fm;
                     ScDisplay.Foreground = Colors.DisplayForeground;
@@ -729,7 +729,7 @@ namespace TypeSunny
                 ScDisplay.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
                 TextInfo.Blocks.Clear(); // 修复BUG：确保Blocks和显示区域同步清空
                 TextBlock tb = new TextBlock();
-                tb.FontSize = Config.GetDouble("发文区字体大小");
+                tb.FontSize = 40.0;
                 tb.FontFamily = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体"));
                 tb.Background = BdDisplay.Background;
                 tb.TextWrapping = TextWrapping.Wrap;
@@ -815,7 +815,7 @@ namespace TypeSunny
         /// <param name="forceScroll">是否强制滚动（例如：换行、起始位置）</param>
         private void SmoothScrollTo(double targetOffset, bool forceScroll = false)
         {
-            double fs = Config.GetDouble("发文区字体大小");
+            double fs = 40.0;
             double fh = fs * (1.0 + Config.GetDouble("行距"));
 
             // 只有当偏移量变化较大时才滚动，避免频繁滚动
@@ -907,9 +907,9 @@ namespace TypeSunny
 
                 // 获取字体设置
                 var fm = GetCurrentFontFamily();
-                double fs = Config.GetDouble("发文区字体大小");
+                double fs = 40.0;
                 double height = fs * (1.0 + Config.GetDouble("行距"));
-                double MinWidth = Config.GetDouble("发文区字体大小") * 0.9;
+                double MinWidth = 40.0 * 0.9;
 
                 ScDisplay.FontFamily = fm;
                 ScDisplay.Foreground = Colors.DisplayForeground;
@@ -1102,7 +1102,7 @@ namespace TypeSunny
 
                 // 获取字体设置
                 var fm = GetCurrentFontFamily();
-                double fs = Config.GetDouble("发文区字体大小");
+                double fs = 40.0;
 
                 // 创建单个 TextBlock 显示所有文本
                 TextBlock tb = new TextBlock();
@@ -1636,7 +1636,7 @@ namespace TypeSunny
                         Uri uri = new Uri(currentPath + "字体\\");
                         FontFamily fm = new FontFamily(uri, "./#" + fontname);
                         cbi.FontFamily = fm;
-                        cbi.FontSize = Config.GetDouble("发文区字体大小");
+                        cbi.FontSize = 40.0;
                         cbi.Content = "#" + fontname;
 
                         // 字体选择已移到设置窗口
@@ -1671,6 +1671,10 @@ namespace TypeSunny
         // 字体缓存
         private FontFamily cachedFontFamily = null;
         private string cachedFontName = "";
+
+        // 字提字体缓存
+        private FontFamily cachedZiTiFontFamily = null;
+        private string cachedZiTiFontName = "";
 
         // Run对象池，避免每次打字都创建新对象
         private List<Run> runPool = new List<Run>();
@@ -1738,6 +1742,38 @@ namespace TypeSunny
             cachedFontName = fontName;
             return fm;
         }
+
+        public FontFamily GetZiTiFontFamily()
+        {
+            string fontName = Config.GetString("字提字体");
+
+            if (fontName == null || fontName.Length == 0)
+                return null;
+
+            // 如果字体名称没变，返回缓存的字体
+            if (cachedZiTiFontFamily != null && cachedZiTiFontName == fontName)
+            {
+                return cachedZiTiFontFamily;
+            }
+
+            // 创建新的字体并缓存
+            FontFamily fm;
+            if (fontName.Substring(0, 1) == "#")
+            {
+                string currentPath = System.AppDomain.CurrentDomain.BaseDirectory;
+                Uri uri = new Uri(currentPath + "字体\\");
+                fm = new FontFamily(uri, "./" + fontName);
+            }
+            else
+            {
+                fm = new FontFamily(fontName);
+            }
+
+            cachedZiTiFontFamily = fm;
+            cachedZiTiFontName = fontName;
+            return fm;
+        }
+
         private void InitDisplay()
         {
 
@@ -1756,8 +1792,8 @@ namespace TypeSunny
             ApplyButtonMenuColors();
 
             // 应用字体大小
-            TbxInput.FontSize = Config.GetDouble("跟打区字体大小");
-            TbxResults.FontSize = Config.GetDouble("成绩区字体大小");
+            TbxInput.FontSize = 40.0;
+            TbxResults.FontSize = 15.0;
 
             if (winTrainer != null)
             {
@@ -1778,11 +1814,11 @@ namespace TypeSunny
 
 
             TbxInput.FontFamily = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体")); ;
-            SldZoom.Value = Config.GetDouble("发文区字体大小");
+            SldZoom.Value = 40; // 默认字体大小
 
             // 设置字提控件字体
-            TbkZiTi.FontFamily = GetCurrentFontFamily();
-            TbkZiTi.FontSize = Config.GetDouble("发文区字体大小") * 0.5;
+            TbkZiTi.FontFamily = GetZiTiFontFamily();
+            TbkZiTi.FontSize = Config.GetDouble("字提字体大小");
             TbkZiTi.Foreground = Colors.FromString(Config.GetString("发文区字体色"));
 
             InitFontFamilySelector();
@@ -1884,8 +1920,8 @@ namespace TypeSunny
             ApplyButtonMenuColors();
 
             // 应用字体大小
-            TbxInput.FontSize = Config.GetDouble("跟打区字体大小");
-            TbxResults.FontSize = Config.GetDouble("成绩区字体大小");
+            TbxInput.FontSize = 40; // 默认跟打区字体大小
+            TbxResults.FontSize = 15; // 默认成绩区字体大小
 
             if (winTrainer != null)
             {
@@ -1901,8 +1937,8 @@ namespace TypeSunny
             TbxInput.FontFamily = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体")); ;
 
             // 设置字提控件字体
-            TbkZiTi.FontFamily = GetCurrentFontFamily();
-            TbkZiTi.FontSize = Config.GetDouble("发文区字体大小") * 0.5;
+            TbkZiTi.FontFamily = GetZiTiFontFamily();
+            TbkZiTi.FontSize = Config.GetDouble("字提字体大小");
             TbkZiTi.Foreground = Colors.FromString(Config.GetString("发文区字体色"));
 
             ReadBlindType();
@@ -2129,9 +2165,8 @@ namespace TypeSunny
                     // 在发文区
                     e.Handled = true;
                     double delta = e.Delta > 0 ? 2 : -2;
-                    double currentSize = Config.GetDouble("发文区字体大小");
+                    double currentSize = 40.0;
                     double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
-                    Config.Set("发文区字体大小", newSize, 0);
 
                     // 如果使用简化渲染模式（文来），需要强制重新渲染
                     if (StateManager.txtSource == TxtSource.articlesender)
@@ -2166,7 +2201,6 @@ namespace TypeSunny
                     double currentSize = TbxInput.FontSize;
                     double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
                     TbxInput.FontSize = newSize;
-                    Config.Set("跟打区字体大小", newSize, 0);
                     System.Diagnostics.Debug.WriteLine($"跟打区字体大小调整: {currentSize} -> {newSize}");
                     return;
                 }
@@ -2189,7 +2223,6 @@ namespace TypeSunny
                         double currentSize = TbxResults.FontSize;
                         double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
                         TbxResults.FontSize = newSize;
-                        Config.Set("成绩区字体大小", newSize, 0);
                         System.Diagnostics.Debug.WriteLine($"成绩区字体大小调整: {currentSize} -> {newSize}");
                         return;
                     }
@@ -2217,7 +2250,6 @@ namespace TypeSunny
             double delta = e.Delta > 0 ? 2 : -2; // 向上滚增大，向下滚减小
 
             // 根据sender判断是哪个控件
-            string configKey = "";
             System.Windows.Controls.Control targetControl = null;
 
             // 如果sender是grid_c，需要根据鼠标位置判断是发文区还是输入区
@@ -2235,19 +2267,14 @@ namespace TypeSunny
 
                 if (displayRect.Contains(mousePos))
                 {
-                    // 在发文区
-                    configKey = "发文区字体大小";
-                    double currentSize = Config.GetDouble(configKey);
-                    double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
-                    Config.Set(configKey, newSize, 0);
+                    // 在发文区 - 更新显示但不保存配置
                     UpdateDisplay(UpdateLevel.PageArrange);
-                    System.Diagnostics.Debug.WriteLine($"发文区字体大小调整: {currentSize} -> {newSize}");
+                    System.Diagnostics.Debug.WriteLine($"发文区字体大小调整");
                     return;
                 }
                 else if (inputRect.Contains(mousePos))
                 {
                     // 在输入区
-                    configKey = "跟打区字体大小";
                     targetControl = TbxInput;
                 }
                 else
@@ -2258,26 +2285,18 @@ namespace TypeSunny
             }
             else if (sender == TbxInput)
             {
-                configKey = "跟打区字体大小";
                 targetControl = TbxInput;
                 System.Diagnostics.Debug.WriteLine("TbxInput Ctrl+滚轮触发");
             }
             else if (sender == TbDispay || sender == ScDisplay || sender == BdDisplay)
             {
-                configKey = "发文区字体大小";
-                // TbDispay是WrapPanel,需要特殊处理
-                double currentSize = Config.GetDouble(configKey);
-                double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
-                Config.Set(configKey, newSize, 0);
-
                 // 更新所有发文区的TextBlock字体
                 UpdateDisplay(UpdateLevel.PageArrange);
-                System.Diagnostics.Debug.WriteLine($"发文区字体大小调整: {currentSize} -> {newSize}");
+                System.Diagnostics.Debug.WriteLine($"发文区字体大小调整");
                 return;
             }
             else if (sender == TbxResults)
             {
-                configKey = "成绩区字体大小";
                 targetControl = TbxResults;
                 System.Diagnostics.Debug.WriteLine("TbxResults Ctrl+滚轮触发");
             }
@@ -2295,10 +2314,7 @@ namespace TypeSunny
                 // 更新字体大小
                 targetControl.FontSize = newSize;
 
-                // 保存到配置文件
-                Config.Set(configKey, newSize, 0);
-
-                System.Diagnostics.Debug.WriteLine($"{configKey}调整: {currentSize} -> {newSize}");
+                System.Diagnostics.Debug.WriteLine($"字体大小调整: {currentSize} -> {newSize}");
             }
         }
 
@@ -4312,7 +4328,7 @@ namespace TypeSunny
                             // 创建一个临时TextBlock来触发字体加载
                             var tempTb = new TextBlock();
                             tempTb.FontFamily = fm;
-                            tempTb.FontSize = Config.GetDouble("发文区字体大小");
+                            tempTb.FontSize = 40.0;
                             tempTb.Text = "预加载";
                             // 不需要添加到界面，只是触发字体加载
                         }
