@@ -319,7 +319,7 @@ namespace TypeSunny
                 //     return;
 
                 //  if (newPageNum != TextInfo.PageNum)
-                if (TextInfo.PageNum == -1 || nextToType > Paginator.Pages[TextInfo.PageNum].BodyEnd || nextToType < Paginator.Pages[TextInfo.PageNum].BodyStart)
+                if (TextInfo.PageNum == -1 || nextToType >= Paginator.Pages[TextInfo.PageNum].BodyEnd || nextToType < Paginator.Pages[TextInfo.PageNum].BodyStart)
                 {
 
                     //清空显示
@@ -730,7 +730,7 @@ namespace TypeSunny
                 ScDisplay.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
                 TextInfo.Blocks.Clear(); // 修复BUG：确保Blocks和显示区域同步清空
                 TextBlock tb = new TextBlock();
-                tb.FontSize = 40.0;
+                tb.FontSize = Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
                 tb.FontFamily = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体"));
                 tb.Background = BdDisplay.Background;
                 tb.TextWrapping = TextWrapping.Wrap;
@@ -908,7 +908,7 @@ namespace TypeSunny
 
                 // 获取字体设置
                 var fm = GetCurrentFontFamily();
-                double fs = 40.0;
+                double fs = Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
                 double height = fs * (1.0 + Config.GetDouble("行距"));
                 double MinWidth = 40.0 * 0.9;
 
@@ -1103,7 +1103,7 @@ namespace TypeSunny
 
                 // 获取字体设置
                 var fm = GetCurrentFontFamily();
-                double fs = 40.0;
+                double fs = Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
 
                 // 创建单个 TextBlock 显示所有文本
                 TextBlock tb = new TextBlock();
@@ -1904,6 +1904,16 @@ namespace TypeSunny
         }
         private void ReloadCfg()
         {
+            // 重新加载字提数据（方案可能已更改）
+            string scheme = Config.GetString("字提方案");
+            if (!string.IsNullOrEmpty(scheme))
+            {
+                ZiTiHelper.Reload(scheme);
+            }
+            else
+            {
+                ZiTiHelper.Reload();
+            }
 
             StateManager.ConfigLoaded = false;
 
@@ -2169,8 +2179,11 @@ namespace TypeSunny
                     // 在发文区
                     e.Handled = true;
                     double delta = e.Delta > 0 ? 2 : -2;
-                    double currentSize = 40.0;
+                    double currentSize = Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
                     double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
+
+                    // 保存新的字体大小到配置
+                    Config.Set("字体大小", newSize, 1);
 
                     // 如果使用简化渲染模式（文来），需要强制重新渲染
                     if (StateManager.txtSource == TxtSource.articlesender)
@@ -2271,9 +2284,12 @@ namespace TypeSunny
 
                 if (displayRect.Contains(mousePos))
                 {
-                    // 在发文区 - 更新显示但不保存配置
+                    // 在发文区 - 更新字体大小配置并刷新显示
+                    double currentSize = Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
+                    double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
+                    Config.Set("字体大小", newSize, 1);
                     UpdateDisplay(UpdateLevel.PageArrange);
-                    System.Diagnostics.Debug.WriteLine($"发文区字体大小调整");
+                    System.Diagnostics.Debug.WriteLine($"发文区字体大小调整: {currentSize} -> {newSize}");
                     return;
                 }
                 else if (inputRect.Contains(mousePos))
@@ -2295,8 +2311,11 @@ namespace TypeSunny
             else if (sender == TbDispay || sender == ScDisplay || sender == BdDisplay)
             {
                 // 更新所有发文区的TextBlock字体
+                double currentSize = Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
+                double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
+                Config.Set("字体大小", newSize, 1);
                 UpdateDisplay(UpdateLevel.PageArrange);
-                System.Diagnostics.Debug.WriteLine($"发文区字体大小调整");
+                System.Diagnostics.Debug.WriteLine($"发文区字体大小调整: {currentSize} -> {newSize}");
                 return;
             }
             else if (sender == TbxResults)
@@ -4246,8 +4265,16 @@ namespace TypeSunny
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            // 初始化字提功能
-            ZiTiHelper.Initialize();
+            // 初始化字提功能（使用配置中的方案）
+            string scheme = Config.GetString("字提方案");
+            if (!string.IsNullOrEmpty(scheme))
+            {
+                ZiTiHelper.Initialize(scheme);
+            }
+            else
+            {
+                ZiTiHelper.Initialize();
+            }
 
             InitDisplay();
 

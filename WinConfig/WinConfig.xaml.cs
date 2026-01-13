@@ -89,6 +89,7 @@ namespace TypeSunny
                         "贪吃蛇前显字数",
                         "贪吃蛇后显字数",
                         "启用字提",
+                        "字提方案",
                         "字提字体",
                         "字提字体大小",
                         "显示进度条",
@@ -301,6 +302,45 @@ namespace TypeSunny
                                 break;
                             }
                         }
+                        valueControl = cb;
+                    }
+                    else if (itemKey == "字提方案")
+                    {
+                        var cb = new ComboBox
+                        {
+                            Width = 200,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            Margin = new Thickness(10, 3, 10, 3),
+                            Tag = "ZiTiScheme"
+                        };
+
+                        // 获取可用的字提方案
+                        var schemes = ZiTiHelper.GetAvailableSchemes();
+
+                        if (schemes.Count > 0)
+                        {
+                            foreach (var scheme in schemes)
+                            {
+                                cb.Items.Add(scheme);
+                            }
+
+                            // 设置当前选中项
+                            if (!string.IsNullOrEmpty(itemValue) && schemes.Contains(itemValue))
+                            {
+                                cb.SelectedIndex = schemes.IndexOf(itemValue);
+                            }
+                            else if (cb.Items.Count > 0)
+                            {
+                                cb.SelectedIndex = 0;
+                            }
+                        }
+                        else
+                        {
+                            cb.Items.Add("无可用方案");
+                            cb.IsEnabled = false;
+                            cb.SelectedIndex = 0;
+                        }
+
                         valueControl = cb;
                     }
                     else if (itemKey == "字提字体")
@@ -733,6 +773,14 @@ namespace TypeSunny
                         else
                             value.Add("TumanPUA");
                     }
+                    else if (labelText == "字提方案")
+                    {
+                        key.Add(labelText);
+                        if (cb.SelectedIndex >= 0 && cb.SelectedIndex < cb.Items.Count)
+                            value.Add(cb.Items[cb.SelectedIndex].ToString());
+                        else
+                            value.Add("");
+                    }
                     else if (labelText == "盲打模式")
                     {
                         key.Add(labelText);
@@ -870,6 +918,14 @@ namespace TypeSunny
                             value.Add(cb.Items[cb.SelectedIndex].ToString());
                         else
                             value.Add("TumanPUA");
+                    }
+                    else if (labelText == "字提方案")
+                    {
+                        key.Add(labelText);
+                        if (cb.SelectedIndex >= 0 && cb.SelectedIndex < cb.Items.Count)
+                            value.Add(cb.Items[cb.SelectedIndex].ToString());
+                        else
+                            value.Add("");
                     }
                     else if (labelText == "盲打模式")
                     {
