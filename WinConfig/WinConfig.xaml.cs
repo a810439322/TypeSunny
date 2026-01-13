@@ -48,7 +48,7 @@ namespace TypeSunny
             return stats;
         }
 
-        private void Window_Loaded(object sender, RoutedEventArgs e)
+        private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
             // 定义配置项分类 - 每个分类指定标签列和值列
             var categories = new[]
@@ -383,70 +383,15 @@ namespace TypeSunny
                             Margin = new Thickness(10, 3, 10, 3)
                         };
 
-                        // 检查是否未登录（所有难度的文章数都为0）
-                        int totalCount = difficultyStats.Values.Sum();
-                        if (totalCount == 0)
-                        {
-                            // 未登录，显示提示信息
-                            cb.Items.Add("文来登录后可选");
-                            cb.SelectedIndex = 0;
-                            cb.IsEnabled = false; // 禁用下拉框
-                        }
-                        else
-                        {
-                            // 已登录，动态生成难度选项
-                            // 先添加"随机"选项
-                            cb.Items.Add($"随机 ({totalCount}段)");
-
-                            // Tag用于存储难度ID映射 (ComboBox索引 -> 难度ID)
-                            var difficultyMapping = new Dictionary<int, int>();
-                            difficultyMapping[0] = 0; // 索引0对应随机（ID为0）
-
-                            // 按难度ID排序并添加
-                            var sortedDifficulties = difficultyStats.OrderBy(kv => kv.Key);
-                            int comboBoxIndex = 1;
-                            foreach (var kvp in sortedDifficulties)
-                            {
-                                int difficultyId = kvp.Key;
-                                int count = kvp.Value;
-
-                                // 跳过文章数为0的难度
-                                if (count == 0)
-                                    continue;
-
-                                // 从 ArticleFetcher 获取难度名称
-                                var difficulties = ArticleFetcher.GetDifficulties();
-                                var diffInfo = difficulties.FirstOrDefault(d => d.Id == difficultyId);
-                                string difficultyName = diffInfo?.Name ?? difficultyId.ToString();
-
-                                cb.Items.Add($"{difficultyName} ({count}段)");
-                                difficultyMapping[comboBoxIndex] = difficultyId;
-                                comboBoxIndex++;
-                            }
-
-                            // 保存映射到Tag，用于保存配置时反查
-                            cb.Tag = difficultyMapping;
-
-                            // 设置当前选中项
-                            int currentDifficultyId = 0;
-                            if (!string.IsNullOrEmpty(itemValue))
-                            {
-                                int.TryParse(itemValue, out currentDifficultyId);
-                            }
-
-                            // 根据难度ID找到对应的ComboBox索引
-                            cb.SelectedIndex = 0; // 默认选中随机
-                            if (currentDifficultyId > 0)
-                            {
-                                var matchingIndex = difficultyMapping.FirstOrDefault(kv => kv.Value == currentDifficultyId).Key;
-                                if (matchingIndex > 0)
-                                {
-                                    cb.SelectedIndex = matchingIndex;
-                                }
-                            }
-                        }
+                        // 先显示加载中状态
+                        cb.Items.Add("加载中...");
+                        cb.SelectedIndex = 0;
+                        cb.IsEnabled = false;
 
                         valueControl = cb;
+
+                        // 异步加载难度数据
+                        _ = LoadDifficultyDataAsync(cb, itemValue);
                     }
                     else
                     {
@@ -480,6 +425,106 @@ namespace TypeSunny
 
                     rowCounters[category.LabelColumn]++;
                 }
+            }
+        }
+
+        /// <summary>
+        /// 异步加载难度数据
+        /// </summary>
+        private async Task LoadDifficultyDataAsync(ComboBox cb, string currentValue)
+        {
+            try
+            {
+                // 使用真正的异步方法获取难度数据
+                var difficulties = await ArticleFetcher.GetDifficultiesAsync();
+
+                // 构建难度统计字典
+                var difficultyStats = new Dictionary<int, int>();
+                foreach (var difficulty in difficulties)
+                {
+                    difficultyStats[difficulty.Id] = difficulty.Count;
+                }
+
+                // 回到UI线程更新界面
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    cb.Items.Clear();
+
+                    // 检查是否未登录（所有难度的文章数都为0）
+                    int totalCount = difficultyStats.Values.Sum();
+                    if (totalCount == 0)
+                    {
+                        // 未登录，显示提示信息
+                        cb.Items.Add("文来登录后可选");
+                        cb.SelectedIndex = 0;
+                        cb.IsEnabled = false; // 禁用下拉框
+                    }
+                    else
+                    {
+                        // 已登录，动态生成难度选项
+                        // 先添加"随机"选项
+                        cb.Items.Add($"随机 ({totalCount}段)");
+
+                        // Tag用于存储难度ID映射 (ComboBox索引 -> 难度ID)
+                        var difficultyMapping = new Dictionary<int, int>();
+                        difficultyMapping[0] = 0; // 索引0对应随机（ID为0）
+
+                        // 按难度ID排序并添加
+                        var sortedDifficulties = difficultyStats.OrderBy(kv => kv.Key);
+                        int comboBoxIndex = 1;
+                        foreach (var kvp in sortedDifficulties)
+                        {
+                            int difficultyId = kvp.Key;
+                            int count = kvp.Value;
+
+                            // 跳过文章数为0的难度
+                            if (count == 0)
+                                continue;
+
+                            // 从难度列表获取难度名称
+                            var diffInfo = difficulties.FirstOrDefault(d => d.Id == difficultyId);
+                            string difficultyName = diffInfo?.Name ?? difficultyId.ToString();
+
+                            cb.Items.Add($"{difficultyName} ({count}段)");
+                            difficultyMapping[comboBoxIndex] = difficultyId;
+                            comboBoxIndex++;
+                        }
+
+                        // 保存映射到Tag，用于保存配置时反查
+                        cb.Tag = difficultyMapping;
+
+                        // 设置当前选中项
+                        int currentDifficultyId = 0;
+                        if (!string.IsNullOrEmpty(currentValue))
+                        {
+                            int.TryParse(currentValue, out currentDifficultyId);
+                        }
+
+                        // 根据难度ID找到对应的ComboBox索引
+                        cb.SelectedIndex = 0; // 默认选中随机
+                        if (currentDifficultyId > 0)
+                        {
+                            var matchingIndex = difficultyMapping.FirstOrDefault(kv => kv.Value == currentDifficultyId).Key;
+                            if (matchingIndex > 0)
+                            {
+                                cb.SelectedIndex = matchingIndex;
+                            }
+                        }
+
+                        cb.IsEnabled = true; // 启用下拉框
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                // 加载失败，显示错误信息
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    cb.Items.Clear();
+                    cb.Items.Add("加载失败");
+                    cb.SelectedIndex = 0;
+                    cb.IsEnabled = false;
+                });
             }
         }
 
@@ -670,7 +715,7 @@ namespace TypeSunny
                         if (cb.SelectedIndex >= 0 && cb.SelectedIndex < cb.Items.Count)
                             value.Add(cb.Items[cb.SelectedIndex].ToString());
                         else
-                            value.Add("霞鹜文楷 GB 屏幕阅读版");
+                            value.Add("TumanPUA");
                     }
                     else if (labelText == "盲打模式")
                     {
@@ -808,7 +853,7 @@ namespace TypeSunny
                         if (cb.SelectedIndex >= 0 && cb.SelectedIndex < cb.Items.Count)
                             value.Add(cb.Items[cb.SelectedIndex].ToString());
                         else
-                            value.Add("霞鹜文楷 GB 屏幕阅读版");
+                            value.Add("TumanPUA");
                     }
                     else if (labelText == "盲打模式")
                     {
