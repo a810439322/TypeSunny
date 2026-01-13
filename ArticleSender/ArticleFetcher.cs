@@ -144,26 +144,19 @@ namespace TypeSunny.ArticleSender
         }
 
         /// <summary>
-        /// 获取难度列表
+        /// 获取难度列表（只返回缓存，不会触发网络请求）
         /// </summary>
         /// <returns>难度列表</returns>
         public static List<DifficultyInfo> GetDifficulties()
         {
-            // 如果有缓存，直接返回
+            // 只返回缓存，避免同步阻塞
             if (cachedDifficulties != null)
             {
                 return cachedDifficulties;
             }
 
-            try
-            {
-                // 使用异步方法的同步版本
-                return GetDifficultiesAsync().GetAwaiter().GetResult();
-            }
-            catch (Exception)
-            {
-                return GetDefaultDifficulties();
-            }
+            // 返回默认值
+            return GetDefaultDifficulties();
         }
 
         /// <summary>

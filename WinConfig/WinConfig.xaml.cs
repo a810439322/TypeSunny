@@ -375,7 +375,6 @@ namespace TypeSunny
                     }
                     else if (itemKey == "文来难度")
                     {
-                        var difficultyStats = GetDifficultyStats();
                         var cb = new ComboBox
                         {
                             Width = 200,

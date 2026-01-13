@@ -3803,7 +3803,6 @@ namespace TypeSunny
         }
         public void LoadText(string rawTxt, RetypeType retypeType, TxtSource source, bool switchBack = true, bool isAuto = false) //原文、来源、重打类型
         {
-
             if (Config.GetBool("禁止F3重打") && (retypeType == RetypeType.shuffle || retypeType == RetypeType.retype))
                 return;
 
@@ -3895,7 +3894,6 @@ namespace TypeSunny
 
             TextInfo.Words.ForEach(o => TextInfo.wordStates.Add(WordStates.NO_TYPE));
 
-
             StateManager.TextInput = false;
 
             // 文来模式：强制清空Blocks，确保重新渲染（修复显示不更新的bug）
@@ -3946,7 +3944,7 @@ namespace TypeSunny
                 if (!(IsLookingType && StateManager.LastType))
                     TbxInput.IsReadOnly = false;
                 TbxInput.Clear();
-       //         TbxInput.Focus();
+
                 UpdateDisplay(UpdateLevel.PageArrange);
 
                 // 重置滚动位置到顶部（避免乱序/重打时停留在中间位置）
@@ -4334,6 +4332,31 @@ namespace TypeSunny
                         }
                         System.Diagnostics.Debug.WriteLine("[预加载]字体预加载完成");
                     }, System.Windows.Threading.DispatcherPriority.Background);
+
+                    // 预加载文来难度数据（避免首次载文时等待）
+                    System.Diagnostics.Debug.WriteLine("[预加载]开始预加载文来难度数据");
+                    try
+                    {
+                        var difficulties = Task.Run(async () => await ArticleFetcher.GetDifficultiesAsync()).GetAwaiter().GetResult();
+                        System.Diagnostics.Debug.WriteLine($"[预加载]文来难度数据预加载完成，共{difficulties.Count}个难度");
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[预加载]文来难度数据预加载失败: {ex.Message}");
+                    }
+
+                    // 预加载Filter数据（避免首次载文时Filter.ProcFilter慢）
+                    System.Diagnostics.Debug.WriteLine("[预加载]开始预加载Filter数据");
+                    try
+                    {
+                        // 调用一次ProcFilter来触发Read()加载过滤规则
+                        Filter.ProcFilter("测试");
+                        System.Diagnostics.Debug.WriteLine("[预加载]Filter数据预加载完成");
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[预加载]Filter数据预加载失败: {ex.Message}");
+                    }
 
                     System.Diagnostics.Debug.WriteLine("[预加载]所有预加载任务完成");
                 }
@@ -6171,6 +6194,7 @@ namespace TypeSunny
 
             try
             {
+
                 // ✅ 关键修复：在载文前加载登录Cookie
                 string wenlaiServerUrl = Config.GetString("文来接口地址");
                 var wenlaiAccountManager = new TypeSunny.Net.AccountSystemManager();
