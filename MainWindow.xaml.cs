@@ -287,7 +287,8 @@ namespace TypeSunny
                 if (typedWords > totalWords) typedWords = totalWords;
 
                 double percentage = totalWords > 0 ? (double)typedWords / totalWords : 0;
-                TitleProgressBar.Width = this.ActualWidth * percentage;
+                if (Config.GetBool("显示进度条"))
+                    TitleProgressBar.Width = this.ActualWidth * percentage;
 
                 // 更新窗口标题显示字数进度（所有模式）
                 UpdateWindowTitle(typedWords, totalWords);
@@ -2085,11 +2086,14 @@ namespace TypeSunny
                 // 应用赛文子菜单颜色
                 ApplyRaceMenuColors(menuBg, menuFg);
 
-                // 更新标题进度条颜色
-                string progressColor = Config.GetString("标题栏进度条颜色");
-                if (!string.IsNullOrEmpty(progressColor))
+                // 更新标题进度条颜色（仅在启用进度条时）
+                if (Config.GetBool("显示进度条"))
                 {
-                    TitleProgressBar.Fill = Colors.FromString(progressColor);
+                    string progressColor = Config.GetString("标题栏进度条颜色");
+                    if (!string.IsNullOrEmpty(progressColor))
+                    {
+                        TitleProgressBar.Fill = Colors.FromString(progressColor);
+                    }
                 }
 
                 System.Diagnostics.Debug.WriteLine("ApplyButtonMenuColors completed successfully");
@@ -3184,7 +3188,8 @@ namespace TypeSunny
                 LoadText(segment, RetypeType.first, TxtSource.articlesender);
 
                 // 重置进度条（LoadText后已显示标题）
-                TitleProgressBar.Width = 0;
+                if (Config.GetBool("显示进度条"))
+                    TitleProgressBar.Width = 0;
 
                 // 发送成绩和下一段内容
                 if (QQGroupName != "")
@@ -4384,6 +4389,10 @@ namespace TypeSunny
 
         private void LoadTitleProgressBarColor()
         {
+            // 如果未启用进度条，不设置颜色
+            if (!Config.GetBool("显示进度条"))
+                return;
+
             try
             {
                 string colorStr = Config.GetString("标题栏进度条颜色");
@@ -6364,7 +6373,8 @@ namespace TypeSunny
                 LoadText(segment, RetypeType.first, TxtSource.articlesender);
 
                 // 重置进度条（LoadText后已显示标题）
-                TitleProgressBar.Width = 0;
+                if (Config.GetBool("显示进度条"))
+                    TitleProgressBar.Width = 0;
 
                 // 如果是自动发送（打完最后一段后自动加载新文章），需要发送格式化内容
                 if (autoSend)
@@ -6448,7 +6458,8 @@ namespace TypeSunny
                 LoadText(segment, RetypeType.first, TxtSource.articlesender);
 
                 // 重置进度条（LoadText后已显示标题）
-                TitleProgressBar.Width = 0;
+                if (Config.GetBool("显示进度条"))
+                    TitleProgressBar.Width = 0;
             }
         }
 
@@ -6466,7 +6477,8 @@ namespace TypeSunny
             LoadText(segment, RetypeType.first, TxtSource.articlesender);
 
             // 重置进度条（LoadText后已显示标题）
-            TitleProgressBar.Width = 0;
+            if (Config.GetBool("显示进度条"))
+                TitleProgressBar.Width = 0;
         }
 
 

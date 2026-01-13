@@ -78,6 +78,7 @@ namespace TypeSunny
                     Items = new[]
                     {
                         "盲打模式",
+                        "速度跟随提示",
                         "错字重打",
                         "禁止F3重打",
                         "错字重复次数",
@@ -181,6 +182,22 @@ namespace TypeSunny
                             VerticalAlignment = VerticalAlignment.Center,
                             Margin = new Thickness(10, 3, 10, 3)
                         };
+
+                        // 为"显示进度条"添加实时刷新事件
+                        if (itemKey == "显示进度条")
+                        {
+                            chk.Checked += (obj, evt) =>
+                            {
+                                Config.Set("显示进度条", "是");
+                                UpdateMainWindowProgressBar();
+                            };
+                            chk.Unchecked += (obj, evt) =>
+                            {
+                                Config.Set("显示进度条", "否");
+                                UpdateMainWindowProgressBar();
+                            };
+                        }
+
                         valueControl = chk;
                     }
                     else if (itemKey == "主题模式")
@@ -952,6 +969,42 @@ namespace TypeSunny
                 }
             }
             return string.Empty;
+        }
+
+        /// <summary>
+        /// 实时更新MainWindow的进度条显示状态
+        /// </summary>
+        private void UpdateMainWindowProgressBar()
+        {
+            try
+            {
+                // 查找MainWindow
+                foreach (Window window in Application.Current.Windows)
+                {
+                    if (window is MainWindow mainWindow)
+                    {
+                        // 使用Dispatcher在UI线程上更新
+                        mainWindow.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            bool showProgressBar = Config.GetBool("显示进度条");
+                            if (!showProgressBar)
+                            {
+                                // 隐藏进度条
+                                var progressBar = mainWindow.FindName("TitleProgressBar") as System.Windows.Shapes.Rectangle;
+                                if (progressBar != null)
+                                {
+                                    progressBar.Width = 0;
+                                }
+                            }
+                        }), System.Windows.Threading.DispatcherPriority.Normal);
+                        break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"更新进度条显示失败: {ex.Message}");
+            }
         }
     }
 }
