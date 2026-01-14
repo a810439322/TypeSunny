@@ -495,6 +495,9 @@ namespace TypeSunny.ArticleSender
                 // 获取段落标记（mark字段，格式如 "1-34112"）
                 string mark = msgObj["mark"]?.ToString() ?? "";
 
+                // 获取难度（difficulty字段，格式如 "一般(2.05)"）
+                string difficultyText = msgObj["difficulty"]?.ToString() ?? "";
+
                 // 应用字符过滤规则（全角转半角、字符映射、白名单过滤）
                 content = Filter.ProcFilter(content);
 
@@ -512,7 +515,8 @@ namespace TypeSunny.ArticleSender
                     Title = title,
                     Content = content,
                     FullContent = fullContent,
-                    Mark = mark
+                    Mark = mark,
+                    Difficulty = difficultyText
                 };
             }
             catch (TaskCanceledException)
@@ -573,5 +577,6 @@ namespace TypeSunny.ArticleSender
         public string Content { get; set; }
         public string FullContent { get; set; }
         public string Mark { get; set; }  // 段落标记，格式如 "1-34112" 表示第1段/共34112段
+        public string Difficulty { get; set; }  // 难度，格式如 "一般(2.05)"
     }
 }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -265,7 +265,7 @@ namespace TypeSunny
                     return;
                 }
 
-                double y = (this.ActualHeight - 95.74 - 0.5 - 15) * 0.75 - (expd.IsExpanded ? 145 : 0);
+                double y = (this.ActualHeight - 95.74 - 0.5 - 15) * 0.75 - (expander.Height.Value > 0 ? expander.Height.Value : 0);
                 double x = (this.ActualWidth - 52);
                 Paginator.ArrangePage(x, y, 40.0, TextInfo.Words.Count);
 
@@ -1553,44 +1553,22 @@ namespace TypeSunny
 
 
 
-        const double CollapseHeight = 141;
         private void expanded(object sender, RoutedEventArgs e)
         {
             if (StateManager.ConfigLoaded)
             {
-                content.Height = new GridLength(content.ActualHeight);
-                Application.Current.MainWindow.Height += CollapseHeight;
-
+                LoadResultsPanelHeight();
                 Config.Set("成绩面板展开", true);
-                Config.Set("窗口宽度", this.Width, 0);
-                Config.Set("窗口高度", this.Height, 0);
-
-
-
-                content.Height = new GridLength(1.0, GridUnitType.Star);
             }
-
-
-
         }
 
         private void expd_Collapsed(object sender, RoutedEventArgs e)
         {
-
             if (StateManager.ConfigLoaded)
             {
-                content.Height = new GridLength(content.ActualHeight);
-                Application.Current.MainWindow.Height -= CollapseHeight;
+                expander.Height = new GridLength(0);
                 Config.Set("成绩面板展开", false);
-                Config.Set("窗口宽度", this.Width, 0);
-                Config.Set("窗口高度", this.Height, 0);
-
-
-
-                content.Height = new GridLength(1.0, GridUnitType.Star);
             }
-
-
         }
 
 
@@ -1796,6 +1774,9 @@ namespace TypeSunny
             TbxInput.FontSize = 40.0;
             TbxResults.FontSize = 15.0;
 
+            // 应用发文框和跟打框的比例
+            ApplyDisplayInputRatio();
+
             if (winTrainer != null)
             {
                 WinTrainer.Current.DisplayGrid.Background = BdDisplay.Background;
@@ -1809,7 +1790,16 @@ namespace TypeSunny
 
             this.Height = Config.GetDouble("窗口高度");
             this.Width = Config.GetDouble("窗口宽度");
-            expd.IsExpanded = Config.GetBool("成绩面板展开");
+
+            // 加载成绩面板高度（兼容旧的"成绩面板展开"配置）
+            if (Config.GetBool("成绩面板展开"))
+            {
+                LoadResultsPanelHeight();
+            }
+            else
+            {
+                expander.Height = new GridLength(0);
+            }
 
 
 
@@ -1943,7 +1933,16 @@ namespace TypeSunny
 
             this.Height = Config.GetDouble("窗口高度");
             this.Width = Config.GetDouble("窗口宽度");
-            expd.IsExpanded = Config.GetBool("成绩面板展开");
+
+            // 加载成绩面板高度（兼容旧的"成绩面板展开"配置）
+            if (Config.GetBool("成绩面板展开"))
+            {
+                LoadResultsPanelHeight();
+            }
+            else
+            {
+                expander.Height = new GridLength(0);
+            }
 
             TbxInput.FontFamily = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体")); ;
 
@@ -2753,17 +2752,12 @@ namespace TypeSunny
 
 
             }
-            else
+            else  // 其他模式（群载文等）
             {
-                if (StateManager.retypeType != RetypeType.wrongRetype)
+                // 群载文模式：只有开启"自动发送成绩"且不是重打模式时才发送成绩
+                if (StateManager.retypeType != RetypeType.wrongRetype && Config.GetBool("自动发送成绩"))
                 {
-
-                    QQHelper.SendQQMessage(QQGroupName, result, 250, this);
-
-                }
-                else
-                {
-                   
+                    QQHelper.SendQQMessage(QQGroupName, result, 0, this);
                 }
             }
 
@@ -3150,12 +3144,15 @@ namespace TypeSunny
         /// <summary>
         /// 格式化文来内容
         /// </summary>
-        private string FormatArticleSenderContent(string title, string content, string mark)
+        private string FormatArticleSenderContent(string title, string content, string mark, string difficulty = "")
         {
             StringBuilder sb = new StringBuilder();
 
+            // 如果没有传入难度，使用全局变量（兼容非文来模式）
+            string diffText = string.IsNullOrEmpty(difficulty) ? currentDifficultyText : difficulty;
+
             // [难度xx]标题xx [字数xx]
-            sb.AppendLine($"[{currentDifficultyText}]{title} [字数{content.Length}]");
+            sb.AppendLine($"[{diffText}]{title} [字数{content.Length}]");
 
             // 内容
             sb.AppendLine(content);
@@ -3201,16 +3198,10 @@ namespace TypeSunny
                 // 格式化发文内容
                 string title = articleCache.GetCurrentTitle();
                 string mark = articleCache.GetCurrentMark();  // 使用文来接口返回的mark
-                string formattedContent = FormatArticleSenderContent(title, segment, mark);
+                string difficultyText = articleCache.GetCurrentDifficulty();  // 使用文来接口返回的难度
+                string formattedContent = FormatArticleSenderContent(title, segment, mark, difficultyText);
 
-                // 加载下一段
-                LoadText(segment, RetypeType.first, TxtSource.articlesender);
-
-                // 重置进度条（LoadText后已显示标题）
-                if (Config.GetBool("显示进度条"))
-                    TitleProgressBar.Width = 0;
-
-                // 发送成绩和下一段内容
+                // 先发送QQ，再异步渲染（提升响应速度）
                 if (QQGroupName != "")
                 {
                     if (!string.IsNullOrEmpty(lastResult))
@@ -3219,18 +3210,18 @@ namespace TypeSunny
                         if (Config.GetBool("自动发送成绩"))
                         {
                             // 开启自动发送成绩：先发成绩，再发下一段
-                            QQHelper.SendQQMessageD(QQGroupName, lastResult, formattedContent, 150, this);
+                            QQHelper.SendQQMessageD(QQGroupName, lastResult, formattedContent, 0, this);
                         }
                         else
                         {
                             // 未开启自动发送成绩：只发下一段文章
-                            QQHelper.SendQQMessage(QQGroupName, formattedContent, 250, this);
+                            QQHelper.SendQQMessage(QQGroupName, formattedContent, 0, this);
                         }
                     }
                     else
                     {
                         // 无成绩：只发下一段
-                        QQHelper.SendQQMessage(QQGroupName, formattedContent, 250, this);
+                        QQHelper.SendQQMessage(QQGroupName, formattedContent, 0, this);
                     }
                 }
                 else
@@ -3245,6 +3236,18 @@ namespace TypeSunny
                     Win32SetText(messageToSend);
                     FocusInput();
                 }
+
+                // 异步渲染文本，不等待渲染完成（fire-and-forget）
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        LoadText(segment, RetypeType.first, TxtSource.articlesender);
+                        // 重置进度条
+                        if (Config.GetBool("显示进度条"))
+                            TitleProgressBar.Width = 0;
+                    });
+                });
             }
         }
 
@@ -3663,107 +3666,260 @@ namespace TypeSunny
         }
         private void GetQQText()
         {
-         //   Win32.DelayCount.Clear();
-            string groupName = QQGroupName;
-            if (groupName == "")
+            System.Text.StringBuilder logBuilder = new System.Text.StringBuilder();
+            logBuilder.AppendLine($"========== GetQQText 开始 ==========");
+            logBuilder.AppendLine($"时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
+
+            try
             {
-                DebugLog.AppendLine("无群");
-                return;
-            }
+                string groupName = QQGroupName;
+                logBuilder.AppendLine($"目标群名: [{groupName}]");
 
-            DebugLog.AppendLine("GetQQText");
-
-            string MainTitle = "QQ";
-            string allTxt = "";
-            var q = root.GetRootElement().FindFirst(TreeScope.TreeScope_Children, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, MainTitle));
-            if (q == null)
-                return;
-
-            if (null == q.FindFirst(TreeScope.TreeScope_Children, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId)))
-            {
-                var wp = q.GetCurrentPattern(UIA_PatternIds.UIA_WindowPatternId) as IUIAutomationWindowPattern;
-                wp.SetWindowVisualState(WindowVisualState.WindowVisualState_Normal);
-                q.SetFocus();
-
-                Win32.Delay(50);
-            }
-            var msglist = q.FindFirst(TreeScope.TreeScope_Descendants,  root.CreateOrCondition( root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "消息列表"), root.CreatePropertyCondition(UIA_PropertyIds.UIA_LocalizedControlTypePropertyId, "主要")));
-            var grouplist = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "会话列表"));
-
-            if (msglist == null || grouplist == null)
-            {
-                return;
-            }
-
-            var edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreateAndCondition(root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId), root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, groupName)));
-
-
-            //点击群名
-            if (edits == null)
-            {
-                var groups = grouplist.FindAll(TreeScope.TreeScope_Children, root.CreateOrCondition(root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_WindowControlTypeId), root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_GroupControlTypeId)));
-                if (groups.Length > 0)
+                if (groupName == "")
                 {
-                    for (int i = 0; i < groups.Length; i++)
+                    DebugLog.AppendLine("无群");
+                    return;
+                }
+
+                DebugLog.AppendLine("GetQQText");
+                logBuilder.AppendLine("步骤1: 查找QQ主窗口");
+
+                string MainTitle = "QQ";
+                var q = root.GetRootElement().FindFirst(TreeScope.TreeScope_Children, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, MainTitle));
+                if (q == null)
+                {
+                    return;
+                }
+                logBuilder.AppendLine($"成功: 找到QQ主窗口, ClassName=[{q.CurrentClassName}]");
+
+                // 激活窗口（如果需要）
+                if (null == q.FindFirst(TreeScope.TreeScope_Children, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId)))
+                {
+                    var wp = q.GetCurrentPattern(UIA_PatternIds.UIA_WindowPatternId) as IUIAutomationWindowPattern;
+                    wp.SetWindowVisualState(WindowVisualState.WindowVisualState_Normal);
+                    q.SetFocus();
+                    Win32.Delay(50);
+                    logBuilder.AppendLine("窗口已激活");
+                }
+
+                logBuilder.AppendLine("步骤2: 查找会话列表");
+                var grouplist = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "会话列表"));
+                if (grouplist == null)
+                {
+                    return;
+                }
+                logBuilder.AppendLine("成功: 找到会话列表");
+
+                logBuilder.AppendLine("步骤3: 检查是否已在目标群");
+                IUIAutomationElement edits = null;
+                bool alreadyInTargetGroup = false;
+
+                // 检查是否有按钮Name等于目标群名
+                var allButtons = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_ButtonControlTypeId));
+                logBuilder.AppendLine($"找到 {allButtons?.Length ?? 0} 个按钮");
+
+                if (allButtons != null && allButtons.Length > 0)
+                {
+                    for (int i = 0; i < allButtons.Length; i++)
                     {
-                        var group = groups.GetElement(i);
-                        string s = group.CurrentName;
-
-                        if ((s + "").IndexOf(groupName + " ") != 0)
-                            continue;
-
-
-                        var sp = group.GetCurrentPattern(UIA_PatternIds.UIA_InvokePatternId) as IUIAutomationInvokePattern;
-                        if (sp != null)
+                        var btn = allButtons.GetElement(i);
+                        string btnName = btn.CurrentName;
+                        if (!string.IsNullOrWhiteSpace(btnName) && btnName == groupName)
                         {
-                            sp.Invoke();
+                            logBuilder.AppendLine($"已检测到在目标群 (按钮Name=\"{btnName}\")");
+                            alreadyInTargetGroup = true;
 
-                            Win32.Delay(801);
-                            edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreateAndCondition(root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId), root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, groupName)));
-
+                            // 尝试查找输入框
+                            edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, groupName));
+                            if (edits == null)
+                            {
+                                edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId));
+                            }
                             break;
                         }
+                    }
+                }
 
+                // 如果不在目标群，去会话列表查找并点击群
+                if (edits == null && !alreadyInTargetGroup)
+                {
+                    logBuilder.AppendLine("步骤4: 不在目标群，去会话列表查找并点击群");
+
+                    // 使用更宽松的条件：查找所有子元素，而不是特定类型
+                    var allChildren = grouplist.FindAll(TreeScope.TreeScope_Children, root.CreateTrueCondition());
+                    logBuilder.AppendLine($"会话列表子元素数量: {allChildren.Length}");
+
+                    if (allChildren.Length > 0)
+                    {
+                        for (int i = 0; i < allChildren.Length; i++)
+                        {
+                            var elem = allChildren.GetElement(i);
+                            string itemName = elem.CurrentName;
+
+                            // 快速匹配
+                            bool quickMatch = false;
+                            if (!string.IsNullOrWhiteSpace(itemName))
+                            {
+                                string quickName = itemName.Trim('\'', '"', '\u201c', '\u201d', '\u2018', '\u2019', ' ', '\t', '\r', '\n');
+                                int timeIndex = quickName.IndexOf(' ');
+                                if (timeIndex > 0)
+                                {
+                                    quickName = quickName.Substring(0, timeIndex);
+                                }
+
+                                if (quickName == groupName || quickName.StartsWith(groupName))
+                                {
+                                    quickMatch = true;
+                                    logBuilder.AppendLine($"  群[{i}]: 快速匹配成功 Name=\"{itemName}\"");
+                                }
+                            }
+
+                            // 如果顶层元素Name为空，查找子元素
+                            string extractedName = "";
+                            if (!quickMatch && string.IsNullOrWhiteSpace(itemName))
+                            {
+                                var descendants = elem.FindAll(TreeScope.TreeScope_Descendants, root.CreateTrueCondition());
+                                if (descendants != null && descendants.Length > 0)
+                                {
+                                    System.Text.StringBuilder nameBuilder = new System.Text.StringBuilder();
+                                    for (int j = 0; j < descendants.Length; j++)
+                                    {
+                                        var desc = descendants.GetElement(j);
+                                        string descName = desc.CurrentName;
+                                        int descControlType = desc.CurrentControlType;
+
+                                        if (string.IsNullOrWhiteSpace(descName))
+                                            continue;
+
+                                        // 检查是否是时间标记
+                                        if (QQHelper.IsTimeMarker(descName))
+                                            break;
+
+                                        if (descControlType == UIA_ControlTypeIds.UIA_TextControlTypeId)
+                                        {
+                                            nameBuilder.Append(descName);
+                                        }
+                                    }
+                                    extractedName = nameBuilder.ToString().Trim('\'', '"', '\u201c', '\u201d', '\u2018', '\u2019', ' ', '\t', '\r', '\n');
+                                }
+                            }
+                            else if (!quickMatch)
+                            {
+                                extractedName = itemName.Trim('\'', '"', '\u201c', '\u201d', '\u2018', '\u2019', ' ', '\t', '\r', '\n');
+                                int timeIndex = -1;
+                                for (int j = 1; j < extractedName.Length - 3; j++)
+                                {
+                                    if (extractedName[j - 1] == ' ' && char.IsDigit(extractedName[j]) && extractedName[j + 1] == ':')
+                                    {
+                                        if (j + 2 < extractedName.Length && char.IsDigit(extractedName[j + 2]))
+                                        {
+                                            timeIndex = j;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (timeIndex > 0)
+                                {
+                                    extractedName = extractedName.Substring(0, timeIndex).Trim();
+                                }
+                            }
+
+                            string targetName = quickMatch ? itemName : extractedName;
+                            if (!string.IsNullOrWhiteSpace(targetName) && targetName == groupName)
+                            {
+                                logBuilder.AppendLine($"  找到目标群: [{groupName}]");
+                                var sp = elem.GetCurrentPattern(UIA_PatternIds.UIA_InvokePatternId) as IUIAutomationInvokePattern;
+                                if (sp != null)
+                                {
+                                    logBuilder.AppendLine("  执行点击");
+                                    sp.Invoke();
+                                    Win32.Delay(200);
+
+                                    // 查找输入框
+                                    edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, groupName));
+                                    if (edits == null)
+                                    {
+                                        edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId));
+                                    }
+                                    logBuilder.AppendLine($"  点击后编辑框: {(edits != null ? "找到" : "未找到")}");
+                                }
+                                break;
+                            }
                         }
                     }
                 }
 
-                /*
-                //遍历群
-                int counter = 0;
-                while (edits == null)
+                logBuilder.AppendLine("步骤5: 读取消息内容");
+                // 直接从QQ窗口读取所有Text控件
+                var allTexts = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_TextControlTypeId));
+                logBuilder.AppendLine($"找到 {allTexts?.Length ?? 0} 个Text控件");
+
+                string allTxt = "";
+                if (allTexts != null && allTexts.Length > 0)
                 {
-                    counter++;
-                    if (counter > 100)
-                        break;
-                    CtrlDown();
-                    edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreateAndCondition(root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId), root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, title)));
-
-                }
-                */
-
-            if (edits != null)
-            {
-                var msgs = msglist.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_TextControlTypeId));
-
-
-                if (msgs != null && msgs.Length > 0)
-                {
-                    for (int i = msgs.Length - 1; i >= 0; i--)
+                    // 从后往前查找，优先找包含-----第的消息（赛文格式）
+                    bool found = false;
+                    for (int i = allTexts.Length - 1; i >= 0; i--)
                     {
-                        allTxt += msgs.GetElement(i).CurrentName + "\n";
+                        string text = allTexts.GetElement(i).CurrentName;
+                        if (!string.IsNullOrWhiteSpace(text) && !QQHelper.IsTimeMarker(text) && text.Length > 5)
+                        {
+                            logBuilder.AppendLine($"  检查: {text.Substring(0, Math.Min(50, text.Length))}...");
+
+                            // 检查是否包含赛文格式标记
+                            if (text.Contains("-----第"))
+                            {
+                                logBuilder.AppendLine($"  -> 找到赛文格式消息！");
+                                allTxt = text;
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // 如果没找到赛文格式，取最近一条消息
+                    if (!found)
+                    {
+                        logBuilder.AppendLine("  未找到赛文格式，取最近一条消息");
+                        for (int i = allTexts.Length - 1; i >= 0; i--)
+                        {
+                            string text = allTexts.GetElement(i).CurrentName;
+                            if (!string.IsNullOrWhiteSpace(text) && !QQHelper.IsTimeMarker(text) && text.Length > 5)
+                            {
+                                allTxt = text;
+                                logBuilder.AppendLine($"  -> 取消息: {text.Substring(0, Math.Min(50, text.Length))}...");
+                                break;
+                            }
+                        }
                     }
                 }
 
-
- 
-
+                logBuilder.AppendLine($"步骤6: 最终文本长度={allTxt.Length}");
                 LoadText(allTxt, RetypeType.first, TxtSource.qq);
-            }
+                logBuilder.AppendLine("LoadText调用完成");
 
-
-            return;
+                logBuilder.AppendLine("========== GetQQText 结束 ==========");
             }
+            catch (Exception ex)
+            {
+            }
+        }
+
+        private void WriteQQDebugLog(string log)
+        {
+            try
+            {
+                string logDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
+                if (!System.IO.Directory.Exists(logDir))
+                    System.IO.Directory.CreateDirectory(logDir);
+
+                string logFile = System.IO.Path.Combine(logDir, $"QQ_Debug_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
+                System.IO.File.WriteAllText(logFile, log, Encoding.UTF8);
+            }
+            catch
+            {
+            }
+        }
 
         public class CacheLoadInfo
         {
@@ -3978,10 +4134,30 @@ namespace TypeSunny
                     ScDisplay.ScrollToVerticalOffset(0);
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
 
-                // 计算并显示难度
-                string currentText = String.Join("", TextInfo.Words);
-                double difficulty = difficultyDict.Calc(currentText);
-                currentDifficultyText = "难度:" + difficultyDict.DiffText(difficulty);
+                // 计算并显示难度（文来模式优先使用接口返回的难度）
+                if (source == TxtSource.articlesender && articleCache.HasArticle())
+                {
+                    string wenlaiDifficulty = articleCache.GetCurrentDifficulty();
+                    if (!string.IsNullOrEmpty(wenlaiDifficulty))
+                    {
+                        // 使用文来返回的难度
+                        currentDifficultyText = "难度:" + wenlaiDifficulty;
+                    }
+                    else
+                    {
+                        // 文来没有返回难度，本地计算
+                        string currentText = String.Join("", TextInfo.Words);
+                        double difficulty = difficultyDict.Calc(currentText);
+                        currentDifficultyText = "难度:" + difficultyDict.DiffText(difficulty);
+                    }
+                }
+                else
+                {
+                    // 其他模式，本地计算难度
+                    string currentText = String.Join("", TextInfo.Words);
+                    double difficulty = difficultyDict.Calc(currentText);
+                    currentDifficultyText = "难度:" + difficultyDict.DiffText(difficulty);
+                }
                 TbkDifficulty.Text = currentDifficultyText;
 
                 // 更新字提显示
@@ -4107,16 +4283,7 @@ namespace TypeSunny
         private void LoadTextFromClipBoard()
         {
             string cTxt = Clipboard.GetText();
-            string content = GetContentFromMatchText(cTxt);  // 解析格式化文本，提取正文
-            if (!string.IsNullOrEmpty(content))
-            {
-                LoadText(content, RetypeType.first, TxtSource.clipboard);
-            }
-            else
-            {
-                // 如果解析失败，使用原始内容
-                LoadText(cTxt, RetypeType.first, TxtSource.clipboard);
-            }
+            LoadText(cTxt, RetypeType.first, TxtSource.clipboard);
         }
 
         private string GetContentFromMatchText(string cTxt)
@@ -4840,6 +5007,7 @@ namespace TypeSunny
 
             Config.Set("窗口坐标X", this.Left, 0);
             Config.Set("窗口坐标Y", this.Top, 0);
+            SaveDisplayInputRatio();
             Config.WriteConfig(0);
 
             //         StopHook();
@@ -6397,53 +6565,70 @@ namespace TypeSunny
 
                 // 加载第一段
                 string segment = articleCache.GetCurrentSegment();
-                LoadText(segment, RetypeType.first, TxtSource.articlesender);
 
-                // 重置进度条（LoadText后已显示标题）
-                if (Config.GetBool("显示进度条"))
-                    TitleProgressBar.Width = 0;
-
-                // 如果是自动发送（打完最后一段后自动加载新文章），需要发送格式化内容
+                // 如果是自动发送模式，先渲染再发送
                 if (autoSend)
                 {
                     string title = articleCache.GetCurrentTitle();
                     string mark = articleCache.GetCurrentMark();  // 使用文来接口返回的mark
-                    string formattedContent = FormatArticleSenderContent(title, segment, mark);
+                    string difficultyText = articleCache.GetCurrentDifficulty();  // 使用文来接口返回的难度
+                    string formattedContent = FormatArticleSenderContent(title, segment, mark, difficultyText);
 
-                    if (QQGroupName != "")
+                // 先发送QQ，再异步渲染（提升响应速度）
+                if (QQGroupName != "")
+                {
+                    if (!string.IsNullOrEmpty(lastResult))
                     {
-                        if (!string.IsNullOrEmpty(lastResult))
+                        // 有成绩：根据"自动发送成绩"开关决定
+                        if (Config.GetBool("自动发送成绩"))
                         {
-                            // 有成绩：根据"自动发送成绩"开关决定
-                            if (Config.GetBool("自动发送成绩"))
-                            {
-                                // 开启自动发送成绩：先发成绩，再发新文章第一段
-                                QQHelper.SendQQMessageD(QQGroupName, lastResult, formattedContent, 150, this);
-                            }
-                            else
-                            {
-                                // 未开启自动发送成绩：只发新文章第一段
-                                QQHelper.SendQQMessage(QQGroupName, formattedContent, 250, this);
-                            }
+                            // 开启自动发送成绩：先发成绩，再发下一段
+                            QQHelper.SendQQMessageD(QQGroupName, lastResult, formattedContent, 0, this);
                         }
                         else
                         {
-                            // 无成绩：只发新文章第一段
-                            QQHelper.SendQQMessage(QQGroupName, formattedContent, 250, this);
+                            // 未开启自动发送成绩：只发下一段文章
+                            QQHelper.SendQQMessage(QQGroupName, formattedContent, 0, this);
                         }
                     }
                     else
                     {
-                        // 没有选群：复制到剪切板
-                        // 根据"自动发送成绩"开关决定是否复制成绩
-                        string messageToSend = formattedContent;
-                        if (!string.IsNullOrEmpty(lastResult) && Config.GetBool("自动发送成绩"))
-                        {
-                            messageToSend = lastResult + "\n" + formattedContent;
-                        }
-                        Win32SetText(messageToSend);
-                        FocusInput();
+                        // 无成绩：只发下一段
+                        QQHelper.SendQQMessage(QQGroupName, formattedContent, 0, this);
                     }
+                }
+                else
+                {
+                    // 没有选群：复制到剪切板
+                    // 根据"自动发送成绩"开关决定是否复制成绩
+                    string messageToSend = formattedContent;
+                    if (!string.IsNullOrEmpty(lastResult) && Config.GetBool("自动发送成绩"))
+                    {
+                        messageToSend = lastResult + "\n" + formattedContent;
+                    }
+                    Win32SetText(messageToSend);
+                    FocusInput();
+                }
+
+                // 异步渲染文本，不等待渲染完成（fire-and-forget）
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        LoadText(segment, RetypeType.first, TxtSource.articlesender);
+                        // 重置进度条
+                        if (Config.GetBool("显示进度条"))
+                            TitleProgressBar.Width = 0;
+                    });
+                });
+                }
+                else
+                {
+                    // 非自动发送模式，正常渲染
+                    LoadText(segment, RetypeType.first, TxtSource.articlesender);
+                    // 重置进度条
+                    if (Config.GetBool("显示进度条"))
+                        TitleProgressBar.Width = 0;
                 }
             }
             catch (Exception ex)
@@ -6820,6 +7005,87 @@ namespace TypeSunny
         // SldBindLookUpdate 已移除 - 打字模式控件已移到设置窗口
 
         // CbBlindType控件已移到设置窗口
+
+        private void ApplyDisplayInputRatio()
+        {
+            double ratio = Config.GetDouble("发文跟打框比例");
+            if (ratio <= 0 || ratio >= 100)
+                ratio = 75.0;
+
+            RowDisplay.Height = new GridLength(ratio, GridUnitType.Star);
+            RowInput.Height = new GridLength(100 - ratio, GridUnitType.Star);
+        }
+
+        private void SaveDisplayInputRatio()
+        {
+            double total = RowDisplay.Height.Value + RowInput.Height.Value;
+            if (total <= 0)
+                return;
+
+            double ratio = (RowDisplay.Height.Value / total) * 100;
+            ratio = Math.Max(10, Math.Min(90, ratio));
+            Config.Set("发文跟打框比例", ratio, 1);
+        }
+
+        private void GridSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+        {
+            SaveDisplayInputRatio();
+        }
+
+        private void SaveResultsPanelHeight()
+        {
+            if (expander.Height.Value > 0)
+            {
+                Config.Set("成绩面板高度", expander.Height.Value, 1);
+            }
+        }
+
+        private void LoadResultsPanelHeight()
+        {
+            double height = Config.GetDouble("成绩面板高度");
+            if (height > 0)
+            {
+                expander.Height = new GridLength(height, GridUnitType.Pixel);
+            }
+        }
+
+        // 成绩区域拖动相关变量
+        private bool _isDraggingResults = false;
+        private double _dragStartY = 0;
+        private double _dragStartHeight = 0;
+
+        private void ResultsDragHandle_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            _isDraggingResults = true;
+            _dragStartY = e.GetPosition(this).Y;
+            _dragStartHeight = expander.ActualHeight;
+            ResultsDragHandle.CaptureMouse();
+        }
+
+        private void ResultsDragHandle_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (_isDraggingResults && e.LeftButton == MouseButtonState.Pressed)
+            {
+                double currentY = e.GetPosition(this).Y;
+                double deltaY = currentY - _dragStartY;
+                double newHeight = _dragStartHeight - deltaY;
+
+                // 限制最小和最大高度
+                newHeight = Math.Max(30, Math.Min(newHeight, this.ActualHeight - 100));
+
+                expander.Height = new GridLength(newHeight, GridUnitType.Pixel);
+            }
+        }
+
+        private void ResultsDragHandle_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (_isDraggingResults)
+            {
+                _isDraggingResults = false;
+                ResultsDragHandle.ReleaseMouseCapture();
+                SaveResultsPanelHeight();
+            }
+        }
 
         private void SldBlind_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
         {

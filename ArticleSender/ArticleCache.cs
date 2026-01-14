@@ -15,6 +15,7 @@ namespace TypeSunny.ArticleSender
         private int currentSegmentIndex;
         private int segmentLength;
         private string articleMark;  // 保存文章的mark标记
+        private string articleDifficulty;  // 保存文章的难度
 
         /// <summary>
         /// 当前段落索引（从1开始）
@@ -37,6 +38,7 @@ namespace TypeSunny.ArticleSender
         {
             currentArticle = article;
             articleMark = article.Mark ?? "";  // 保存mark标记
+            articleDifficulty = article.Difficulty ?? "";  // 保存难度
             segmentLength = Config.GetInt("文来字数");
 
             if (segmentLength <= 0)
@@ -177,6 +179,15 @@ namespace TypeSunny.ArticleSender
         public string GetCurrentMark()
         {
             return articleMark;
+        }
+
+        /// <summary>
+        /// 获取当前文章的难度（来自文来接口的difficulty字段）
+        /// </summary>
+        /// <returns>难度，如 "一般(2.05)"</returns>
+        public string GetCurrentDifficulty()
+        {
+            return articleDifficulty;
         }
     }
 }

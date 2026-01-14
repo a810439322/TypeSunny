@@ -161,7 +161,7 @@ namespace TypeSunny
         }
 
         // 判断是否是时间标记
-        static bool IsTimeMarker(string text)
+        public static bool IsTimeMarker(string text)
         {
             if (string.IsNullOrWhiteSpace(text))
                 return false;
@@ -477,6 +477,9 @@ namespace TypeSunny
 
             try
             {
+                // 保存当前鼠标位置
+                Win32.SaveCursorPos();
+
                 MsgRequest m = (MsgRequest)obj;
                 string groupName = m.groupName;
                 string msgContent = Win32.Win32GetText(13);
@@ -878,6 +881,8 @@ namespace TypeSunny
                         caller.Dispatcher.Invoke(() => {
                             MainWindow.Current.FocusInput();
                         });
+                        // 恢复鼠标位置
+                        Win32.RestoreCursorPos();
 
                     }
                     else
@@ -894,6 +899,11 @@ namespace TypeSunny
                 // debugLog.AppendLine($"========== QQ消息发送异常结束 ==========");
                 // ShowDebugLog(debugLog.ToString());
             }
+            finally
+            {
+                // 无论成功或失败，都恢复鼠标位置
+                Win32.RestoreCursorPos();
+            }
 
 
         }
@@ -906,6 +916,8 @@ namespace TypeSunny
             if (msgContent1 == "" || msgContent1 == ""  || groupName == "")
                 return;
 
+            // 保存当前鼠标位置
+            Win32.SaveCursorPos();
 
             try
             {
@@ -1256,12 +1268,19 @@ namespace TypeSunny
                         caller.Dispatcher.Invoke(() => {
                             MainWindow.Current.FocusInput();
                         });
+                        // 恢复鼠标位置
+                        Win32.RestoreCursorPos();
 
                     }
             }
             catch (Exception)
             {
 
+            }
+            finally
+            {
+                // 无论成功或失败，都恢复鼠标位置
+                Win32.RestoreCursorPos();
             }
         }
 

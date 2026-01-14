@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
@@ -71,6 +71,7 @@ namespace TypeSunny
             "QQ窗口切换模式(1-2)", "1",
             "载文模式(1-4)", "1",
             "成绩面板展开", "是",
+            "成绩面板高度", "120",
             "成绩签名", "",
             "成绩屏蔽(逗号分隔)", "无",
             "软件更新Q群", "715187175",
@@ -87,7 +88,8 @@ namespace TypeSunny
             "启用字提", "是",
             "字提字体", "#TumanPUA",
             "字提字体大小", "20",
-            "字提方案", ""
+            "字提方案", "",
+            "发文跟打框比例", "75.0"
         };
 
 

@@ -853,6 +853,16 @@ namespace TypeSunny
         [DllImport("user32.dll")]
         private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint cButtons, uint dwExtraInfo);
 
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out POINT lpPoint);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct POINT
+        {
+            public int X;
+            public int Y;
+        }
+
         private const uint MOUSEEVENTF_LEFTDOWN = 0x02;
         private const uint MOUSEEVENTF_LEFTUP = 0x04;
 
@@ -863,6 +873,18 @@ namespace TypeSunny
             mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
             Win32.Delay(10);
             mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+        }
+
+        private static POINT savedCursorPos;
+
+        static public void SaveCursorPos()
+        {
+            GetCursorPos(out savedCursorPos);
+        }
+
+        static public void RestoreCursorPos()
+        {
+            SetCursorPos(savedCursorPos.X, savedCursorPos.Y);
         }
 
         #endregion
