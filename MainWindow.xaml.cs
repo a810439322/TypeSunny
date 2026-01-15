@@ -50,6 +50,11 @@ namespace TypeSunny
     {
         public static MainWindow Current => Application.Current.MainWindow as MainWindow;
 
+        /// <summary>
+        /// 获取配置的字体大小，如果未配置则返回默认值40
+        /// </summary>
+        private static double DisplayFontSize => Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
+
 
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -341,9 +346,9 @@ namespace TypeSunny
                     var fm = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体"));
 
 
-                    double fs = 40.0;
+                    double fs = DisplayFontSize;
                     double height = fs * (1.0 + Config.GetDouble("行距"));
-                    double MinWidth = 40.0 * 0.9;
+                    double MinWidth = fs * 0.9;
 
                     ScDisplay.FontFamily = fm;
                     ScDisplay.Foreground = Colors.DisplayForeground;
@@ -730,7 +735,7 @@ namespace TypeSunny
                 ScDisplay.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
                 TextInfo.Blocks.Clear(); // 修复BUG：确保Blocks和显示区域同步清空
                 TextBlock tb = new TextBlock();
-                tb.FontSize = Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
+                tb.FontSize = DisplayFontSize;
                 tb.FontFamily = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体"));
                 tb.Background = BdDisplay.Background;
                 tb.TextWrapping = TextWrapping.Wrap;
@@ -793,9 +798,23 @@ namespace TypeSunny
         /// 始终将当前字符保持在屏幕中心位置
         /// </summary>
         /// <param name="currentPosY">当前字符的Y坐标（相对于内容顶部）</param>
+        /// <param name="nextToType">当前输入位置的字符索引</param>
+        /// <param name="totalCount">总字符数</param>
         /// <returns>目标滚动偏移量</returns>
-        private double CalculateScrollOffset(double currentPosY)
+        private double CalculateScrollOffset(double currentPosY, int nextToType = -1, int totalCount = -1)
         {
+            double fs = DisplayFontSize;
+
+            // 方案三：检测是否到最后一行（最后30个字符），如果是直接滚到底部
+            bool isNearEnd = nextToType >= 0 && totalCount >= 0 && (totalCount - nextToType <= 30);
+
+            if (isNearEnd)
+            {
+                // 直接返回最大滚动位置（加上底部额外空间）
+                double bottomPaddingNearEnd = fs * 1.0; // 底部额外空间为一个字体大小
+                return ScDisplay.ScrollableHeight + bottomPaddingNearEnd;
+            }
+
             // 将当前字符保持在屏幕中心位置（48%位置）
             double center = ScDisplay.ViewportHeight * 0.48;
             double offset = currentPosY - center;
@@ -803,8 +822,12 @@ namespace TypeSunny
             // 限制滚动范围
             if (offset < 0)
                 offset = 0;
-            if (offset > ScDisplay.ScrollableHeight)
-                offset = ScDisplay.ScrollableHeight;
+
+            // 方案二：最大滚动位置加上底部额外空间
+            double bottomPadding = fs * 0.8; // 底部额外空间为0.8个字体大小
+            double maxOffset = ScDisplay.ScrollableHeight + bottomPadding;
+            if (offset > maxOffset)
+                offset = maxOffset;
 
             return offset;
         }
@@ -816,7 +839,7 @@ namespace TypeSunny
         /// <param name="forceScroll">是否强制滚动（例如：换行、起始位置）</param>
         private void SmoothScrollTo(double targetOffset, bool forceScroll = false)
         {
-            double fs = 40.0;
+            double fs = DisplayFontSize;
             double fh = fs * (1.0 + Config.GetDouble("行距"));
 
             // 只有当偏移量变化较大时才滚动，避免频繁滚动
@@ -908,9 +931,9 @@ namespace TypeSunny
 
                 // 获取字体设置
                 var fm = GetCurrentFontFamily();
-                double fs = Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
+                double fs = DisplayFontSize;
                 double height = fs * (1.0 + Config.GetDouble("行距"));
-                double MinWidth = 40.0 * 0.9;
+                double MinWidth = fs * 0.9;
 
                 ScDisplay.FontFamily = fm;
                 ScDisplay.Foreground = Colors.DisplayForeground;
@@ -1103,7 +1126,7 @@ namespace TypeSunny
 
                 // 获取字体设置
                 var fm = GetCurrentFontFamily();
-                double fs = Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
+                double fs = DisplayFontSize;
 
                 // 创建单个 TextBlock 显示所有文本
                 TextBlock tb = new TextBlock();
@@ -1249,7 +1272,7 @@ namespace TypeSunny
                             Rect rect = targetPointer.GetCharacterRect(LogicalDirection.Forward);
 
                             // 使用统一方法计算目标滚动位置（始终居中显示）
-                            double targetOffset = CalculateScrollOffset(rect.Top);
+                            double targetOffset = CalculateScrollOffset(rect.Top, nextToType, TextInfo.Words.Count);
 
                             // 执行滚动（起始位置强制滚动，其他时候由 SmoothScrollTo 自动判断）
                             SmoothScrollTo(targetOffset, forceScroll: (nextToType == 0));
@@ -1368,6 +1391,11 @@ namespace TypeSunny
 
         }
 
+
+        private void InternalHotkeyF2(object sender, ExecutedRoutedEventArgs e)
+        {
+            SendArticle();
+        }
 
 
         private void InternalHotkeyF3(object sender, ExecutedRoutedEventArgs e)
@@ -2164,87 +2192,64 @@ namespace TypeSunny
                 return; // 不设置e.Handled，让事件继续传递
             }
 
-            // 获取鼠标相对于窗口的位置
+            // 强制处理Ctrl+滚轮调整字体大小（无论在哪个区域）
+            e.Handled = true;
+            double delta = e.Delta > 0 ? 2 : -2;
+            double currentSize = DisplayFontSize;
+            double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
+
+            // 保存新的字体大小到配置
+            Config.Set("字体大小", newSize, 1);
+
+            // 获取鼠标相对于窗口的位置，判断要调整哪个区域的字体
             Point mousePos = e.GetPosition(this);
 
-            // 检查鼠标是否在发文区（BdDisplay）内
-            try
-            {
-                Point displayPos = BdDisplay.TransformToAncestor(this).Transform(new Point(0, 0));
-                Rect displayRect = new Rect(displayPos.X, displayPos.Y, BdDisplay.ActualWidth, BdDisplay.ActualHeight);
+            // 检查是否在输入区或成绩区
+            bool inInputArea = false;
+            bool inResultsArea = false;
 
-                if (displayRect.Contains(mousePos))
-                {
-                    // 在发文区
-                    e.Handled = true;
-                    double delta = e.Delta > 0 ? 2 : -2;
-                    double currentSize = Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
-                    double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
-
-                    // 保存新的字体大小到配置
-                    Config.Set("字体大小", newSize, 1);
-
-                    // 如果使用简化渲染模式（文来），需要强制重新渲染
-                    if (StateManager.txtSource == TxtSource.articlesender)
-                    {
-                        // 清空Blocks，强制SimplifiedRenderMode重新创建TextBlock
-                        TextInfo.Blocks.Clear();
-                        UpdateDisplay(UpdateLevel.Progress);
-                    }
-                    else
-                    {
-                        // 其他模式重新排列页面
-                        UpdateDisplay(UpdateLevel.PageArrange);
-                    }
-
-                    System.Diagnostics.Debug.WriteLine($"发文区字体大小调整: {currentSize} -> {newSize}");
-                    return;
-                }
-            }
-            catch { }
-
-            // 检查鼠标是否在输入区（TbxInput）内
             try
             {
                 Point inputPos = TbxInput.TransformToAncestor(this).Transform(new Point(0, 0));
                 Rect inputRect = new Rect(inputPos.X, inputPos.Y, TbxInput.ActualWidth, TbxInput.ActualHeight);
-
-                if (inputRect.Contains(mousePos))
-                {
-                    // 在输入区
-                    e.Handled = true;
-                    double delta = e.Delta > 0 ? 2 : -2;
-                    double currentSize = TbxInput.FontSize;
-                    double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
-                    TbxInput.FontSize = newSize;
-                    System.Diagnostics.Debug.WriteLine($"跟打区字体大小调整: {currentSize} -> {newSize}");
-                    return;
-                }
+                inInputArea = inputRect.Contains(mousePos);
             }
             catch { }
 
-            // 检查鼠标是否在成绩区（TbxResults）内
             try
             {
                 if (TbxResults.IsVisible)
                 {
                     Point resultsPos = TbxResults.TransformToAncestor(this).Transform(new Point(0, 0));
                     Rect resultsRect = new Rect(resultsPos.X, resultsPos.Y, TbxResults.ActualWidth, TbxResults.ActualHeight);
-
-                    if (resultsRect.Contains(mousePos))
-                    {
-                        // 在成绩区
-                        e.Handled = true;
-                        double delta = e.Delta > 0 ? 2 : -2;
-                        double currentSize = TbxResults.FontSize;
-                        double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
-                        TbxResults.FontSize = newSize;
-                        System.Diagnostics.Debug.WriteLine($"成绩区字体大小调整: {currentSize} -> {newSize}");
-                        return;
-                    }
+                    inResultsArea = resultsRect.Contains(mousePos);
                 }
             }
             catch { }
+
+            if (inInputArea)
+            {
+                // 调整输入区字体
+                TbxInput.FontSize = newSize;
+                System.Diagnostics.Debug.WriteLine($"输入区字体大小调整: {currentSize} -> {newSize}");
+                return;
+            }
+
+            if (inResultsArea)
+            {
+                // 调整成绩区字体
+                TbxResults.FontSize = newSize;
+                System.Diagnostics.Debug.WriteLine($"成绩区字体大小调整: {currentSize} -> {newSize}");
+                return;
+            }
+
+            // 默认调整发文区字体（强制清空缓存重新渲染）
+            TextInfo.Blocks.Clear();
+            TextInfo.PageNum = -1;
+            TbDispay.Children.Clear();
+            UpdateDisplay(UpdateLevel.Progress);
+
+            System.Diagnostics.Debug.WriteLine($"发文区字体大小调整: {currentSize} -> {newSize}");
         }
 
         /// <summary>
@@ -2284,7 +2289,7 @@ namespace TypeSunny
                 if (displayRect.Contains(mousePos))
                 {
                     // 在发文区 - 更新字体大小配置并刷新显示
-                    double currentSize = Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
+                    double currentSize = DisplayFontSize;
                     double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
                     Config.Set("字体大小", newSize, 1);
                     UpdateDisplay(UpdateLevel.PageArrange);
@@ -2310,7 +2315,7 @@ namespace TypeSunny
             else if (sender == TbDispay || sender == ScDisplay || sender == BdDisplay)
             {
                 // 更新所有发文区的TextBlock字体
-                double currentSize = Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
+                double currentSize = DisplayFontSize;
                 double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
                 Config.Set("字体大小", newSize, 1);
                 UpdateDisplay(UpdateLevel.PageArrange);
@@ -4445,6 +4450,17 @@ namespace TypeSunny
 
             InitDisplay();
 
+            // 初始化选群按钮文字
+            string currentGroup = Config.GetString("当前选群");
+            if (string.IsNullOrEmpty(currentGroup))
+            {
+                BtnF5.Content = "选群F5";
+            }
+            else
+            {
+                BtnF5.Content = "当前-" + currentGroup;
+            }
+
             // 加载文来Cookie（登录后下次启动自动登录）
             try
             {
@@ -4651,15 +4667,21 @@ namespace TypeSunny
 
             if (groupName == "-潜水-")
             {
-                BtnF5.Content = "选群▸";
+                BtnF5.Content = "选群F5";
+                Config.Set("当前选群", "");
+                Config.WriteConfig(0); // 立即保存
             }
             else if (groupName != null && groupName.Length > 0)
             {
                 BtnF5.Content = "当前-" + groupName;
+                Config.Set("当前选群", groupName);
+                Config.WriteConfig(0); // 立即保存
             }
             else
             {
-                BtnF5.Content = "选群▸";
+                BtnF5.Content = "选群F5";
+                Config.Set("当前选群", "");
+                Config.WriteConfig(0); // 立即保存
             }
 
             FocusInput();
@@ -4687,14 +4709,17 @@ namespace TypeSunny
 
             FocusInput();
 
+            // 从配置读取当前选中的群
+            string currentGroup = Config.GetString("当前选群");
+
             {
                 MenuItem mi = new MenuItem();
                 mi.Header = "-潜水-";
                 mi.Click += MenuQQ_Click;
                 mi.IsCheckable = true;
 
-
-                if (BtnF5.Content.ToString().Length < 6)
+                // 如果配置为空或未选择，默认选中潜水
+                if (string.IsNullOrEmpty(currentGroup))
                     mi.IsChecked = true;
 
                 MenuQQGroup.Items.Add(mi);
@@ -4707,12 +4732,17 @@ namespace TypeSunny
                 mi.Click += MenuQQ_Click;
                 mi.IsCheckable = true;
 
-                if (BtnF5.Content.ToString().Length > 3 && BtnF5.Content.ToString().Substring(3) == groupName)
+                // 如果配置中的群名匹配，设置选中
+                if (groupName == currentGroup)
                     mi.IsChecked = true;
 
                 MenuQQGroup.Items.Add(mi);
 
             }
+
+            // 设置菜单位置在按钮下方
+            MenuQQGroup.PlacementTarget = BtnF5;
+            MenuQQGroup.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
 
             MenuQQGroup.IsOpen = true;
 
@@ -4844,12 +4874,11 @@ namespace TypeSunny
         {
             HotKeyF4();
         }
-        /*
+
         private void InternalHotkeyF5(object sender, ExecutedRoutedEventArgs e)
         {
-            HotKeyF5();
+            BtnF5_Click(null, null);
         }
-        */
         private void InternalHotkeyCtrlE(object sender, ExecutedRoutedEventArgs e)
         {
             HotKeyCtrlE();
@@ -4901,12 +4930,14 @@ namespace TypeSunny
 
         private void InternalHotkeyCtrlP(object sender, ExecutedRoutedEventArgs e)
         {
-            LoadNextSegment();
+            ArticleManager.NextSection();
+            SendArticle();
         }
 
         private void InternalHotkeyCtrlO(object sender, ExecutedRoutedEventArgs e)
         {
-            LoadPreviousSegment();
+            ArticleManager.PrevSection();
+            SendArticle();
         }
 
 
@@ -6933,7 +6964,7 @@ namespace TypeSunny
         private void MenuItem_Click(object sender, RoutedEventArgs e)
         {
 
-            BtnF5.Content = "选群▸";
+            BtnF5.Content = "选群F5";
 
 
             FocusInput();
@@ -6978,9 +7009,11 @@ namespace TypeSunny
         {
             get
             {
-                if (BtnF5.Content.ToString().Length > 3)
+                string content = BtnF5.Content.ToString();
+                // 检查是否以"当前-"开头，表示已经选择了群
+                if (content.StartsWith("当前-"))
                 {
-                    return BtnF5.Content.ToString().Substring(3);
+                    return content.Substring(3); // 返回"当前-"后面的群名
                 }
                 else
                     return "";

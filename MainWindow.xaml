@@ -9,9 +9,10 @@
 
     <Window.Resources>
 
+        <RoutedUICommand x:Key="F2" Text="F2"/>
         <RoutedUICommand x:Key="F3" Text="F3"/>
         <RoutedUICommand x:Key="F4" Text="F4"/>
-        <!-- RoutedUICommand x:Key="F5" Text="F5"/ -->
+        <RoutedUICommand x:Key="F5" Text="F5"/>
         <RoutedUICommand x:Key="CtrlE" Text="CtrlE"/>
         <RoutedUICommand x:Key="CtrlL" Text="CtrlL"/>
         <RoutedUICommand x:Key="CtrlR" Text="CtrlR"/>
@@ -54,9 +55,10 @@
 
     <Window.InputBindings>
 
+        <KeyBinding Gesture="F2"  Command="{StaticResource F2}" />
         <KeyBinding Gesture="F3"  Command="{StaticResource F3}" />
         <KeyBinding Gesture="F4"  Command="{StaticResource F4}" />
-        <!-- KeyBinding Gesture="F5"  Command="{StaticResource F5}" /-->
+        <KeyBinding Gesture="F5"  Command="{StaticResource F5}" />
         <KeyBinding Gesture="Ctrl+E"  Command="{StaticResource CtrlE}" />
         <KeyBinding Gesture="Ctrl+L"  Command="{StaticResource CtrlL}" />
         <KeyBinding Gesture="Ctrl+R"  Command="{StaticResource CtrlR}" />
@@ -66,9 +68,10 @@
     </Window.InputBindings>
 
     <Window.CommandBindings>
+        <CommandBinding Command="{StaticResource F2}" Executed="InternalHotkeyF2"/>
         <CommandBinding Command="{StaticResource F3}" Executed="InternalHotkeyF3"/>
         <CommandBinding Command="{StaticResource F4}" Executed="InternalHotkeyF4"/>
-        <!-- CommandBinding Command="{StaticResource F5}" Executed="InternalHotkeyF5"/-->
+        <CommandBinding Command="{StaticResource F5}" Executed="InternalHotkeyF5"/>
         <CommandBinding Command="{StaticResource CtrlE}" Executed="InternalHotkeyCtrlE"/>
         <CommandBinding Command="{StaticResource CtrlL}" Executed="InternalHotkeyCtrlL"/>
         <CommandBinding Command="{StaticResource CtrlR}" Executed="InternalHotkeyCtrlR"/>
@@ -312,7 +315,7 @@
                 </Button>
                 <Button x:Name="BtnF4" Grid.Column="1" Height="auto" Width="auto" VerticalAlignment="Center" Content="群载文F4"  Margin="0,0,0,0" HorizontalAlignment="Center" Padding="8,2,8,2" Click="BtnF4_Click" >
                 </Button>
-                <Button x:Name="BtnF5" Grid.Column="1" Height="auto" Width="auto" VerticalAlignment="Center" Content="选群▸"   Margin="0,0,0,0" HorizontalAlignment="Center" Padding="10,2,10,2" Click="BtnF5_Click" >
+                <Button x:Name="BtnF5" Grid.Column="1" Height="auto" Width="auto" VerticalAlignment="Center" Content="选群F5"   Margin="0,0,0,0" HorizontalAlignment="Center" Padding="10,2,10,2" Click="BtnF5_Click" >
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
                             <Border Background="{TemplateBinding Background}"
@@ -339,7 +342,7 @@
                     </Button.Template>
 
                     <Button.ContextMenu>
-                        <ContextMenu Name="MenuQQGroup">
+                        <ContextMenu Name="MenuQQGroup" Placement="Bottom" PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=Button}}">
                             <MenuItem Header="潜水" Click="MenuItem_Click" IsCheckable="True" ></MenuItem>
                             <MenuItem Header="选择群"  IsCheckable="False"></MenuItem>
                         </ContextMenu>
@@ -388,8 +391,7 @@
                         <WrapPanel  Focusable="False"  Margin="10,5,10,25" x:Name="TbDispay"  Grid.Row="0"  Grid.Column="0" HorizontalAlignment="Stretch" VerticalAlignment="Top"     Language="zh-CN" PreviewMouseWheel="Control_PreviewMouseWheel"     ></WrapPanel>
                     </ScrollViewer>
                 </Border>
-
-                <GridSplitter x:Name="SplitterDisplayInput" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Height="5" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Transparent" ShowsPreview="False" DragCompleted="GridSplitter_DragCompleted" Cursor="SizeNS" Panel.ZIndex="100">
+<GridSplitter x:Name="SplitterDisplayInput" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Height="5" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Transparent" ShowsPreview="False" DragCompleted="GridSplitter_DragCompleted" Cursor="SizeNS" Panel.ZIndex="100">
                     <GridSplitter.Style>
                         <Style TargetType="GridSplitter">
                             <Setter Property="Background" Value="Transparent"/>
@@ -621,10 +623,10 @@
                 </Button.Template>
             </Button>
 
-            <Button x:Name="BtnSendArticle" DockPanel.Dock="Right" Content ="发文"  Click="BtnSendArticle_Click"  VerticalAlignment="Center" Margin="0,0,0,0" Padding="6,3,6,3" >
+            <Button x:Name="BtnSendArticle" DockPanel.Dock="Right" Content ="发文F2"  Click="BtnSendArticle_Click"  VerticalAlignment="Center" Margin="0,0,0,0" Padding="6,3,6,3" >
             </Button>
 
-            <Button x:Name="BtnArticleManager" DockPanel.Dock="Right" Content ="文章管理" Width="auto" Click="BtnArticle_Click"  VerticalAlignment="Center" Margin="0,0,0,0" Padding="6,3,6,3" >
+            <Button x:Name="BtnArticleManager" DockPanel.Dock="Right" Content ="本地文章" Width="auto" Click="BtnArticle_Click"  VerticalAlignment="Center" Margin="0,0,0,0" Padding="6,3,6,3" >
             </Button>
 
 
