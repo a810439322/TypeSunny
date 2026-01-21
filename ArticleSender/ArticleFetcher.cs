@@ -155,8 +155,8 @@ namespace TypeSunny.ArticleSender
                 return cachedDifficulties;
             }
 
-            // 返回默认值
-            return GetDefaultDifficulties();
+            // 没有缓存，返回空列表
+            return new List<DifficultyInfo>();
         }
 
         /// <summary>
@@ -177,7 +177,7 @@ namespace TypeSunny.ArticleSender
 
                 if (string.IsNullOrWhiteSpace(apiUrl))
                 {
-                    return GetDefaultDifficulties();
+                    return new List<DifficultyInfo>();
                 }
 
                 // 移除可能的尾部斜杠
@@ -200,22 +200,22 @@ namespace TypeSunny.ArticleSender
                 }
                 catch
                 {
-                    // 无法解析JSON，返回默认值
-                    return GetDefaultDifficulties();
+                    // 无法解析JSON，返回空列表
+                    return new List<DifficultyInfo>();
                 }
 
                 // 检查错误码
                 int errorCode = result["error"]?.ToObject<int>() ?? -1;
                 if (errorCode != 0)
                 {
-                    return GetDefaultDifficulties();
+                    return new List<DifficultyInfo>();
                 }
 
                 // 解析msg对象
                 var msgObj = result["msg"] as JObject;
                 if (msgObj == null)
                 {
-                    return GetDefaultDifficulties();
+                    return new List<DifficultyInfo>();
                 }
 
                 // 解析难度列表
@@ -244,22 +244,8 @@ namespace TypeSunny.ArticleSender
             }
             catch (Exception)
             {
-                return GetDefaultDifficulties();
+                return new List<DifficultyInfo>();
             }
-        }
-
-        /// <summary>
-        /// 获取默认难度列表（API失败时使用）
-        /// </summary>
-        private static List<DifficultyInfo> GetDefaultDifficulties()
-        {
-            return new List<DifficultyInfo>
-            {
-                new DifficultyInfo { Id = 1, Name = "简", Count = 0 },
-                new DifficultyInfo { Id = 2, Name = "普", Count = 0 },
-                new DifficultyInfo { Id = 3, Name = "难", Count = 0 },
-                new DifficultyInfo { Id = 4, Name = "神", Count = 0 }
-            };
         }
 
         /// <summary>
@@ -324,6 +310,10 @@ namespace TypeSunny.ArticleSender
                 if (maxLength > 0)
                 {
                     queryParams.Add($"length={maxLength}");
+                    // 只有设置了字数时才添加 strict_length 参数
+                    string lengthMode = Config.GetString("字数模式");
+                    bool strictLength = (lengthMode == "精确字数");
+                    queryParams.Add($"strict_length={strictLength.ToString().ToLower()}");
                 }
 
                 // 构建完整URL
@@ -498,17 +488,16 @@ namespace TypeSunny.ArticleSender
                 // 获取难度（difficulty字段，格式如 "一般(2.05)"）
                 string difficultyText = msgObj["difficulty"]?.ToString() ?? "";
 
+                // 获取书籍ID、段号、自定义难度ID（用于获取下一段/上一段和查找难度名称）
+                int bookId = msgObj["book_id"]?.ToObject<int>() ?? 0;
+                int sortNum = msgObj["sort_num"]?.ToObject<int>() ?? 0;
+                int difficultyId = msgObj["custom_difficulty"]?.ToObject<int>() ?? 0;
+
                 // 应用字符过滤规则（全角转半角、字符映射、白名单过滤）
                 content = Filter.ProcFilter(content);
 
-                // 保存完整内容
+                // 保存完整内容（文来接口已由服务端根据length参数处理，不再本地截断）
                 string fullContent = content;
-
-                // 截断到指定字数
-                if (content.Length > maxLength)
-                {
-                    content = content.Substring(0, maxLength);
-                }
 
                 return new ArticleData
                 {
@@ -516,7 +505,10 @@ namespace TypeSunny.ArticleSender
                     Content = content,
                     FullContent = fullContent,
                     Mark = mark,
-                    Difficulty = difficultyText
+                    Difficulty = difficultyText,
+                    BookId = bookId,
+                    SortNum = sortNum,
+                    DifficultyId = difficultyId
                 };
             }
             catch (TaskCanceledException)
@@ -556,6 +548,170 @@ namespace TypeSunny.ArticleSender
         }
 
         /// <summary>
+        /// 异步获取下一段/上一段
+        /// </summary>
+        /// <param name="bookId">书籍ID</param>
+        /// <param name="sortNum">当前段号</param>
+        /// <param name="pageType">页面类型：1=下一段，0=上一段</param>
+        /// <param name="difficulty">难度ID</param>
+        /// <returns>文章对象</returns>
+        public static async Task<ArticleData> FetchSegmentAsync(int bookId, int sortNum, int pageType, int difficulty)
+        {
+            try
+            {
+                string apiUrl = Config.GetString("文来接口地址");
+
+                if (string.IsNullOrWhiteSpace(apiUrl))
+                {
+                    return new ArticleData
+                    {
+                        Title = "配置错误",
+                        Content = "请在设置中配置[文来接口地址]",
+                        FullContent = "",
+                        Mark = ""
+                    };
+                }
+
+                // 移除可能的尾部斜杠
+                apiUrl = apiUrl.TrimEnd('/');
+
+                // 构建文章获取API URL
+                string baseUrl = apiUrl + "/api/get_text";
+
+                // 构建URL参数
+                var queryParams = new List<string>
+                {
+                    $"book_id={bookId}",
+                    $"sort_num={sortNum}",
+                    $"page_type={pageType}"
+                };
+                if (difficulty > 0)
+                {
+                    queryParams.Add($"difficulty={difficulty}");
+                }
+
+                // 构建完整URL
+                string requestUrl = baseUrl + "?" + string.Join("&", queryParams);
+
+                System.Diagnostics.Debug.WriteLine($"[文来] 正在请求段落接口: {requestUrl}");
+
+                HttpResponseMessage response = await httpClient.GetAsync(requestUrl);
+                string responseBody = await response.Content.ReadAsStringAsync();
+
+                JObject result = null;
+                try
+                {
+                    result = JObject.Parse(responseBody);
+                }
+                catch
+                {
+                    return new ArticleData
+                    {
+                        Title = "接口错误",
+                        Content = "服务器返回内容无法解析为JSON",
+                        FullContent = "",
+                        Mark = ""
+                    };
+                }
+
+                // 检查错误
+                int errorCode = result["error"]?.ToObject<int>() ?? -1;
+                if (errorCode != 0)
+                {
+                    string errorMsg = result["msg"]?.ToString() ?? "未知错误";
+                    return new ArticleData
+                    {
+                        Title = "获取失败",
+                        Content = errorMsg,
+                        FullContent = "",
+                        Mark = ""
+                    };
+                }
+
+                // 解析msg对象
+                var msgObj = result["msg"] as JObject;
+                if (msgObj == null)
+                {
+                    return new ArticleData
+                    {
+                        Title = "数据错误",
+                        Content = "API返回的msg字段不是对象",
+                        FullContent = "",
+                        Mark = ""
+                    };
+                }
+
+                // 获取标题
+                string title = msgObj["name"]?.ToString() ?? "未知标题";
+                int hashIndex = title.IndexOf('#');
+                if (hashIndex >= 0)
+                {
+                    title = title.Substring(0, hashIndex);
+                }
+
+                // 获取文章内容
+                string content = msgObj["content"]?.ToString() ?? "";
+
+                if (string.IsNullOrWhiteSpace(content))
+                {
+                    return new ArticleData
+                    {
+                        Title = "数据错误",
+                        Content = "API返回的文章内容为空",
+                        FullContent = "",
+                        Mark = ""
+                    };
+                }
+
+                // 获取段落标记
+                string mark = msgObj["mark"]?.ToString() ?? "";
+
+                // 获取难度
+                string difficultyText = msgObj["difficulty"]?.ToString() ?? "";
+
+                // 获取书籍ID、段号、自定义难度ID（用于继续翻页）
+                int responseBookId = msgObj["book_id"]?.ToObject<int>() ?? 0;
+                int responseSortNum = msgObj["sort_num"]?.ToObject<int>() ?? 0;
+                int difficultyId = msgObj["custom_difficulty"]?.ToObject<int>() ?? 0;
+
+                // 应用字符过滤规则
+                content = Filter.ProcFilter(content);
+                string fullContent = content;
+
+                return new ArticleData
+                {
+                    Title = title,
+                    Content = content,
+                    FullContent = fullContent,
+                    Mark = mark,
+                    Difficulty = difficultyText,
+                    BookId = responseBookId,
+                    SortNum = responseSortNum,
+                    DifficultyId = difficultyId
+                };
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[文来] ✗ 获取段落失败: {ex.Message}");
+                return new ArticleData
+                {
+                    Title = "获取失败",
+                    Content = $"获取段落失败: {ex.Message}",
+                    FullContent = "",
+                    Mark = ""
+                };
+            }
+        }
+
+        /// <summary>
+        /// 获取下一段/上一段（同步版本）
+        /// </summary>
+        public static ArticleData FetchSegment(int bookId, int sortNum, int pageType, int difficulty)
+        {
+            return FetchSegmentAsync(bookId, sortNum, pageType, difficulty).GetAwaiter().GetResult();
+        }
+
+        /// <summary>
         /// 获取随机文章（同步版本，内部调用异步版本）
         /// </summary>
         /// <param name="difficulty">难度ID（从GetDifficulties获取可用难度）</param>
@@ -577,6 +733,9 @@ namespace TypeSunny.ArticleSender
         public string Content { get; set; }
         public string FullContent { get; set; }
         public string Mark { get; set; }  // 段落标记，格式如 "1-34112" 表示第1段/共34112段
-        public string Difficulty { get; set; }  // 难度，格式如 "一般(2.05)"
+        public string Difficulty { get; set; }  // 难度描述，格式如 "一般(2.05)"
+        public int BookId { get; set; }  // 书籍ID，用于获取下一段/上一段
+        public int SortNum { get; set; }  // 当前段号，用于获取下一段/上一段
+        public int DifficultyId { get; set; }  // 难度ID，来自custom_difficulty字段，对应/api/stats_by_difficulty中的id
     }
 }

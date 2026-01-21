@@ -336,9 +336,12 @@ namespace TypeSunny.Net
                                 int userId = data["user"]?["id"]?.ToObject<int>() ?? -1;
                                 string username = data["user"]?["username"]?.ToString() ?? txtUsername.Text;
 
-                                // 保存到账号管理器
+                                // 获取赛文服务器地址（用于同域名同步到文来）
+                                string serverUrl = Config.GetString("赛文服务器地址");
+
+                                // 保存到账号管理器（传入serverUrl以确保Domain正确设置，从而实现同域名同步）
                                 accountManager.UpdateLoginInfo(SERVICE_NAME, txtUsername.Text, txtPassword.Password,
-                                    username, userId, api.GetCookiesAsString(), api.GetClientKeyXml());
+                                    username, userId, api.GetCookiesAsString(), api.GetClientKeyXml(), serverUrl);
 
                                 // 兼容旧版配置
                                 Config.Set("赛文用户名", txtUsername.Text);

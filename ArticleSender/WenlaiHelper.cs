@@ -255,9 +255,12 @@ namespace TypeSunny.ArticleSender
                                 int userId = data["user"]?["id"]?.ToObject<int>() ?? -1;
                                 string username = data["user"]?["username"]?.ToString() ?? txtUsername.Text;
 
-                                // 更新账号信息
+                                // 获取文来服务器地址（用于同域名同步到赛文）
+                                string serverUrl = Config.GetString("文来接口地址");
+
+                                // 更新账号信息（传入serverUrl以确保Domain正确设置，从而实现同域名同步）
                                 accountManager.UpdateLoginInfo(SERVICE_NAME, txtUsername.Text, txtPassword.Password,
-                                    username, userId, api.GetCookiesAsString(), api.GetClientKeyXml());
+                                    username, userId, api.GetCookiesAsString(), api.GetClientKeyXml(), serverUrl);
 
                                 MessageBox.Show($"注册成功并已自动登录！欢迎 {username}", "提示",
                                     MessageBoxButton.OK, MessageBoxImage.Information);
@@ -446,7 +449,8 @@ namespace TypeSunny.ArticleSender
         /// <summary>
         /// 显示登录对话框
         /// </summary>
-        public void ShowLoginDialog(Window owner)
+        /// <returns>登录是否成功</returns>
+        public bool? ShowLoginDialog(Window owner)
         {
             var account = accountManager.GetAccount(SERVICE_NAME);
 
@@ -546,9 +550,12 @@ namespace TypeSunny.ArticleSender
                         int userId = data["user"]?["id"]?.ToObject<int>() ?? -1;
                         string username = data["user"]?["username"]?.ToString() ?? txtUsername.Text;
 
-                        // 保存登录信息
+                        // 获取文来服务器地址（用于同域名同步到赛文）
+                        string serverUrl = Config.GetString("文来接口地址");
+
+                        // 保存登录信息（传入serverUrl以确保Domain正确设置，从而实现同域名同步）
                         accountManager.UpdateLoginInfo(SERVICE_NAME, txtUsername.Text, txtPassword.Password,
-                            username, userId, api.GetCookiesAsString(), api.GetClientKeyXml());
+                            username, userId, api.GetCookiesAsString(), api.GetClientKeyXml(), serverUrl);
 
                         MessageBox.Show($"登录成功！欢迎 {username}", "提示",
                             MessageBoxButton.OK, MessageBoxImage.Information);
@@ -612,7 +619,7 @@ namespace TypeSunny.ArticleSender
             grid.Children.Add(btnPanel);
 
             loginDialog.Content = grid;
-            loginDialog.ShowDialog();
+            return loginDialog.ShowDialog();
         }
     }
 }

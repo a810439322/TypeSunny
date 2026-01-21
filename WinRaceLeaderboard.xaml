@@ -1,7 +1,7 @@
 <Window x:Class="TypeSunny.WinRaceLeaderboard"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="赛文排行榜" Height="700" Width="1400" Icon="/Resources/logo-512.png"
+        Title="赛文排行榜" Height="700" Width="1400" Icon="/Resources/ico/sunny.ico"
         MinHeight="500" MinWidth="1000"
         WindowStartupLocation="CenterOwner"
         Background="Transparent"

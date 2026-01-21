@@ -229,7 +229,7 @@ static internal class Score
 
             }
 
-            r.AppendFormat("{0}\t{1}\t{2}\t{3}", SpeedReport, Score.HitRate.ToString("F2"), Score.KPW.ToString("F2"), GetAccuracy().ToString("P2"));
+            r.AppendFormat("速:{0} 准:{1} 击:{2} 码:{3}", SpeedReport, GetAccuracy().ToString("P2"), Score.HitRate.ToString("F2"), Score.KPW.ToString("F2"));
 
             return r.ToString();
         }
@@ -251,7 +251,7 @@ static internal class Score
 
             }
 
-            string s = Config.GetString("成绩屏蔽(逗号分隔)");
+            // 使用新的布尔配置检查成绩屏蔽
             bool isBime =  BimeHit > 0;
             bool notBime = !isBime;
 
@@ -264,9 +264,9 @@ static internal class Score
             {
                 report.Add("第" + Paragraph + "段");
             }
-            if (!s.Contains("速度"))
+            if (Config.GetBool("显示_速度"))
                 report.Add("速度" + SpeedReport);
-            if (!s.Contains("击键"))
+            if (Config.GetBool("显示_击键"))
             {
                 report.Add("击键" + HitRate.ToString("F2"));
             }
@@ -276,29 +276,29 @@ static internal class Score
                 report.Add("/" + WinTrainer.TargetHit.ToString("F2"));
             }
 
-            if (!s.Contains("码长"))
+            if (Config.GetBool("显示_码长"))
             {
                 report.Add("码长" + Score.KPW.ToString("F2"));
             }
 
 
 
-            if (!s.Contains("字数")) 
+            if (Config.GetBool("显示_字数"))
                 report.Add("字数"+TotalWordCount.ToString());
 
             int TypeCount  = RetypeCounter.Get(TextInfo.TextMD5);
-            if (!s.Contains("重打"))
+            if (Config.GetBool("显示_重打"))
             {
                 if (TypeCount > 1)
                     report.Add("重打" + (TypeCount -1).ToString());
             }
-            if (!s.Contains("总键数"))
+            if (Config.GetBool("显示_总键数"))
             {
                 report.Add("总键数" +  GetHit().ToString("F0"));
             }
 
 
-            if (!s.Contains("键法"))
+            if (Config.GetBool("显示_键法"))
                 if (BimeHit == 0)
                 {
 
@@ -312,28 +312,28 @@ static internal class Score
 
                 }
 
-            if (!s.Contains("回改"))
+            if (Config.GetBool("显示_回改"))
                 report.Add("回改" + Score.GetCorrection().ToString("F0"));
-            if (!s.Contains("退格"))
+            if (Config.GetBool("显示_退格"))
                 report.Add("退格" + GetBacks().ToString("F0"));
-            if (!s.Contains("键准"))
+            if (Config.GetBool("显示_键准"))
                 report.Add("键准" + GetAccuracy().ToString("P2"));
-            if (!s.Contains("废码") && notBime)
+            if (Config.GetBool("显示_废码") && notBime)
             {
                 if (WasteCodes > 0)
                     report.Add("废码" + WasteCodes.ToString());
             }
-            if (!s.Contains("打词率") && notBime)
+            if (Config.GetBool("显示_打词率") && notBime)
             {
                 report.Add("打词率" + GetCiRatio().ToString("P2"));
             }
 
-            if (!s.Contains("选重") && notBime)
+            if (Config.GetBool("显示_选重") && notBime)
                 report.Add("选重" + GetChoose().ToString());
 
-            if (!s.Contains("标顶") && notBime)
+            if (Config.GetBool("显示_标顶") && notBime)
                 report.Add("标顶" + GetBiaoDing().ToString());
-            if (!s.Contains("用时"))
+            if (Config.GetBool("显示_用时"))
             {
                 string t = Score.Time.ToString();
                 int semi = t.LastIndexOf(":");
@@ -347,9 +347,9 @@ static internal class Score
 
 
 
-            if (!s.Contains("错字"))
+            if (Config.GetBool("显示_错字"))
             {
-                
+
 
                 if (Config.GetBool("看打模式"))
                 {
@@ -362,24 +362,24 @@ static internal class Score
                 }
                 else
 
-                
+
                 {
                     if (Wrong > 0)
                         report.Add("错字" + Wrong);
                 }
             }
 
-            if (!s.Contains("盲打正确率") && Config.GetBool("盲打模式"))
+            if (Config.GetBool("显示_盲打正确率") && Config.GetBool("盲打模式"))
             {
                 int wr = Math.Max(More, Less);
-                double ratio; 
+                double ratio;
 
                 ratio = Math.Round((double)(TotalWordCount - wr) / (double)TotalWordCount, 4);
                 report.Add("盲打正确率" + ratio.ToString("P2"));
             }
 
 
-            if (!s.Contains("看打正确率") && Config.GetBool("看打模式") && !Config.GetBool("盲打模式"))
+            if (Config.GetBool("显示_看打正确率") && Config.GetBool("看打模式") && !Config.GetBool("盲打模式"))
             {
                 int wr = Math.Max(More, Less);
                 double ratio;
@@ -388,22 +388,22 @@ static internal class Score
                 report.Add("看打正确率" + ratio.ToString("P2"));
             }
 
-            if (!s.Contains("重打"))
+            if (Config.GetBool("显示_重打"))
             {
                 if (TypeCount <=1)
                     report.Add("【首打认证】");
             }
 
 
-            if (!s.Contains("盲打模式") && Config.GetBool("盲打模式"))
+            if (Config.GetBool("显示_盲打模式") && Config.GetBool("盲打模式"))
                 report.Add("【盲打模式】");
 
-            if (!s.Contains("看打模式") && Config.GetBool("看打模式") && !Config.GetBool("盲打模式"))
+            if (Config.GetBool("显示_看打模式") && Config.GetBool("看打模式") && !Config.GetBool("盲打模式"))
                     report.Add("【看打模式】");
 
-            if (!s.Contains("签名"))
+            if (Config.GetBool("显示_签名"))
             {
- 
+
                     report.Add(Config.GetString("成绩签名"));
             }
 
@@ -551,6 +551,28 @@ static internal class Score
            else if (KeysLeft.Contains(key))
                 LeftCount++;
 
+        }
+
+        /// <summary>
+        /// 格式化时间显示（秒 -> 时分秒）
+        /// </summary>
+        /// <param name="seconds">总秒数</param>
+        /// <returns>格式化后的时间字符串</returns>
+        static public string FormatTime(double seconds)
+        {
+            TimeSpan time = TimeSpan.FromSeconds(seconds);
+            if (time.TotalHours >= 1)
+            {
+                return time.ToString(@"h\时m\分s\秒");
+            }
+            else if (time.TotalMinutes >= 1)
+            {
+                return time.ToString(@"m\分s\秒");
+            }
+            else
+            {
+                return time.ToString(@"s\秒");
+            }
         }
     }
 }

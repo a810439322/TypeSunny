@@ -4,8 +4,9 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TypeSunny"
+        xmlns:sys="clr-namespace:System;assembly=mscorlib"
         mc:Ignorable="d"
-      Title="晴跟打" Name="MainWin" xml:lang="zh-CN" Icon="/Resources/logo-512.png" Loaded="Window_Loaded" Closing="Window_Closing" Deactivated="MainWin_Deactivated" WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResize" BorderThickness="0" Background="Transparent" Padding="0" MaxWidth="1920" MaxHeight="1080" PreviewMouseWheel="Window_PreviewMouseWheel">
+      Title="晴跟打" Name="MainWin" xml:lang="zh-CN" Loaded="Window_Loaded" Closing="Window_Closing" Deactivated="MainWin_Deactivated" WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResize" BorderThickness="0" Background="Transparent" Padding="0" PreviewMouseWheel="Window_PreviewMouseWheel">
 
     <Window.Resources>
 
@@ -89,9 +90,13 @@
 
         <Grid.RowDefinitions>
             <RowDefinition Name="titlebar" Height="30" />
-            <RowDefinition Name="top" Height="auto" />
-            <RowDefinition x:Name="content" Height="*" />
-            <RowDefinition x:Name="expander" Height="120" />
+            <RowDefinition Name="buttonArea1" Height="Auto" MinHeight="40" />
+            <RowDefinition Name="articleArea" Height="*" MinHeight="50" />
+            <RowDefinition Height="5" />
+            <RowDefinition Name="typingAreaAndButtons" Height="*" MinHeight="50" />
+            <RowDefinition Height="5" />
+            <RowDefinition Name="resultsArea" Height="*" MinHeight="50" />
+            <RowDefinition Height="0" />
         </Grid.RowDefinitions>
 
         <!-- 自定义标题栏 -->
@@ -103,8 +108,44 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
-                <Image Source="/Resources/logo-512.png" Width="20" Height="20" Margin="0,0,8,0"/>
+                <Image x:Name="TitleBarIcon" Source="/Resources/ico/sunny.ico" Width="20" Height="20" Margin="0,0,8,0"/>
                 <TextBlock x:Name="TbkTitle" Text="晴跟打" VerticalAlignment="Center" FontSize="14" Foreground="{Binding ElementName=MainWin, Path=Foreground}"/>
+                <TextBlock x:Name="TbkTitleDifficulty" Text="" VerticalAlignment="Center" FontSize="12" Foreground="{Binding ElementName=MainWin, Path=Foreground}" Margin="8,0,0,0" Opacity="0.7"/>
+                <Button x:Name="BtnUpdateReminder"
+                        Content=""
+                        VerticalAlignment="Center"
+                        FontSize="11"
+                        Foreground="#FF6B6B"
+                        Margin="8,0,0,0"
+                        Padding="5,0"
+                        Cursor="Hand"
+                        Click="BtnUpdateReminder_Click"
+                        Visibility="Collapsed">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Foreground" Value="#FF5555"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal">
@@ -354,10 +395,10 @@
 
             </StackPanel>
 
-            <TextBlock  x:Name="TbkStatusTop"  Grid.Column="1" Margin="5,0,15,0" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" ></TextBlock>
+            <TextBlock  x:Name="TbkStatusTop"  Grid.Column="1" Margin="15,0,15,0" HorizontalAlignment="Left" VerticalAlignment="Center" TextAlignment="Left" ></TextBlock>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="5,0,15,0">
-                <TextBlock x:Name="TbkDifficulty" Text="" VerticalAlignment="Center" />
+                <TextBlock x:Name="TbkDifficulty" Text="" VerticalAlignment="Center" Visibility="Collapsed" />
                 <TextBlock x:Name="TbkZiTi" Text="" VerticalAlignment="Center" Margin="10,0,0,0" />
             </StackPanel>
 
@@ -366,352 +407,330 @@
 
 
 
-        <Grid  Grid.Row="2" Height="auto"  Width="auto"  Name="grid_b">
-
-
-            <Grid  Name="grid_c" Height="auto"  Width="auto" HorizontalAlignment="Stretch"  VerticalAlignment="Stretch" Margin="15,0,15,0"  SizeChanged="win_size_change" PreviewMouseWheel="Control_PreviewMouseWheel">
-                <Grid.RowDefinitions>
-                    <RowDefinition x:Name="RowDisplay" Height="75*"></RowDefinition>
-                    <RowDefinition Height="auto"></RowDefinition>
-                    <RowDefinition x:Name="RowInput" Height="25*"></RowDefinition>
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"></ColumnDefinition>
-                    <ColumnDefinition Width="auto"></ColumnDefinition>
-                </Grid.ColumnDefinitions>
-
-                <Canvas Name="CvAcc" Grid.Row="0"  Panel.ZIndex="10" Grid.Column="0"   HorizontalAlignment="Stretch" VerticalAlignment="Stretch"  Background="Transparent" Opacity="1" IsHitTestVisible="False" >
-                    <TextBlock x:Name="TbAcc" Text="" FontWeight="Bold"  />
+        <!-- 发文区（文章显示） -->
+        <Border Grid.Row="2" Name="BdDisplay" Margin="15,5,15,0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" CornerRadius="6" PreviewMouseWheel="Control_PreviewMouseWheel">
+            <Grid>
+                <Canvas Name="CvAcc" Panel.ZIndex="10" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent" Opacity="1" IsHitTestVisible="False">
+                    <TextBlock x:Name="TbAcc" Text="" FontWeight="Bold"/>
                 </Canvas>
+                <ScrollViewer x:Name="ScDisplay" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" IsDeferredScrollingEnabled="True" PreviewMouseWheel="Control_PreviewMouseWheel">
+                    <WrapPanel Focusable="False" Margin="10,5,10,10" x:Name="TbDispay" HorizontalAlignment="Stretch" VerticalAlignment="Top" Language="zh-CN" PreviewMouseWheel="Control_PreviewMouseWheel"></WrapPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
 
-                <Border Name="BdDisplay" Grid.Row="0"  Grid.Column="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" CornerRadius="6" PreviewMouseWheel="Control_PreviewMouseWheel" Margin="0,0,0,0">
+        <!-- GridSplitter 2: 发文区 与 跟打区 之间 -->
+        <GridSplitter x:Name="gridSplitterArticleTyping" Grid.Row="3" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Transparent" ShowsPreview="False" Cursor="SizeNS" Panel.ZIndex="100" Margin="0" Height="5" DragCompleted="GridSplitterArticleTyping_DragCompleted">
+            <GridSplitter.Style>
+                <Style TargetType="GridSplitter">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Style.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="#E0E0E0"/>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </GridSplitter.Style>
+        </GridSplitter>
 
-                    <ScrollViewer  x:Name="ScDisplay"  Grid.Row="0"  Grid.Column="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Hidden"  IsDeferredScrollingEnabled="True" PreviewMouseWheel="Control_PreviewMouseWheel">
+        <!-- 跟打区容器：包含跟打区和按钮区2 -->
+        <Grid Grid.Row="4" x:Name="typingAreaAndButtonsGrid" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-                        <WrapPanel  Focusable="False"  Margin="10,5,10,25" x:Name="TbDispay"  Grid.Row="0"  Grid.Column="0" HorizontalAlignment="Stretch" VerticalAlignment="Top"     Language="zh-CN" PreviewMouseWheel="Control_PreviewMouseWheel"     ></WrapPanel>
-                    </ScrollViewer>
-                </Border>
-<GridSplitter x:Name="SplitterDisplayInput" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Height="5" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Transparent" ShowsPreview="False" DragCompleted="GridSplitter_DragCompleted" Cursor="SizeNS" Panel.ZIndex="100">
-                    <GridSplitter.Style>
-                        <Style TargetType="GridSplitter">
-                            <Setter Property="Background" Value="Transparent"/>
-                            <Style.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="#E0E0E0"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </GridSplitter.Style>
-                </GridSplitter>
-
-
-                  
-             
-
-
-
-                <TextBox  Language="zh-CN" Grid.Row="2"  x:Name="TbxInput" Grid.Column="0"  IsReadOnly="True" Padding="{Binding ElementName=TbDispay, Path=Margin}" TextWrapping= "Wrap"     Background= "{Binding ElementName=BdDisplay, Path=Background}"     Panel.ZIndex="1" HorizontalContentAlignment="Stretch" VerticalAlignment="Stretch" TextAlignment="Left" PreviewKeyUp="TbxInput_PreviewKeyUp"  PreviewTextInput="InputBox_TextInput" PreviewKeyDown="InputBox_PreviewKeyDown" TextChanged="TbxInput_TextChanged" PreviewMouseWheel="Control_PreviewMouseWheel" Margin="0,0,0,0">
+            <!-- 跟打区（用户输入） -->
+            <Grid Grid.Row="0" Margin="15,5,15,0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" PreviewMouseWheel="Control_PreviewMouseWheel" SizeChanged="win_size_change">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox Language="zh-CN" x:Name="TbxInput" Grid.Column="0" IsReadOnly="True" Padding="10,5,10,10" TextWrapping="Wrap" Background="{Binding ElementName=MainWin,Path=Background}" Panel.ZIndex="1" HorizontalContentAlignment="Stretch" VerticalAlignment="Stretch" TextAlignment="Left" PreviewKeyUp="TbxInput_PreviewKeyUp" PreviewTextInput="InputBox_TextInput" PreviewKeyDown="InputBox_PreviewKeyDown" TextChanged="TbxInput_TextChanged" PreviewMouseWheel="Control_PreviewMouseWheel">
                     <TextBox.Resources>
                         <Style TargetType="{x:Type Border}">
                             <Setter Property="CornerRadius" Value="6"/>
                         </Style>
                     </TextBox.Resources>
                 </TextBox>
-                <Slider x:Name="SldZoom" Grid.Column="1"  HorizontalAlignment="Center" VerticalAlignment="Stretch" Opacity="0.5" Orientation="Vertical" Grid.Row="0"  Grid.RowSpan="3"    TickFrequency="0.5" Minimum="5" Maximum="70" SmallChange="0.5" LargeChange="2" ValueChanged="SldZoom_ValueChanged" Margin="0,0,5,0"  TickPlacement="TopLeft" IsSnapToTickEnabled="True" Visibility="Collapsed" />
-
+                <Slider x:Name="SldZoom" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Stretch" Opacity="0.5" Orientation="Vertical" TickFrequency="0.5" Minimum="5" Maximum="70" SmallChange="0.5" LargeChange="2" ValueChanged="SldZoom_ValueChanged" Margin="0,0,5,0" TickPlacement="TopLeft" IsSnapToTickEnabled="True" Visibility="Collapsed"/>
             </Grid>
 
+            <!-- 按钮区2（成绩相关按钮） -->
+            <DockPanel Grid.Row="1" x:Name="resultsButtonPanel" HorizontalAlignment="Stretch" Margin="15,5,15,0">
+                <Button x:Name="BtnRandomArticle" DockPanel.Dock="Left" Content="文来Ctrl+R" Width="auto" HorizontalAlignment="Left" Click="BtnRandomArticle_Click" VerticalAlignment="Center" Margin="0,0,0,0" Padding="6,3,6,3">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="#ADADAD" BorderThickness="1" Padding="{TemplateBinding Padding}" CornerRadius="5,0,0,5">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Opacity" Value="0.8"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter Property="Opacity" Value="0.6"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.5"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.ContextMenu>
+                        <ContextMenu Name="MenuWenlai">
+                            <ContextMenu.Resources>
+                                <!-- 与赛文菜单相同的模板 -->
+                                <Style TargetType="{x:Type MenuItem}">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="{x:Type MenuItem}">
+                                                <Border x:Name="Border" Background="{TemplateBinding Background}" BorderThickness="0" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter x:Name="HeaderHost" ContentSource="Header" Margin="5,0,5,0"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsHighlighted" Value="True">
+                                                        <Setter TargetName="Border" Property="Background" Value="{Binding Path=Background, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                                        <Setter TargetName="Border" Property="Opacity" Value="0.7"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ContextMenu.Resources>
+                            <!-- 子菜单项将在代码中动态生成 -->
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
 
+                <Button x:Name="BtnTrainer" DockPanel.Dock="Left" Content="练单器" HorizontalAlignment="Left" Click="BtnTrainer_Click" VerticalAlignment="Center" Padding="6,3,6,3">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="#ADADAD" BorderThickness="1" Padding="{TemplateBinding Padding}" CornerRadius="0,5,5,0">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Opacity" Value="0.8"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter Property="Opacity" Value="0.6"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.5"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
 
-
-
-        </Grid>
-
-        <!-- 成绩区域 -->
-        <Grid x:Name="expd" Grid.Row="3" HorizontalAlignment="Stretch" Margin="5,0,5,5">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="auto"/>
-                <RowDefinition Height="auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
-
-            <!-- 可拖动的顶部边框 -->
-            <Border Grid.Row="0" x:Name="ResultsDragHandle" Height="6" VerticalAlignment="Top"
-                    Background="Transparent" Cursor="SizeNS" MouseLeftButtonDown="ResultsDragHandle_MouseLeftButtonDown"
-                    MouseMove="ResultsDragHandle_MouseMove" MouseLeftButtonUp="ResultsDragHandle_MouseLeftButtonUp">
-                <Border.Style>
-                    <Style TargetType="Border">
-                        <Setter Property="Background" Value="Transparent"/>
-                        <Style.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#E0E0E0"/>
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-            </Border>
-
-            <!-- 成绩区域按钮工具栏 -->
-            <DockPanel Grid.Row="1" HorizontalAlignment="Stretch" Height="auto" Margin="10,5,10,5">
-                <Button x:Name="BtnRandomArticle" DockPanel.Dock="Left"  Content ="文来Ctrl+R" Width="auto" HorizontalAlignment="Left" Click="BtnRandomArticle_Click"  VerticalAlignment="Center" Margin="0,0,0,0" Padding="6,3,6,3" >
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                BorderBrush="#ADADAD"
-                                BorderThickness="1"
-                                Padding="{TemplateBinding Padding}"
-                                CornerRadius="5,0,0,5">
-                            <ContentPresenter HorizontalAlignment="Center"
-                                            VerticalAlignment="Center"
-                                            TextBlock.Foreground="{TemplateBinding Foreground}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Opacity" Value="0.8"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Opacity" Value="0.6"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.5"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-                <Button.ContextMenu>
-                    <ContextMenu Name="MenuWenlai">
-                        <!-- 子菜单项将在代码中动态生成 -->
-                    </ContextMenu>
-                </Button.ContextMenu>
-            </Button>
-
-            <Button x:Name="BtnTrainer" DockPanel.Dock="Left"  Content ="练单器" HorizontalAlignment="Left" Click="BtnTrainer_Click" VerticalAlignment="Center" Margin="0,0,0,0" Padding="6,3,6,3" >
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                BorderBrush="#ADADAD"
-                                BorderThickness="1"
-                                Padding="{TemplateBinding Padding}"
-                                CornerRadius="0,5,5,0">
-                            <ContentPresenter HorizontalAlignment="Center"
-                                            VerticalAlignment="Center"
-                                            TextBlock.Foreground="{TemplateBinding Foreground}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Opacity" Value="0.8"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Opacity" Value="0.6"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.5"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-            </Button>
-
-            <!-- Button x:Name="BtnChangSheng"  DockPanel.Dock="Left" Content ="长生" Width="40"  Click="BtnChangSheng_Click"  VerticalAlignment="Center" Margin="2,0,0,0" Padding="6,3,6,3" >
-                <Button.Resources>
-                    <Style TargetType="{x:Type Border}">
-                        <Setter Property="CornerRadius"  Value="5,0,0,5" />
-                    </Style>
-                </Button.Resources>
-            </Button -->
-
-            <!--Button x:Name="BtnJbs" DockPanel.Dock="Left"  Content ="锦标赛" HorizontalAlignment="Left"   VerticalAlignment="Center" Margin="0,0,2,0" Padding="6,3,6,3" Click="BtnJbs_Click" >
-                <Button.Resources>
-                    <Style TargetType="{x:Type Border}">
-                        <Setter Property="CornerRadius" Value="0,5,5,0"/>
-                    </Style>
-                </Button.Resources>
-            </Button -->
-
-            <!-- 统一的赛文菜单，子项动态生成 -->
-            <Menu x:Name="MenuRace" DockPanel.Dock="Left" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,2,0" Background="Transparent" BorderThickness="0">
-                <MenuItem x:Name="MenuItemRace" Header="赛文" Padding="6,3,6,3">
-                    <MenuItem.Style>
-                        <Style TargetType="MenuItem">
-                            <Setter Property="BorderBrush" Value="#ADADAD"/>
-                            <Setter Property="BorderThickness" Value="1"/>
+                <!-- 统一的赛文菜单 -->
+                <Menu x:Name="MenuRace" DockPanel.Dock="Left" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="5,0,2,0" Background="Transparent" BorderThickness="0">
+                    <Menu.Resources>
+                        <!-- 完全自定义 MenuItem 模板，移除图标列 -->
+                        <Style TargetType="{x:Type MenuItem}">
                             <Setter Property="Template">
                                 <Setter.Value>
-                                    <ControlTemplate TargetType="MenuItem">
-                                        <Border Background="{TemplateBinding Background}"
-                                                BorderBrush="#ADADAD"
-                                                BorderThickness="1"
-                                                CornerRadius="5,5,5,5">
-                                            <Grid>
-                                                <ContentPresenter x:Name="HeaderHost"
-                                                                  ContentSource="Header"
-                                                                  RecognizesAccessKey="True"
-                                                                  Margin="{TemplateBinding Padding}"
-                                                                  TextBlock.Foreground="{TemplateBinding Foreground}"/>
-                                                <Popup x:Name="PART_Popup"
-                                                       AllowsTransparency="False"
-                                                       Placement="Bottom"
-                                                       IsOpen="{Binding Path=IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
-                                                       Focusable="False"
-                                                       PopupAnimation="Fade">
-                                                    <Border Background="White"
-                                                            BorderBrush="#ADADAD"
-                                                            BorderThickness="1"
-                                                            CornerRadius="3">
-                                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
-                                                    </Border>
-                                                </Popup>
-            </Grid>
-
+                                    <ControlTemplate TargetType="{x:Type MenuItem}">
+                                        <Border x:Name="Border" Background="{TemplateBinding Background}" BorderThickness="0" Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter x:Name="HeaderHost" ContentSource="Header" Margin="5,0,5,0"/>
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsHighlighted" Value="True">
-                                                <Setter Property="Background" Value="#BEE6FD"/>
+                                                <Setter TargetName="Border" Property="Background" Value="{Binding Path=Background, RelativeSource={RelativeSource AncestorType=Menu}}"/>
+                                                <Setter TargetName="Border" Property="Opacity" Value="0.7"/>
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
                                 </Setter.Value>
                             </Setter>
                         </Style>
-                    </MenuItem.Style>
-                    <!-- 子菜单项将在代码中动态生成 -->
-                </MenuItem>
-            </Menu>
+                    </Menu.Resources>
+                    <MenuItem x:Name="MenuItemRace" Header="🏆 赛文" Padding="6,3,6,3">
+                        <MenuItem.Style>
+                            <Style TargetType="MenuItem">
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="MenuItem">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    BorderBrush="#ADADAD"
+                                                    BorderThickness="1"
+                                                    Padding="{TemplateBinding Padding}"
+                                                    CornerRadius="5">
+                                                <Grid>
+                                                    <ContentPresenter x:Name="HeaderHost"
+                                                                      ContentSource="Header"
+                                                                      RecognizesAccessKey="True"
+                                                                      Margin="0"
+                                                                      TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                                                    <Popup x:Name="PART_Popup"
+                                                           AllowsTransparency="False"
+                                                           Placement="Bottom"
+                                                           IsOpen="{Binding Path=IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                                                           Focusable="False"
+                                                           PopupAnimation="Fade">
+                                                        <Border Background="{TemplateBinding Background}"
+                                                                BorderBrush="#ADADAD"
+                                                                BorderThickness="1"
+                                                                CornerRadius="3">
+                                                            <StackPanel IsItemsHost="True"
+                                                                        KeyboardNavigation.DirectionalNavigation="Cycle"
+                                                                        Background="{TemplateBinding Background}"/>
+                                                        </Border>
+                                                    </Popup>
+                                                </Grid>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsHighlighted" Value="True">
+                                                    <Setter Property="Opacity" Value="0.8"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </MenuItem.Style>
+                    </MenuItem>
+                </Menu>
 
-
-            <!-- Button x:Name="Tbk" Content ="回放" Grid.Column ="1" HorizontalAlignment="Left" PreviewMouseUp="Tbk_PreviewMouseUp"  VerticalAlignment="Bottom" Margin="2,0,0,0" Padding="3,3,3,3" ></Button -->
-
-            <!-- 字体和打字模式已移到设置中 -->
-
-            <!-- CheckBox Name="ChkLookType" DockPanel.Dock="Left"  FontSize="12"  VerticalAlignment="Center"  Margin="5,0,2,0" VerticalContentAlignment="Center" Click="ChkLookType_Click"><Label Content="看打模式" Foreground="{Binding ElementName=MainWin, Path=Foreground}" VerticalAlignment="Center" Margin="-8,0,0,0" /></CheckBox -->
-
-
-
-
-
-
-
-
-
-
-
-
-            <Button x:Name="BtnNext" DockPanel.Dock="Right" Content ="&gt;" Width="25"    VerticalAlignment="Center" Margin="0,0,0,0" Padding="6,3,6,3" Click="BtnNext_Click" >
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                BorderBrush="#ADADAD"
-                                BorderThickness="1"
-                                Padding="{TemplateBinding Padding}"
-                                CornerRadius="0,5,5,0">
-                            <ContentPresenter HorizontalAlignment="Center"
-                                            VerticalAlignment="Center"
-                                            TextBlock.Foreground="{TemplateBinding Foreground}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Opacity" Value="0.8"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Opacity" Value="0.6"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.5"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-            </Button>
-
-            <Button x:Name="BtnSendArticle" DockPanel.Dock="Right" Content ="发文F2"  Click="BtnSendArticle_Click"  VerticalAlignment="Center" Margin="0,0,0,0" Padding="6,3,6,3" >
-            </Button>
-
-            <Button x:Name="BtnArticleManager" DockPanel.Dock="Right" Content ="本地文章" Width="auto" Click="BtnArticle_Click"  VerticalAlignment="Center" Margin="0,0,0,0" Padding="6,3,6,3" >
-            </Button>
-
-
-            <Button x:Name="BtnPrev" DockPanel.Dock="Right" Content ="&lt;"  Width="25"    VerticalAlignment="Center" Margin="0,0,0,0" Padding="6,3,6,3"  Click="BtnPrev_Click">
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                BorderBrush="#ADADAD"
-                                BorderThickness="1"
-                                Padding="{TemplateBinding Padding}"
-                                CornerRadius="5,0,0,5">
-                            <ContentPresenter HorizontalAlignment="Center"
-                                            VerticalAlignment="Center"
-                                            TextBlock.Foreground="{TemplateBinding Foreground}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Opacity" Value="0.8"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Opacity" Value="0.6"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.5"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-            </Button>
-            <Label DockPanel.Dock="Right"></Label>
-        </DockPanel>
-
-        <!-- 成绩文本框 -->
-        <Grid Grid.Row="2" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="10,5,10,10">
-                <TextBox Name="TbxResults" IsReadOnly="True" IsReadOnlyCaretVisible="True" Loaded="TbxResults_Loaded" Background="{Binding ElementName=MainWin,Path=Background}"  Foreground="{Binding ElementName=MainWin,Path=Foreground}" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" FontSize="15" PreviewMouseWheel="Control_PreviewMouseWheel" >
-                    <TextBox.Resources>
-                        <Style TargetType="{x:Type Border}">
-                            <Setter Property="CornerRadius" Value="4"/>
+                <!-- 展开/收起按钮 -->
+                <Button x:Name="BtnToggleResults" Content="▼" Width="auto" DockPanel.Dock="Right" HorizontalAlignment="Right" Click="BtnToggleResults_Click" Background="Transparent" BorderThickness="0" Foreground="{Binding ElementName=MainWin, Path=Foreground}" FontSize="12" Padding="10,2" Margin="0,0,5,0">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#20000000"/>
+                                </Trigger>
+                            </Style.Triggers>
                         </Style>
-                    </TextBox.Resources>
-                </TextBox>
+                    </Button.Style>
+                </Button>
 
-            </Grid>
+                <Button x:Name="BtnNext" DockPanel.Dock="Right" Content="&gt;" Width="25" VerticalAlignment="Center" Padding="6,3,6,3" Click="BtnNext_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="#ADADAD" BorderThickness="1" Padding="{TemplateBinding Padding}" CornerRadius="0,5,5,0">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Opacity" Value="0.8"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter Property="Opacity" Value="0.6"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.5"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+
+                <Button x:Name="BtnSendArticle" DockPanel.Dock="Right" Content="发文F2" Click="BtnSendArticle_Click" VerticalAlignment="Center" Padding="6,3,6,3">
+                </Button>
+
+                <Button x:Name="BtnArticleManager" DockPanel.Dock="Right" Content="本地文章" Width="auto" Click="BtnArticle_Click" VerticalAlignment="Center" Padding="6,3,6,3">
+                </Button>
+
+                <Button x:Name="BtnPrev" DockPanel.Dock="Right" Content="&lt;" Width="25" VerticalAlignment="Center" Padding="6,3,6,3" Click="BtnPrev_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="#ADADAD" BorderThickness="1" Padding="{TemplateBinding Padding}" CornerRadius="5,0,0,5">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Opacity" Value="0.8"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter Property="Opacity" Value="0.6"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.5"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+                <Label DockPanel.Dock="Right"></Label>
+            </DockPanel>
         </Grid>
 
+        <!-- GridSplitter: 跟打区+按钮区2 与 成绩区 之间 -->
+        <GridSplitter x:Name="gridSplitterResults" Grid.Row="5" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Transparent" ShowsPreview="False" Cursor="SizeNS" Panel.ZIndex="100" Margin="0" Height="5" DragCompleted="GridSplitterResults_DragCompleted">
+            <GridSplitter.Style>
+                <Style TargetType="GridSplitter">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Style.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="#E0E0E0"/>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </GridSplitter.Style>
+        </GridSplitter>
 
+        <!-- 成绩区（成绩显示） -->
+        <Border Grid.Row="6" x:Name="resultsTextBoxGrid" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="15,5,15,10">
+            <TextBox Name="TbxResults" IsReadOnly="True" IsReadOnlyCaretVisible="True" Loaded="TbxResults_Loaded" Background="{Binding ElementName=MainWin,Path=Background}" Foreground="{Binding ElementName=MainWin,Path=Foreground}" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" FontSize="15" PreviewMouseWheel="Control_PreviewMouseWheel">
+                <TextBox.Resources>
+                    <Style TargetType="{x:Type Border}">
+                        <Setter Property="CornerRadius" Value="4"/>
+                    </Style>
+                </TextBox.Resources>
+            </TextBox>
+        </Border>
+
+        <!-- 底部边框 -->
+        <Border Grid.Row="7" x:Name="bottomBorder" Background="Transparent" BorderThickness="0,0,0,0" CornerRadius="0,0,7,7" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
     </Grid>
     </Border>
 
         <!-- Resize边框 -->
         <!-- 四个边 -->
-        <Border Name="ResizeTop" Background="Transparent" Height="5" VerticalAlignment="Top"
+        <Border Name="ResizeTop" Background="Transparent" Height="10" VerticalAlignment="Top"
                 MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
                 MouseMove="ResizeBorder_MouseMove"
                 MouseLeave="ResizeBorder_MouseLeave"/>
-        <Border Name="ResizeBottom" Background="Transparent" Height="5" VerticalAlignment="Bottom"
+        <Border Name="ResizeBottom" Background="Transparent" Height="10" VerticalAlignment="Bottom"
                 MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
                 MouseMove="ResizeBorder_MouseMove"
                 MouseLeave="ResizeBorder_MouseLeave"/>
-        <Border Name="ResizeLeft" Background="Transparent" Width="5" HorizontalAlignment="Left"
+        <Border Name="ResizeLeft" Background="Transparent" Width="10" HorizontalAlignment="Left"
                 MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
                 MouseMove="ResizeBorder_MouseMove"
                 MouseLeave="ResizeBorder_MouseLeave"/>
-        <Border Name="ResizeRight" Background="Transparent" Width="5" HorizontalAlignment="Right"
+        <Border Name="ResizeRight" Background="Transparent" Width="10" HorizontalAlignment="Right"
                 MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
                 MouseMove="ResizeBorder_MouseMove"
                 MouseLeave="ResizeBorder_MouseLeave"/>
 
         <!-- 四个角 -->
-        <Border Name="ResizeTopLeft" Background="Transparent" Width="10" Height="10"
+        <Border Name="ResizeTopLeft" Background="Transparent" Width="16" Height="16"
                 HorizontalAlignment="Left" VerticalAlignment="Top"
                 MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
                 MouseMove="ResizeBorder_MouseMove"
                 MouseLeave="ResizeBorder_MouseLeave"/>
-        <Border Name="ResizeTopRight" Background="Transparent" Width="10" Height="10"
+        <Border Name="ResizeTopRight" Background="Transparent" Width="16" Height="16"
                 HorizontalAlignment="Right" VerticalAlignment="Top"
                 MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
                 MouseMove="ResizeBorder_MouseMove"
                 MouseLeave="ResizeBorder_MouseLeave"/>
-        <Border Name="ResizeBottomLeft" Background="Transparent" Width="10" Height="10"
+        <Border Name="ResizeBottomLeft" Background="Transparent" Width="16" Height="16"
                 HorizontalAlignment="Left" VerticalAlignment="Bottom"
                 MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
                 MouseMove="ResizeBorder_MouseMove"
                 MouseLeave="ResizeBorder_MouseLeave"/>
-        <Border Name="ResizeBottomRight" Background="Transparent" Width="10" Height="10"
+        <Border Name="ResizeBottomRight" Background="Transparent" Width="16" Height="16"
                 HorizontalAlignment="Right" VerticalAlignment="Bottom"
                 MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
                 MouseMove="ResizeBorder_MouseMove"

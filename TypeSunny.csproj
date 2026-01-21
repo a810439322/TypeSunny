@@ -14,6 +14,7 @@
     <WarningLevel>4</WarningLevel>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
+    <LangVersion>latest</LangVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <TargetFrameworkProfile />
     <PublishUrl>publish\</PublishUrl>
@@ -53,7 +54,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup>
-    <ApplicationIcon>sunny.ico</ApplicationIcon>
+    <ApplicationIcon>Resources\ico\sunny.ico</ApplicationIcon>
   </PropertyGroup>
   <PropertyGroup>
     <StartupObject>TypeSunny.App</StartupObject>
@@ -92,6 +93,8 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="Version\GeneratedVersion.cs" />
+    <Compile Include="Version\VersionManager.cs" />
     <Compile Include="Article\ArticleConfig.cs" />
     <Compile Include="Article\ArticleManager.cs" />
     <Compile Include="Article\Filter.cs" />
@@ -102,6 +105,8 @@
     <Compile Include="ArticleSender\ArticleFetcher.cs" />
     <Compile Include="ArticleSender\ArticleCache.cs" />
     <Compile Include="ArticleSender\WenlaiHelper.cs" />
+    <Compile Include="ArticleLog.cs" />
+    <Compile Include="WenlaiLog.cs" />
     <Compile Include="Colors.cs" />
     <Compile Include="Config.cs" />
     <Compile Include="CounterLog.cs" />
@@ -137,7 +142,7 @@
     <Compile Include="ZiTiHelper.cs" />
     <Compile Include="StringToFontFamily.cs" />
     <Compile Include="TextInfo.cs" />
-    <Compile Include="ThemeHelper.cs" />
+    <Compile Include="ThemeManager.cs" />
     <Compile Include="TxtConfig.cs" />
     <Compile Include="Win32.cs" />
     <Compile Include="WinConfig\WinColorPicker.xaml.cs">
@@ -148,6 +153,9 @@
     </Compile>
     <Compile Include="WinRaceLeaderboard.xaml.cs">
       <DependentUpon>WinRaceLeaderboard.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="WinStatistics.xaml.cs">
+      <DependentUpon>WinStatistics.xaml</DependentUpon>
     </Compile>
     <Compile Include="WinTrainer\TrainerConfig.cs" />
     <Compile Include="WinTrainer\TrainerLog.cs" />
@@ -179,6 +187,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="WinRaceLeaderboard.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="WinStatistics.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -228,9 +240,6 @@
     </BootstrapperPackage>
   </ItemGroup>
   <ItemGroup>
-    <Resource Include="sunny.ico" />
-  </ItemGroup>
-  <ItemGroup>
     <Content Include="introimages\1.png" />
     <Content Include="introimages\2.png" />
     <Content Include="introimages\3.png" />
@@ -275,10 +284,40 @@
     <Content Include="字体\*.TTF">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Resource Include="Resources\logo-512.png" />
+    <Content Include="Resources\ico\sunny.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\ico\paindutch.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="练单器\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Import Project="packages\Interop.UIAutomationClient.10.19041.0\build\Interop.UIAutomationClient.targets" Condition="Exists('packages\Interop.UIAutomationClient.10.19041.0\build\Interop.UIAutomationClient.targets')" />
+
+  <!-- 编译前自动从 version.txt 读取版本号并更新 GeneratedVersion.cs -->
+  <Target Name="UpdateVersionFromTxt" BeforeTargets="CoreCompile">
+    <ReadLinesFromFile File="Version\version.txt">
+      <Output TaskParameter="Lines" ItemName="VersionLines" />
+    </ReadLinesFromFile>
+    <PropertyGroup>
+      <VersionNumber>@(VersionLines->'%(Identity)')</VersionNumber>
+    </PropertyGroup>
+    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="true" Lines="// &lt;auto-generated/&gt;" />
+    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="// 此文件由 MSBuild 在编译时自动生成，请勿手动修改" />
+    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="// 来源：Version/version.txt" />
+    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="" />
+    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="namespace TypeSunny" />
+    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="{" />
+    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="    internal static class GeneratedVersion" />
+    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="    {" />
+    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="$([System.String]::Format('        public const string CurrentVersion = &quot;{0}&quot;;', '$(VersionNumber.Trim())'))" />
+    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="    }" />
+    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="}" />
+  </Target>
+
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
       <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>

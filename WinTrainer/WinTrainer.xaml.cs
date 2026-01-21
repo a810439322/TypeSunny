@@ -15,6 +15,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Interop;
 
 
 namespace TypeSunny
@@ -29,6 +30,27 @@ namespace TypeSunny
 
     public partial class WinTrainer : Window
     {
+        // 自定义最大化状态
+        private bool _isCustomMaximized = false;
+        private Rect _restoreBounds = new Rect();
+
+        // Win32 API for resize
+        [DllImport("user32.dll")]
+        public static extern bool ReleaseCapture();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        private const int WM_NCLBUTTONDOWN = 0xA1;
+        private const int HT_LEFT = 10;
+        private const int HT_RIGHT = 11;
+        private const int HT_TOP = 12;
+        private const int HT_TOPLEFT = 13;
+        private const int HT_TOPRIGHT = 14;
+        private const int HT_BOTTOM = 15;
+        private const int HT_BOTTOMLEFT = 16;
+        private const int HT_BOTTOMRIGHT = 17;
+
         public const string Folder = "练单器/";
         public static WinTrainer Current
         {
@@ -103,6 +125,7 @@ namespace TypeSunny
         private int roundCompletedGroups = 0; // 本轮完成段数
         private List<double> roundHitRates = new List<double>();   // 本轮每段击键率
         private List<double> roundSpeeds = new List<double>();     // 本轮每段速度
+        private bool hasStartedPractice = false;  // 是否已经开始练习（有有效成绩）
 
 
 
@@ -458,6 +481,7 @@ namespace TypeSunny
                 roundCompletedGroups++;
                 roundHitRates.Add(hitrate);
                 roundSpeeds.Add(Score.Speed);
+                hasStartedPractice = true;  // 标记已开始练习
 
                 string t =  "击键 " + hitrate.ToString("F2") + "/" + TargetHit.ToString("0.00");
                 AutoNextGroup();
@@ -468,6 +492,8 @@ namespace TypeSunny
 
                 QQHelper.SendQQMessageD(MainWindow.Current.QQGroupName, result, matchText, 150, MainWindow.Current);
 
+                // 更新本轮统计显示
+                UpdateRoundStatus();
 
             }
             else
@@ -530,6 +556,46 @@ namespace TypeSunny
 
         }
 
+        /// <summary>
+        /// 更新本轮统计显示（实时显示均速、均击、字数等）
+        /// </summary>
+        private void UpdateRoundStatus()
+        {
+            string statText = "";
+
+            // 只有开始练习时才显示统计
+            if (hasStartedPractice)
+            {
+                double avgHitRate = 0;
+                double avgSpeed = 0;
+                double avgAccuracy = 0;
+
+                if (roundHitRates.Count > 0)
+                    avgHitRate = roundHitRates.Average();
+                if (roundSpeeds.Count > 0)
+                    avgSpeed = roundSpeeds.Average();
+
+                // 总键准 = 打对字数 / 实际字数（包括所有重打）
+                if (roundActualWords > 0)
+                    avgAccuracy = (double)roundCorrectWords / roundActualWords * 100;
+
+                // 进度百分比
+                double progress = (double)roundCompletedGroups / TotalGroup * 100;
+
+                statText = string.Format("{0} 均击{1:F2} 均速{2:F2} 字数{3} 实际{4} 进度{5:F0}%",
+                    TxtFile, avgHitRate, avgSpeed, roundTotalWords, roundActualWords, progress);
+            }
+
+            // 更新练单器窗口内的显示
+            stattxt2.Text = statText;
+
+            // 更新主窗口成绩栏的显示
+            if (MainWindow.Current != null)
+            {
+                MainWindow.Current.UpdateTrainerStat(statText);
+            }
+        }
+
         private void UpdateFileList()
         {
             if (!Directory.Exists(Folder))
@@ -556,7 +622,7 @@ namespace TypeSunny
                 InGroupRand();
 
             ShowWords();
-            
+
 
             WriteCfg();
 
@@ -570,6 +636,9 @@ namespace TypeSunny
             DisplayHit();
 
             stattxt.Text = "第 " + (Convert.ToInt32(cfg["上次的段数"]) + 1) + "/" + TotalGroup + " 段";
+
+            // 更新本轮统计显示
+            UpdateRoundStatus();
         }
         private void InitGroup() //初始化组
         {
@@ -595,7 +664,10 @@ namespace TypeSunny
                 DisplayHit();
             
             stattxt.Text = "第 " + (Convert.ToInt32(cfg["上次的段数"]) + 1) + "/" + TotalGroup + " 段";
-       
+
+            // 更新本轮统计显示（初始化时清空）
+            UpdateRoundStatus();
+
 
         }
 
@@ -617,6 +689,8 @@ namespace TypeSunny
 
                 // 重置统计数据，准备下一轮
                 ResetRoundStatistics();
+                // 清空统计显示
+                UpdateRoundStatus();
             }
 
             sld.Value = Convert.ToInt32(cfg["上次的段数"]) + 1;
@@ -641,6 +715,7 @@ namespace TypeSunny
             roundCompletedGroups = 0;
             roundHitRates.Clear();
             roundSpeeds.Clear();
+            hasStartedPractice = false;
         }
 
         /// <summary>
@@ -673,9 +748,23 @@ namespace TypeSunny
             sb.AppendLine($"平均击键：{avgHitRate:F2}");
             sb.AppendLine($"平均速度：{avgSpeed:F2}");
             sb.AppendLine($"总键准：{avgAccuracy:F2}%");
-            sb.AppendLine($"总用时：{roundTotalTime:F2}秒");
+            sb.AppendLine($"总用时：{Score.FormatTime(roundTotalTime)}");
 
             MessageBox.Show(sb.ToString(), "练习统计", MessageBoxButton.OK, MessageBoxImage.Information);
+
+            // 生成成绩记录格式，添加到主窗口成绩区
+            string resultRecord = string.Format("[练单] {0} 击键{1:F2} 速度{2:F2} 字数{3} 实际{4} 键准{5:F2}% 用时{6}",
+                TxtFile, avgHitRate, avgSpeed, roundTotalWords, roundActualWords, avgAccuracy, Score.FormatTime(roundTotalTime));
+            if (MainWindow.Current != null)
+            {
+                MainWindow.Current.UpdateTypingStat(resultRecord);
+            }
+
+            // 根据"自动发送成绩"开关决定是否复制成绩到剪贴板
+            if (Config.GetBool("自动发送成绩"))
+            {
+                MainWindow.Win32SetText(resultRecord);
+            }
         }
 
         /// <summary>
@@ -699,16 +788,29 @@ namespace TypeSunny
             if (roundActualWords > 0)
                 avgAccuracy = (double)roundCorrectWords / roundActualWords * 100;
 
-            TrainerLog.TrainerRecord record = new TrainerLog.TrainerRecord
+            // 使用与文章日志相同的 ArticleRecord 格式
+            ArticleLog.ArticleRecord record = new ArticleLog.ArticleRecord
             {
-                Date = DateTime.Now,
-                ExerciseName = TxtFile,
+                Time = DateTime.Now,
+                ArticleName = TxtFile,
                 TotalWords = roundTotalWords,
-                ActualWords = roundActualWords,
-                AvgHitRate = avgHitRate,
-                AvgSpeed = avgSpeed,
-                AvgAccuracy = avgAccuracy,
-                TotalTime = roundTotalTime
+                InputWords = roundActualWords,
+                Speed = avgSpeed,
+                HitRate = avgHitRate,
+                Accuracy = avgAccuracy / 100,  // 转换为小数形式
+                Wrong = roundActualWords - roundCorrectWords,  // 错字数 = 实际字数 - 打对字数
+                Backs = 0,  // 打单器不跟踪退格
+                Correction = 0,  // 打单器不跟踪回改
+                KPW = avgSpeed > 0 ? avgHitRate / avgSpeed * 60 : 0,  // 码长 = 击键/速度*60
+                LRRatio = 0,  // 打单器不跟踪左右键比
+                TotalHit = (int)(avgHitRate * roundTotalTime),  // 总键数
+                TotalSeconds = roundTotalTime,
+                ArticleMark = "",  // 打单器没有段号
+                WasteCodes = 0,  // 打单器不跟踪废码
+                CiRatio = 0,  // 打单器不跟踪打词率
+                Choose = 0,  // 打单器不跟踪选重
+                BiaoDing = 0,  // 打单器不跟踪标顶
+                DifficultyName = ""  // 打单器没有难度名称
             };
 
             TrainerLog.WriteRecord(record);
@@ -788,6 +890,9 @@ namespace TypeSunny
 
             InitializeComponent();
 
+            // 应用主题颜色
+            ApplyThemeColors();
+
             UpdateFileList();
             InitCfg();
 
@@ -815,8 +920,35 @@ namespace TypeSunny
         {
             if (CfgInit && SliderInit)
             {
-                cfg["上次的段数"] = (Convert.ToInt32(sld.Value) - 1).ToString();
-    
+                int newSection = Convert.ToInt32(sld.Value) - 1;
+                int oldSection = Convert.ToInt32(cfg["上次的段数"]);
+
+                // 如果用户已经开始练习，并且改变了段数
+                if (hasStartedPractice && newSection != oldSection)
+                {
+                    if (newSection == 0)
+                    {
+                        // 拖到第一段，重新开始计分
+                        MessageBox.Show("当前分数已作废，从第一段重新开始计分", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                        ResetRoundStatistics();
+                    }
+                    else
+                    {
+                        // 拖到其他段，分数作废但不重新计分
+                        MessageBox.Show("当前分数已作废", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                        hasStartedPractice = false;
+                        roundTotalWords = 0;
+                        roundActualWords = 0;
+                        roundCorrectWords = 0;
+                        roundTotalTime = 0;
+                        roundCompletedGroups = 0;
+                        roundHitRates.Clear();
+                        roundSpeeds.Clear();
+                    }
+                }
+
+                cfg["上次的段数"] = newSection.ToString();
+
                 InitGroup();
             }
         }
@@ -987,22 +1119,19 @@ namespace TypeSunny
 
 
 
-        private void speed_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            if (CfgInit)
-            {
-                cfg["换段击键"] = speed.Text;
-                if (DisplayRoot != null)
-                {
-                    InitGroup();
-
-                }
-                WriteCfg();
-            }
-        }
-
-
-
+        // 旧的TextBox事件处理方法已被滚轮选择器替代
+        // private void speed_TextChanged(object sender, TextChangedEventArgs e)
+        // {
+        //     if (CfgInit)
+        //     {
+        //         cfg["换段击键"] = speed.Text;
+        //         if (DisplayRoot != null)
+        //         {
+        //             InitGroup();
+        //         }
+        //         WriteCfg();
+        //     }
+        // }
 
 
 
@@ -1041,21 +1170,10 @@ namespace TypeSunny
                 }
             }
 
-
-
-
-         
-
-            speed.Text = cfg["换段击键"];
-            TextNum.Text = cfg["每组字数"];
-            TextHitDecrease.Text = cfg["每轮降击"];
-
-       
-
-
-
-
-
+            // 设置数值显示
+            speedDisplay.Text = cfg["换段击键"];
+            numDisplay.Text = cfg["每组字数"];
+            hitDecreaseDisplay.Text = cfg["每轮降击"];
 
             this.Top = MainWindow.Current.Top;
             this.Left = MainWindow.Current.Left - this.Width;
@@ -1071,7 +1189,7 @@ namespace TypeSunny
         private void WriteCfg()
         {
 
-            cfg["删除此文件即可重置设置"] = "获取更新加Q群：21134461";
+            cfg["删除此文件即可重置设置"] = "获取更新加Q群：" + Config.GetString("软件更新Q群");
 
             try
             {
@@ -1096,62 +1214,49 @@ namespace TypeSunny
 
 
 
+        // 旧的TextBox事件处理方法已被滚轮选择器替代
+        // private void TextNum_TextChanged(object sender, TextChangedEventArgs e)
+        // {
+        //     if (CfgInit)
+        //     {
+        //         if (int.TryParse(TextNum.Text, out int tmp2))
+        //         {
+        //             cfg["每组字数"] = tmp2.ToString();
+        //             if (DisplayRoot != null)
+        //             {
+        //                 ReadTxt();
+        //                 ShowWords();
+        //                 LoadText();
+        //             }
+        //             WriteCfg();
+        //         }
+        //         else
+        //         {
+        //             TextNum.Text = cfg["每组字数"];
+        //         }
+        //     }
+        // }
 
-        private void TextNum_TextChanged(object sender, TextChangedEventArgs e)
-        {
-
-            if (CfgInit)
-            {
-                if (int.TryParse(TextNum.Text, out int tmp2))
-                {
-
-                    cfg["每组字数"] = tmp2.ToString();
-                    if (DisplayRoot != null)
-                    {
-
-                        ReadTxt();
-                        ShowWords();
-                        LoadText();
-                    }
-                    WriteCfg();
-                }
-                else
-                {
-
-                    TextNum.Text = cfg["每组字数"];
-                }
-
-
-            }
-
-        }
-
-        private void TextHitDecrease_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            double tmp2;
-            if (CfgInit)
-            {
-                if (double.TryParse(TextHitDecrease.Text, out tmp2))
-                {
-
-                    cfg["每轮降击"] = tmp2.ToString();
-                    if (DisplayRoot != null)
-                    {
-                        InitGroup();
-
-
-                    }
-                    WriteCfg();
-                }
-                else
-                {
-
-                    TextHitDecrease.Text = cfg["每轮降击"];
-                }
-
-
-            }
-        }
+        // private void TextHitDecrease_TextChanged(object sender, TextChangedEventArgs e)
+        // {
+        //     double tmp2;
+        //     if (CfgInit)
+        //     {
+        //         if (double.TryParse(TextHitDecrease.Text, out tmp2))
+        //         {
+        //             cfg["每轮降击"] = tmp2.ToString();
+        //             if (DisplayRoot != null)
+        //             {
+        //                 InitGroup();
+        //             }
+        //             WriteCfg();
+        //         }
+        //         else
+        //         {
+        //             TextHitDecrease.Text = cfg["每轮降击"];
+        //         }
+        //     }
+        // }
 
 
         private int GetCharCount(List<StringInfo> siList)
@@ -1184,7 +1289,7 @@ namespace TypeSunny
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
- 
+
             if (TextInfo.Exit)
                 e.Cancel = false;
             else
@@ -1194,7 +1299,388 @@ namespace TypeSunny
             }
 
 
-            
+        }
+
+        // ==================== 窗口控制相关方法 ====================
+
+        // 标题栏拖动
+        private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount == 2)
+            {
+                BtnMaximize_Click(sender, e);
+            }
+            else
+            {
+                this.DragMove();
+            }
+        }
+
+        // 最小化
+        private void BtnMinimize_Click(object sender, RoutedEventArgs e)
+        {
+            this.WindowState = WindowState.Minimized;
+        }
+
+        // 最大化
+        private void BtnMaximize_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isCustomMaximized)
+            {
+                // 恢复窗口
+                this.Left = _restoreBounds.X;
+                this.Top = _restoreBounds.Y;
+                this.Width = _restoreBounds.Width;
+                this.Height = _restoreBounds.Height;
+                _isCustomMaximized = false;
+                BtnMaximize.Content = "◻";
+            }
+            else
+            {
+                // 保存当前窗口位置和大小
+                _restoreBounds = new Rect(this.Left, this.Top, this.Width, this.Height);
+
+                // 使用工作区（不含任务栏）进行最大化
+                var workArea = SystemParameters.WorkArea;
+                this.Left = workArea.Left;
+                this.Top = workArea.Top;
+                this.Width = workArea.Width;
+                this.Height = workArea.Height;
+                _isCustomMaximized = true;
+                BtnMaximize.Content = "◰";
+            }
+        }
+
+        // 关闭
+        private void BtnClose_Click(object sender, RoutedEventArgs e)
+        {
+            this.Close();
+        }
+
+        // 窗口resize处理
+        private void ResizeBorder_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var border = sender as FrameworkElement;
+            if (border == null) return;
+
+            var windowHandle = new WindowInteropHelper(this).Handle;
+            if (windowHandle == IntPtr.Zero) return;
+
+            ReleaseCapture();
+
+            int direction = 0;
+            string borderName = border.Name;
+
+            switch (borderName)
+            {
+                case "ResizeTop": direction = HT_TOP; break;
+                case "ResizeBottom": direction = HT_BOTTOM; break;
+                case "ResizeLeft": direction = HT_LEFT; break;
+                case "ResizeRight": direction = HT_RIGHT; break;
+                default: return;
+            }
+
+            SendMessage(windowHandle, WM_NCLBUTTONDOWN, (IntPtr)direction, IntPtr.Zero);
+        }
+
+        private void ResizeBorder_MouseMove(object sender, MouseEventArgs e)
+        {
+            var border = sender as FrameworkElement;
+            if (border == null) return;
+
+            string borderName = border.Name;
+
+            switch (borderName)
+            {
+                case "ResizeTop":
+                case "ResizeBottom":
+                    this.Cursor = Cursors.SizeNS;
+                    break;
+                case "ResizeLeft":
+                case "ResizeRight":
+                    this.Cursor = Cursors.SizeWE;
+                    break;
+                default:
+                    this.Cursor = Cursors.Arrow;
+                    break;
+            }
+        }
+
+        private void ResizeBorder_MouseLeave(object sender, MouseEventArgs e)
+        {
+            this.Cursor = Cursors.Arrow;
+        }
+
+        // ==================== 数值调节按钮事件 ====================
+
+        // 击键速度调节
+        private void SpeedUp(object sender, RoutedEventArgs e)
+        {
+            if (CfgInit && double.TryParse(speedDisplay.Text, out double value))
+            {
+                value += 0.5;
+                if (value > 100) value = 100;
+                speedDisplay.Text = value.ToString("F1");
+                cfg["换段击键"] = value.ToString("F1");
+
+                // 检查并调整每轮降击
+                if (double.TryParse(hitDecreaseDisplay.Text, out double decreaseValue))
+                {
+                    if (decreaseValue > value)
+                    {
+                        hitDecreaseDisplay.Text = value.ToString("F1");
+                        cfg["每轮降击"] = value.ToString("F1");
+                    }
+                }
+
+                if (DisplayRoot != null)
+                    InitGroup();
+                WriteCfg();
+            }
+        }
+
+        private void SpeedDown(object sender, RoutedEventArgs e)
+        {
+            if (CfgInit && double.TryParse(speedDisplay.Text, out double value))
+            {
+                value -= 0.5;
+                if (value < 0) value = 0;
+                speedDisplay.Text = value.ToString("F1");
+                cfg["换段击键"] = value.ToString("F1");
+
+                if (DisplayRoot != null)
+                    InitGroup();
+                WriteCfg();
+            }
+        }
+
+        // 字数组调节
+        private void NumUp(object sender, RoutedEventArgs e)
+        {
+            if (CfgInit && int.TryParse(numDisplay.Text, out int value))
+            {
+                value += 1;
+                if (value > 9999) value = 9999;
+                numDisplay.Text = value.ToString();
+                cfg["每组字数"] = value.ToString();
+
+                if (DisplayRoot != null)
+                {
+                    ReadTxt();
+                    ShowWords();
+                    LoadText();
+                }
+                WriteCfg();
+            }
+        }
+
+        private void NumDown(object sender, RoutedEventArgs e)
+        {
+            if (CfgInit && int.TryParse(numDisplay.Text, out int value))
+            {
+                value -= 1;
+                if (value < 1) value = 1;
+                numDisplay.Text = value.ToString();
+                cfg["每组字数"] = value.ToString();
+
+                if (DisplayRoot != null)
+                {
+                    ReadTxt();
+                    ShowWords();
+                    LoadText();
+                }
+                WriteCfg();
+            }
+        }
+
+        // 字数显示TextChanged事件
+        private void NumDisplay_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (CfgInit && numDisplay.Text.Length > 0)
+            {
+                if (int.TryParse(numDisplay.Text, out int value))
+                {
+                    if (value < 1) value = 1;
+                    if (value > 99999) value = 99999;
+                    cfg["每组字数"] = value.ToString();
+
+                    if (DisplayRoot != null)
+                    {
+                        ReadTxt();
+                        ShowWords();
+                        LoadText();
+                    }
+                    WriteCfg();
+                }
+            }
+        }
+
+        // 换段击键显示TextChanged事件
+        private void SpeedDisplay_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (CfgInit && speedDisplay.Text.Length > 0)
+            {
+                if (double.TryParse(speedDisplay.Text, out double value))
+                {
+                    if (value < 0) value = 0;
+                    if (value > 100) value = 100;
+                    cfg["换段击键"] = value.ToString("F1");
+
+                    // 检查并调整每轮降击
+                    if (double.TryParse(hitDecreaseDisplay.Text, out double decreaseValue))
+                    {
+                        if (decreaseValue > value)
+                        {
+                            hitDecreaseDisplay.Text = value.ToString("F1");
+                            cfg["每轮降击"] = value.ToString("F1");
+                        }
+                    }
+
+                    if (DisplayRoot != null)
+                        InitGroup();
+                    WriteCfg();
+                }
+            }
+        }
+
+        // 每轮降击显示TextChanged事件
+        private void HitDecreaseDisplay_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (CfgInit && hitDecreaseDisplay.Text.Length > 0)
+            {
+                if (double.TryParse(hitDecreaseDisplay.Text, out double value))
+                {
+                    if (value < 0) value = 0;
+                    // 限制不能超过击键值
+                    if (double.TryParse(speedDisplay.Text, out double hitValue))
+                    {
+                        if (value > hitValue) value = hitValue;
+                    }
+                    cfg["每轮降击"] = value.ToString("F2");
+
+                    if (DisplayRoot != null)
+                        InitGroup();
+                    WriteCfg();
+                }
+            }
+        }
+
+        // 每轮降击调节
+        private void HitDecreaseUp(object sender, RoutedEventArgs e)
+        {
+            if (CfgInit && double.TryParse(hitDecreaseDisplay.Text, out double value))
+            {
+                value += 0.05;
+                // 限制不能超过击键值
+                if (double.TryParse(speedDisplay.Text, out double hitValue))
+                {
+                    if (value > hitValue) value = hitValue;
+                }
+                hitDecreaseDisplay.Text = value.ToString("F2");
+                cfg["每轮降击"] = value.ToString("F2");
+
+                if (DisplayRoot != null)
+                    InitGroup();
+                WriteCfg();
+            }
+        }
+
+        private void HitDecreaseDown(object sender, RoutedEventArgs e)
+        {
+            if (CfgInit && double.TryParse(hitDecreaseDisplay.Text, out double value))
+            {
+                value -= 0.05;
+                if (value < 0) value = 0;
+                hitDecreaseDisplay.Text = value.ToString("F2");
+                cfg["每轮降击"] = value.ToString("F2");
+
+                if (DisplayRoot != null)
+                    InitGroup();
+                WriteCfg();
+            }
+        }
+
+        // ==================== 主题颜色应用方法 ====================
+
+        /// <summary>
+        /// 刷新主题颜色（公共方法，供外部调用）
+        /// </summary>
+        public void RefreshTheme()
+        {
+            ApplyThemeColors();
+        }
+
+        /// <summary>
+        /// 应用主题颜色到练单器窗口
+        /// </summary>
+        private void ApplyThemeColors()
+        {
+            try
+            {
+                // 获取主题颜色
+                string windowBgColor = Config.GetString("窗体背景色");
+                string windowFgColor = Config.GetString("窗体字体色");
+                string displayBgColor = Config.GetString("跟打区背景色");
+                string accentColor = Config.GetString("标题栏进度条颜色");
+
+                // 转换颜色
+                var bgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + windowBgColor));
+                var fgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + windowFgColor));
+                var displayBgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + displayBgColor));
+                var accentColorBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + accentColor));
+
+                // 计算派生颜色
+                var borderBrush = new SolidColorBrush(Color.FromRgb(
+                    (byte)Math.Max(0, bgBrush.Color.R - 30),
+                    (byte)Math.Max(0, bgBrush.Color.G - 30),
+                    (byte)Math.Max(0, bgBrush.Color.B - 30)
+                ));
+
+                var toolbarBgBrush = new SolidColorBrush(Color.FromRgb(
+                    (byte)Math.Max(0, bgBrush.Color.R - 15),
+                    (byte)Math.Max(0, bgBrush.Color.G - 15),
+                    (byte)Math.Max(0, bgBrush.Color.B - 15)
+                ));
+
+                var buttonBgBrush = new SolidColorBrush(Color.FromRgb(
+                    (byte)Math.Min(255, bgBrush.Color.R + 20),
+                    (byte)Math.Min(255, bgBrush.Color.G + 20),
+                    (byte)Math.Min(255, bgBrush.Color.B + 20)
+                ));
+
+                var buttonHoverBrush = new SolidColorBrush(Color.FromRgb(
+                    (byte)Math.Min(255, buttonBgBrush.Color.R + 15),
+                    (byte)Math.Min(255, buttonBgBrush.Color.G + 15),
+                    (byte)Math.Min(255, buttonBgBrush.Color.B + 15)
+                ));
+
+                // 更新资源字典中的颜色
+                this.Resources["WindowBackground"] = bgBrush;
+                this.Resources["WindowBorderBrush"] = borderBrush;
+                this.Resources["TextForeground"] = fgBrush;
+                this.Resources["ToolbarBackground"] = toolbarBgBrush;
+                this.Resources["TypingAreaBackground"] = displayBgBrush;
+                this.Resources["BorderBrush"] = borderBrush;
+                this.Resources["ButtonBackground"] = buttonBgBrush;
+                this.Resources["ButtonHoverBackground"] = buttonHoverBrush;
+                this.Resources["AccentColor"] = accentColorBrush;
+
+                // 更新DisplayGrid的背景色
+                if (DisplayGrid != null)
+                {
+                    DisplayGrid.Background = displayBgBrush;
+                }
+
+                // 更新fld的前景色
+                if (fld != null)
+                {
+                    fld.Foreground = fgBrush;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"应用主题颜色失败: {ex.Message}");
+            }
         }
     }
 }

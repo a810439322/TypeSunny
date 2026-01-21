@@ -5,128 +5,309 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TypeSunny"
         mc:Ignorable="d"
-        Title="练单器" Background="#666666"  Foreground="LightGray" Icon="/Resources/logo-512.png" xml:lang="zh-CN" Width="400" Height="400" Closing="Window_Closing">
+        Title="练单器"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResizeWithGrip"
+        Background="Transparent"
+        Icon="/Resources/ico/sunny.ico"
+        xml:lang="zh-CN"
+        Width="500" Height="450"
+        SizeToContent="Manual">
 
+    <Window.Resources>
+        <RoutedUICommand x:Key="Chongda" Text="Retype"/>
 
+        <!-- 主题颜色资源 -->
+        <SolidColorBrush x:Key="WindowBackground" Color="#FF2D2D2D"/>
+        <SolidColorBrush x:Key="WindowBorderBrush" Color="#FF555555"/>
+        <SolidColorBrush x:Key="TextForeground" Color="#FFE0E0E0"/>
+        <SolidColorBrush x:Key="ToolbarBackground" Color="#FF3D3D3D"/>
+        <SolidColorBrush x:Key="TypingAreaBackground" Color="#FF1E1E1E"/>
+        <SolidColorBrush x:Key="BorderBrush" Color="#FF555555"/>
+        <SolidColorBrush x:Key="ButtonBackground" Color="#FF4D4D4D"/>
+        <SolidColorBrush x:Key="ButtonHoverBackground" Color="#FF5D5D5D"/>
+        <SolidColorBrush x:Key="ButtonPressedBackground" Color="#FF6D6D6D"/>
+        <SolidColorBrush x:Key="AccentColor" Color="#FF007ACC"/>
 
+        <!-- 现代化按钮样式 -->
+        <Style x:Key="ModernButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource ButtonBackground}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextForeground}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="15,6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{DynamicResource ButtonHoverBackground}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{DynamicResource ButtonPressedBackground}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
+        <!-- 数值输入框样式 -->
+        <Style x:Key="NumberInputStyle" TargetType="TextBox">
+            <Setter Property="Background" Value="{DynamicResource ToolbarBackground}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentColor}"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="TextAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="0"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 数值调节按钮样式 -->
+        <Style x:Key="NumberButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource ButtonBackground}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextForeground}"/>
+            <Setter Property="Width" Value="24"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="2">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <ContentPresenter.Content>
+                                    <TextBlock Text="{TemplateBinding Content}" FontSize="14" FontWeight="Bold"/>
+                                </ContentPresenter.Content>
+                            </ContentPresenter>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{DynamicResource ButtonHoverBackground}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{DynamicResource AccentColor}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 标题栏按钮样式 -->
+        <Style x:Key="TitleBarButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextForeground}"/>
+            <Setter Property="Width" Value="45"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#50FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Window.Effect>
+        <DropShadowEffect BlurRadius="20" ShadowDepth="2" Color="Black" Opacity="0.3"/>
+    </Window.Effect>
 
     <Grid>
+        <!-- 外层边框 -->
+        <Border x:Name="MainBorder"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource WindowBorderBrush}"
+                CornerRadius="6"
+                ClipToBounds="True"
+                Margin="5"
+                Background="{DynamicResource WindowBackground}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="28"/>
+                    <RowDefinition Height="auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="auto"/>
+                    <RowDefinition Height="auto"/>
+                </Grid.RowDefinitions>
 
-        <Grid.RowDefinitions>
-            <RowDefinition Height="auto" />
-            <RowDefinition x:Name="cot" Height="*" />
+                <!-- 自定义标题栏 -->
+                <Border Grid.Row="0" CornerRadius="5,5,0,0" ClipToBounds="True" Margin="2,2,2,0" Background="Transparent" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                    <Grid x:Name="TitleBarGrid">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                            <Image Source="/Resources/ico/sunny.ico" Width="14" Height="14" Margin="0,0,6,0"/>
+                            <TextBlock Text="练单器" FontSize="11" Foreground="{DynamicResource TextForeground}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Button x:Name="BtnMinimize" Content="━" Click="BtnMinimize_Click" Style="{StaticResource TitleBarButtonStyle}"/>
+                            <Button x:Name="BtnMaximize" Content="◻" Click="BtnMaximize_Click" Style="{StaticResource TitleBarButtonStyle}"/>
+                            <Button x:Name="BtnClose" Content="×" Click="BtnClose_Click" Style="{StaticResource TitleBarButtonStyle}"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
 
-            <RowDefinition Height="auto" />
-            <RowDefinition Height="auto" />
-        </Grid.RowDefinitions>
+                <!-- 工具栏 -->
+                <Border Grid.Row="1" Background="{DynamicResource ToolbarBackground}" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource BorderBrush}" Padding="10,6">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Orientation="Horizontal">
+                            <ComboBox x:Name="FileSelector" Width="110" Height="26" SelectionChanged="FileSelector_SelectionChanged"/>
+                            <Button Content="全体乱序" Margin="8,0,0,0" Click="RandAllClick" Style="{StaticResource ModernButtonStyle}"/>
+                            <Button Content="恢复顺序" Margin="5,0,0,0" Click="norm_Click" Style="{StaticResource ModernButtonStyle}"/>
+                            <Button Content="发文" Margin="5,0,0,0" Click="BtnSend_Click" Style="{StaticResource ModernButtonStyle}"/>
+                        </StackPanel>
+                        <TextBlock x:Name="TBHitrate" Grid.Column="1" Text="击键 0.00" Foreground="{DynamicResource TextForeground}" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="12"/>
+                    </Grid>
+                </Border>
 
+                <!-- 练习区 -->
+                <Grid x:Name="DisplayGrid" Grid.Row="2" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="10,8,10,8" Background="{DynamicResource TypingAreaBackground}">
+                    <TextBox x:Name="fld" Padding="12" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="Wrap" TextAlignment="Left" Foreground="{DynamicResource TextForeground}" IsReadOnly="True" VerticalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent" FontSize="14"/>
+                </Grid>
 
-        <WrapPanel Grid.Row="0" Orientation="Horizontal"  Margin="0,3,0,3" >
-            <ComboBox x:Name="FileSelector"  Height="auto" Width="auto" VerticalAlignment="Center" SelectionChanged="FileSelector_SelectionChanged" Grid.Column="0" Margin="10,0,5,0" HorizontalAlignment="Center" Padding="10,2,10,2"  />
+                <!-- 进度条区 -->
+                <Grid Grid.Row="3" HorizontalAlignment="Stretch" VerticalAlignment="Top" Margin="10,4,10,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="auto"/>
+                        <ColumnDefinition Width="auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="stattxt" Grid.Column="0" Text="status" Foreground="{DynamicResource TextForeground}" VerticalAlignment="Center" Margin="0,0,8,0" FontSize="11"/>
+                    <TextBlock x:Name="stattxt2" Grid.Column="1" Text="" Foreground="{DynamicResource AccentColor}" VerticalAlignment="Center" Margin="0,0,8,0" FontSize="11"/>
+                    <Slider x:Name="sld" Grid.Column="2" HorizontalAlignment="Stretch" VerticalAlignment="Center" ValueChanged="Slider_ValueChanged" IsSnapToTickEnabled="True" Opacity="0.6"/>
+                </Grid>
 
-            <Button x:Name="Rstall" Grid.Column="1" Height="auto" Width="auto" VerticalAlignment="Center" Content="全体乱序" Margin="0,0,0,0" HorizontalAlignment="Center" Padding="5,2,5,2" Click="RandAllClick"  />
-            <Button x:Name="norm" Grid.Column="1" Height="auto" Width="auto" VerticalAlignment="Center" Content="恢复顺序" Margin="0,0,0,0" HorizontalAlignment="Center" Padding="5,2,5,2" Click="norm_Click"  />
-            <Button x:Name="BtnSend" Grid.Column="1" Height="auto" Width="auto" VerticalAlignment="Center" Content="发文" Margin="0,0,0,0" HorizontalAlignment="Center" Padding="5,2,5,2" Click="BtnSend_Click" />
-
-        </WrapPanel>
-   
-            <TextBlock  Panel.ZIndex="-1"  x:Name="TBHitrate" Foreground="LightGray" Text="击键 0.00" Grid.Column="6" Margin="5,0,15,0" HorizontalAlignment="right" VerticalAlignment="Center"  ></TextBlock>
-
-
-
-        <Grid  Grid.Row="1" Height="auto"   Name="DisplayGrid" Width="auto"  HorizontalAlignment="Stretch"  VerticalAlignment="Stretch" Margin="10,0,10,0" Background= "#EEDDBB"  >
-
-
-                <TextBox  x:Name="fld" Grid.Row="0" Height="auto"  Width="auto"  HorizontalAlignment="Stretch" Padding="5"  VerticalAlignment="Stretch" TextWrapping="Wrap" TextAlignment="Left" Foreground="Black" IsReadOnly="True" VerticalScrollBarVisibility="Auto" >
-        
-
-
-                </TextBox>
-
-        
-
-
-
-
-
-        </Grid>
-
-
-        <Grid Grid.Row="2" HorizontalAlignment="Stretch" VerticalAlignment="Top" Height="auto" Panel.ZIndex="1" Margin ="0,5,0,10">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="15"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock x:Name="stattxt" Text ="status" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="10,0,5,0" Foreground="LightGray" ></TextBlock>
-            <Slider x:Name="sld" Grid.Column ="1"  HorizontalAlignment="Stretch" Margin="10,0,10,0" Grid.Row="3" VerticalAlignment="Center" ValueChanged="Slider_ValueChanged" TickPlacement="TopLeft" IsSnapToTickEnabled="True" Opacity="0.5"/>
-
-
-        </Grid>
-
-
-
-
-
-            <Grid  HorizontalAlignment="Center"  VerticalAlignment="Stretch"  Grid.Row="3"  Margin="0,10,0,10" MinHeight="150">
+                <!-- 设置面板 -->
+                <Grid Grid.Row="4" HorizontalAlignment="Center" Margin="0,8,0,10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="auto"/>
                         <ColumnDefinition Width="auto"/>
                         <ColumnDefinition Width="auto"/>
                     </Grid.ColumnDefinitions>
-           
 
- 
-                    <GroupBox BorderThickness="0.5" Margin="5,0,5,0"  Grid.Column="0"  Width="auto" HorizontalAlignment="center" >
-                        <GroupBox.Header>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="击键>" Grid.Column="0" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,0,0" ></TextBlock>
+                    <!-- 击键速度 -->
+                    <Border Grid.Column="0" Background="{DynamicResource ToolbarBackground}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,0,4,0">
+                        <StackPanel>
+                            <TextBlock Text="换段击键" Foreground="{DynamicResource TextForeground}" FontSize="11" Margin="0,0,0,6"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="auto"/>
+                                    <ColumnDefinition Width="50"/>
+                                    <ColumnDefinition Width="auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="≥" FontSize="14" Foreground="{DynamicResource TextForeground}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <TextBox x:Name="speedDisplay" Grid.Column="1" Text="6" Style="{StaticResource NumberInputStyle}" InputMethod.IsInputMethodEnabled="False" TextChanged="SpeedDisplay_TextChanged"/>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="4,0,0,0">
+                                    <Button Content="▲" Click="SpeedUp" Style="{StaticResource NumberButtonStyle}" Margin="0,0,2,0"/>
+                                    <Button Content="▼" Click="SpeedDown" Style="{StaticResource NumberButtonStyle}" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
 
-                                <TextBox MinWidth="25" x:Name="speed" InputMethod.IsInputMethodEnabled="False" Grid.Column="1" TextChanged="speed_TextChanged"  HorizontalAlignment="Stretch" VerticalAlignment="Center" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"  ></TextBox>
+                    <!-- 字一组 -->
+                    <Border Grid.Column="1" Background="{DynamicResource ToolbarBackground}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="4,0,4,0">
+                        <StackPanel>
+                            <TextBlock Text="每组字数" Foreground="{DynamicResource TextForeground}" FontSize="11" Margin="0,0,0,6"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="50"/>
+                                    <ColumnDefinition Width="auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="numDisplay" Grid.Column="0" Text="10" Style="{StaticResource NumberInputStyle}" InputMethod.IsInputMethodEnabled="False" TextChanged="NumDisplay_TextChanged"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="4,0,0,0">
+                                    <Button Content="▲" Click="NumUp" Style="{StaticResource NumberButtonStyle}" Margin="0,0,2,0"/>
+                                    <Button Content="▼" Click="NumDown" Style="{StaticResource NumberButtonStyle}" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Text="字/组" Foreground="{DynamicResource TextForeground}" FontSize="10" HorizontalAlignment="Center" Margin="0,4,0,0" Opacity="0.7"/>
+                        </StackPanel>
+                    </Border>
 
-                            </StackPanel>
-                        </GroupBox.Header>
-
-                        <Slider x:Name="SldHit" Orientation="Vertical"  Value="{Binding ElementName=speed, Path=Text}" TickFrequency="0.5" IsSnapToTickEnabled="True" TickPlacement="BottomRight" Maximum="15" Minimum="1"  Grid.RowSpan="3" VerticalAlignment="Stretch"  HorizontalAlignment="Center"  />
-
-                    </GroupBox>
-
-
-                    <GroupBox BorderThickness="0.5" Margin="5,0,5,0"  Grid.Column="1"  Width="auto" HorizontalAlignment="center">
-                        <GroupBox.Header>
-                            <StackPanel Orientation="Horizontal">
-                        <TextBox x:Name="TextNum" MinWidth="25" TextAlignment="Center" InputMethod.IsInputMethodEnabled="False"  Height="auto" Width="auto" VerticalAlignment="Center" Margin="5,0,0,0" TextChanged="TextNum_TextChanged"></TextBox>
-                                <TextBlock  Foreground="LightGray" Text="字一组" Height="auto" Width="auto" VerticalAlignment="Center" Margin="2,0,2,0" ></TextBlock>
-
-                            </StackPanel>
-                        </GroupBox.Header>
-
-                        <Slider x:Name="SldNum" Orientation="Vertical"  Value="{Binding ElementName=TextNum, Path=Text}" TickFrequency="5" IsSnapToTickEnabled="True" TickPlacement="BottomRight" Maximum="200" Minimum="5"  Grid.RowSpan="3"  VerticalAlignment="Stretch"  HorizontalAlignment="Center" />
-
-                    </GroupBox>
-
-
-                    <GroupBox BorderThickness="0.5" Margin="5,0,5,0"  Grid.Column="2"  Width="auto" HorizontalAlignment="center">
-                        <GroupBox.Header>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock  Foreground="LightGray" Text="每轮降击" Height="auto" Width="auto" VerticalAlignment="Center" Margin="2,0,2,0" ></TextBlock>
-
-                        <TextBox x:Name="TextHitDecrease" MinWidth="25" TextAlignment="Center" InputMethod.IsInputMethodEnabled="False"  Height="auto" Width="auto" VerticalAlignment="Center" Margin="0,0,5,0" TextChanged ="TextHitDecrease_TextChanged"></TextBox>
-
-                            </StackPanel>
-                        </GroupBox.Header>
-
-                        <Slider x:Name="SldHitDecrease" Orientation="Vertical"  Value="{Binding ElementName=TextHitDecrease, Path=Text}" TickFrequency="0.01" IsSnapToTickEnabled="True" TickPlacement="BottomRight" Maximum="0.3" Minimum="0"  Grid.RowSpan="3"  VerticalAlignment="Stretch"  HorizontalAlignment="Center" />
-
-                    </GroupBox>
-
+                    <!-- 每轮降击 -->
+                    <Border Grid.Column="2" Background="{DynamicResource ToolbarBackground}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="4,0,0,0">
+                        <StackPanel>
+                            <TextBlock Text="每轮降击" Foreground="{DynamicResource TextForeground}" FontSize="11" Margin="0,0,0,6"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="auto"/>
+                                    <ColumnDefinition Width="50"/>
+                                    <ColumnDefinition Width="auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="≤" FontSize="14" Foreground="{DynamicResource TextForeground}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <TextBox x:Name="hitDecreaseDisplay" Grid.Column="1" Text="0.05" Style="{StaticResource NumberInputStyle}" InputMethod.IsInputMethodEnabled="False" TextChanged="HitDecreaseDisplay_TextChanged"/>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="4,0,0,0">
+                                    <Button Content="▲" Click="HitDecreaseUp" Style="{StaticResource NumberButtonStyle}" Margin="0,0,2,0"/>
+                                    <Button Content="▼" Click="HitDecreaseDown" Style="{StaticResource NumberButtonStyle}" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
                 </Grid>
+            </Grid>
+        </Border>
 
-
-
-
-
-
+        <!-- Resize边框 -->
+        <Border Name="ResizeTop" Background="Transparent" Height="6" VerticalAlignment="Top" Cursor="SizeNS" MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"/>
+        <Border Name="ResizeBottom" Background="Transparent" Height="6" VerticalAlignment="Bottom" Cursor="SizeNS" MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"/>
+        <Border Name="ResizeLeft" Background="Transparent" Width="6" HorizontalAlignment="Left" Cursor="SizeWE" MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"/>
+        <Border Name="ResizeRight" Background="Transparent" Width="6" HorizontalAlignment="Right" Cursor="SizeWE" MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"/>
     </Grid>
 </Window>

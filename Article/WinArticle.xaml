@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TypeSunny"
         mc:Ignorable="d"
-        Title="发文" Height="450" Width="800" Icon="/Resources/logo-512.png" Loaded="Window_Loaded" Background="#666666" Foreground="#eeeeee">
+        Title="发文" Height="450" Width="800" Icon="/Resources/ico/sunny.ico" Loaded="Window_Loaded" Background="#666666" Foreground="#eeeeee">
     <Grid Margin="10,10,10,10">
         <Grid.RowDefinitions>
             <RowDefinition Height="auto"></RowDefinition>

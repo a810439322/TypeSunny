@@ -44,6 +44,14 @@ namespace TypeSunny
         }
 
         /// <summary>
+        /// 刷新主题（公共方法，供外部调用）
+        /// </summary>
+        public void RefreshTheme()
+        {
+            ApplyThemeColors();
+        }
+
+        /// <summary>
         /// 应用主题颜色
         /// </summary>
         private void ApplyThemeColors()
@@ -55,13 +63,16 @@ namespace TypeSunny
                 var windowFgStr = Config.GetString("窗体字体色");
                 var btnBgStr = Config.GetString("按钮背景色");
                 var btnFgStr = Config.GetString("按钮字体色");
+                var menuBgStr = Config.GetString("菜单背景色");
 
                 System.Diagnostics.Debug.WriteLine($"应用主题颜色: windowBg={windowBgStr}, windowFg={windowFgStr}");
 
-                var windowBg = System.Windows.Media.ColorConverter.ConvertFromString(windowBgStr);
-                var windowFg = System.Windows.Media.ColorConverter.ConvertFromString(windowFgStr);
-                var btnBg = System.Windows.Media.ColorConverter.ConvertFromString(btnBgStr);
-                var btnFg = System.Windows.Media.ColorConverter.ConvertFromString(btnFgStr);
+                // 颜色值需要 # 前缀
+                var windowBg = System.Windows.Media.ColorConverter.ConvertFromString("#" + windowBgStr);
+                var windowFg = System.Windows.Media.ColorConverter.ConvertFromString("#" + windowFgStr);
+                var btnBg = System.Windows.Media.ColorConverter.ConvertFromString("#" + btnBgStr);
+                var btnFg = System.Windows.Media.ColorConverter.ConvertFromString("#" + btnFgStr);
+                var menuBg = System.Windows.Media.ColorConverter.ConvertFromString("#" + menuBgStr);
 
                 if (windowBg != null)
                 {
@@ -120,6 +131,19 @@ namespace TypeSunny
 
                     // DataGrid边框颜色
                     dgLeaderboard.BorderBrush = new System.Windows.Media.SolidColorBrush(borderColor);
+                }
+
+                // 应用菜单背景色到 DataGrid 边框区域，与主题保持一致
+                if (menuBg != null)
+                {
+                    var menuBgColor = (System.Windows.Media.Color)menuBg;
+                    // DataGrid 边框使用菜单背景色，与设置页风格一致
+                    var menuBorderColor = System.Windows.Media.Color.FromRgb(
+                        (byte)Math.Max(0, menuBgColor.R - 30),
+                        (byte)Math.Max(0, menuBgColor.G - 30),
+                        (byte)Math.Max(0, menuBgColor.B - 30)
+                    );
+                    dgLeaderboard.BorderBrush = new System.Windows.Media.SolidColorBrush(menuBorderColor);
                 }
 
                 if (windowFg != null)

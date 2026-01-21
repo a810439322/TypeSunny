@@ -8,12 +8,39 @@ using Newtonsoft.Json;
 namespace TypeSunny
 {
     /// <summary>
-    /// 练单器训练日志记录
+    /// 文章打字日志记录
     /// </summary>
-    public static class TrainerLog
+    public static class ArticleLog
     {
-        private const string LogFolder = "练单日志";
+        private const string LogFolder = "文章日志";
         private const int MinWordCount = 5;  // 最少字数，不超过此数不计入
+
+        /// <summary>
+        /// 文章记录项
+        /// </summary>
+        public class ArticleRecord
+        {
+            public DateTime Time { get; set; }              // 完成时间
+            public string ArticleName { get; set; }         // 文章名
+            public int TotalWords { get; set; }             // 总字数
+            public int InputWords { get; set; }             // 输入字数
+            public double Speed { get; set; }               // 速度（字/分）
+            public double HitRate { get; set; }             // 击键
+            public double Accuracy { get; set; }            // 键准
+            public int Wrong { get; set; }                  // 错字数
+            public int Backs { get; set; }                  // 退格数
+            public double Correction { get; set; }          // 回改数
+            public double KPW { get; set; }                 // 码长
+            public double LRRatio { get; set; }             // 左右键比
+            public int TotalHit { get; set; }               // 总键数
+            public double TotalSeconds { get; set; }        // 总用时（秒）
+            public string ArticleMark { get; set; }         // 文来段号（如 "2-12743"）
+            public int WasteCodes { get; set; }             // 废码数
+            public double CiRatio { get; set; }             // 打词率
+            public int Choose { get; set; }                 // 选重
+            public int BiaoDing { get; set; }               // 标顶
+            public string DifficultyName { get; set; }      // 难度名称（从文来API接口获取）
+        }
 
         /// <summary>
         /// 确保日志目录存在
@@ -35,13 +62,15 @@ namespace TypeSunny
         }
 
         /// <summary>
-        /// 异步记录训练数据（使用与 ArticleLog 相同的 ArticleRecord 格式）
+        /// 异步记录文章数据
         /// </summary>
-        public static void WriteRecord(ArticleLog.ArticleRecord record)
+        public static void WriteRecord(ArticleRecord record)
         {
             // 过滤不超过5个字的记录
             if (record.TotalWords < MinWordCount)
+            {
                 return;
+            }
 
             // 异步写入，不阻塞主线程
             Task.Run(() =>
@@ -51,7 +80,8 @@ namespace TypeSunny
                     EnsureLogDirectory();
 
                     string logFile = GetLogFilePath(record.Time);
-                    List<ArticleLog.ArticleRecord> records = new List<ArticleLog.ArticleRecord>();
+
+                    List<ArticleRecord> records = new List<ArticleRecord>();
 
                     // 读取现有记录
                     if (File.Exists(logFile))
@@ -61,12 +91,12 @@ namespace TypeSunny
                         {
                             try
                             {
-                                records = JsonConvert.DeserializeObject<List<ArticleLog.ArticleRecord>>(json);
-                                records ??= new List<ArticleLog.ArticleRecord>();
+                                records = JsonConvert.DeserializeObject<List<ArticleRecord>>(json);
+                                records ??= new List<ArticleRecord>();
                             }
                             catch
                             {
-                                records = new List<ArticleLog.ArticleRecord>();
+                                records = new List<ArticleRecord>();
                             }
                         }
                     }
@@ -81,7 +111,7 @@ namespace TypeSunny
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"写入练单日志失败: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"写入文章日志失败: {ex.Message}");
                 }
             });
         }
@@ -89,9 +119,9 @@ namespace TypeSunny
         /// <summary>
         /// 读取指定日期的记录
         /// </summary>
-        public static List<ArticleLog.ArticleRecord> ReadRecords(DateTime date)
+        public static List<ArticleRecord> ReadRecords(DateTime date)
         {
-            List<ArticleLog.ArticleRecord> records = new List<ArticleLog.ArticleRecord>();
+            List<ArticleRecord> records = new List<ArticleRecord>();
 
             try
             {
@@ -102,13 +132,13 @@ namespace TypeSunny
                 string json = File.ReadAllText(logFile, Encoding.UTF8);
                 if (!string.IsNullOrWhiteSpace(json))
                 {
-                    records = JsonConvert.DeserializeObject<List<ArticleLog.ArticleRecord>>(json);
-                    records ??= new List<ArticleLog.ArticleRecord>();
+                    records = JsonConvert.DeserializeObject<List<ArticleRecord>>(json);
+                    records ??= new List<ArticleRecord>();
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"读取练单日志失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"读取文章日志失败: {ex.Message}");
             }
 
             return records;
@@ -117,9 +147,9 @@ namespace TypeSunny
         /// <summary>
         /// 读取日期范围内的所有记录
         /// </summary>
-        public static List<ArticleLog.ArticleRecord> ReadRecordsInRange(DateTime startDate, DateTime endDate)
+        public static List<ArticleRecord> ReadRecordsInRange(DateTime startDate, DateTime endDate)
         {
-            List<ArticleLog.ArticleRecord> allRecords = new List<ArticleLog.ArticleRecord>();
+            List<ArticleRecord> allRecords = new List<ArticleRecord>();
 
             for (DateTime date = startDate.Date; date <= endDate.Date; date = date.AddDays(1))
             {
@@ -131,14 +161,14 @@ namespace TypeSunny
                         string json = File.ReadAllText(logFile, Encoding.UTF8);
                         if (!string.IsNullOrWhiteSpace(json))
                         {
-                            var records = JsonConvert.DeserializeObject<List<ArticleLog.ArticleRecord>>(json);
+                            var records = JsonConvert.DeserializeObject<List<ArticleRecord>>(json);
                             if (records != null)
                                 allRecords.AddRange(records);
                         }
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"读取练单日志失败 ({date:yyyy-MM-dd}): {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($"读取文章日志失败 ({date:yyyy-MM-dd}): {ex.Message}");
                     }
                 }
             }
@@ -147,11 +177,11 @@ namespace TypeSunny
         }
 
         /// <summary>
-        /// 获取指定练习项的历史记录
+        /// 获取指定文章名的所有记录
         /// </summary>
-        public static List<ArticleLog.ArticleRecord> GetRecordsByExercise(string exerciseName)
+        public static List<ArticleRecord> GetRecordsByArticleName(string articleName)
         {
-            List<ArticleLog.ArticleRecord> result = new List<ArticleLog.ArticleRecord>();
+            List<ArticleRecord> result = new List<ArticleRecord>();
 
             if (!Directory.Exists(LogFolder))
                 return result;
@@ -165,12 +195,12 @@ namespace TypeSunny
                         string json = File.ReadAllText(file, Encoding.UTF8);
                         if (!string.IsNullOrWhiteSpace(json))
                         {
-                            var records = JsonConvert.DeserializeObject<List<ArticleLog.ArticleRecord>>(json);
+                            var records = JsonConvert.DeserializeObject<List<ArticleRecord>>(json);
                             if (records != null)
                             {
                                 foreach (var record in records)
                                 {
-                                    if (record.ArticleName == exerciseName)
+                                    if (record.ArticleName == articleName)
                                         result.Add(record);
                                 }
                             }
@@ -181,7 +211,7 @@ namespace TypeSunny
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"读取练单日志失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"读取文章日志失败: {ex.Message}");
             }
 
             return result;
@@ -213,35 +243,5 @@ namespace TypeSunny
             dates.Sort();
             return dates;
         }
-
-        #region 兼容旧版 API（已废弃，保留用于向后兼容）
-
-        /// <summary>
-        /// 训练记录项（旧版，已废弃）
-        /// </summary>
-        [Obsolete("请使用 ArticleLog.ArticleRecord 代替")]
-        public class TrainerRecord
-        {
-            public DateTime Date { get; set; }
-            public string ExerciseName { get; set; }
-            public int TotalWords { get; set; }
-            public int ActualWords { get; set; }
-            public double AvgHitRate { get; set; }
-            public double AvgSpeed { get; set; }
-            public double AvgAccuracy { get; set; }
-            public double TotalTime { get; set; }
-        }
-
-        /// <summary>
-        /// 读取所有记录（旧版，已废弃）
-        /// </summary>
-        [Obsolete("请使用 ReadRecordsInRange 或读取 JSON 文件代替")]
-        public static List<TrainerRecord> ReadAllRecords()
-        {
-            // 返回空列表，旧版文本格式已不再支持
-            return new List<TrainerRecord>();
-        }
-
-        #endregion
     }
 }

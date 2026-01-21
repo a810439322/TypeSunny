@@ -11,11 +11,14 @@ using System.Text.RegularExpressions;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using System.Windows.Documents;
@@ -125,6 +128,10 @@ namespace TypeSunny
 
         Stopwatch sw = new Stopwatch();
         DifficultyDict difficultyDict = new DifficultyDict();
+
+        // 保存窗口恢复时的位置和大小
+        private Rect _restoreBounds = new Rect();
+        private bool _isCustomMaximized = false;
         private string currentDifficultyText = "";
 
         private enum UpdateLevel
@@ -264,13 +271,27 @@ namespace TypeSunny
                 }
 
                 // 文来使用简化渲染模式（无需分页，性能优化）
-                if (StateManager.txtSource == TxtSource.articlesender)
-                {
-                    TextInfo.PageNum = -1;
-                    return;
-                }
+                //if (StateManager.txtSource == TxtSource.articlesender)
+                //{
+                //    TextInfo.PageNum = -1;
+                //    return;
+                //}
 
-                double y = (this.ActualHeight - 95.74 - 0.5 - 15) * 0.75 - (expander.Height.Value > 0 ? expander.Height.Value : 0);
+                // 计算可用高度（窗口高度 - 标题栏 - 按钮区1 - GridSplitter - 预留边距）
+                double topBarHeight = TopBarGrid.ActualHeight;
+                double availableHeight = this.ActualHeight - 30 - topBarHeight - 12 - 20;
+                if (!_isResultsExpanded)
+                {
+                    // 成绩区已收起，可用高度更多
+                }
+                else
+                {
+                    // 成绩区已展开，减去成绩区和GridSplitter的高度
+                    var resultsArea = this.FindName("resultsTextBoxGrid") as Border;
+                    if (resultsArea != null)
+                        availableHeight -= 5 + resultsArea.ActualHeight;
+                }
+                double y = availableHeight * 0.75;
                 double x = (this.ActualWidth - 52);
                 Paginator.ArrangePage(x, y, 40.0, TextInfo.Words.Count);
 
@@ -302,13 +323,6 @@ namespace TypeSunny
                 if ((Config.GetBool("贪吃蛇模式") && StateManager.txtSource != TxtSource.trainer) || StateManager.txtSource == TxtSource.raceApi)
                 {
                     SnakeModeUpdate(nextToType);
-                    return;
-                }
-
-                // 文来使用简化渲染模式（性能优化）
-                if (StateManager.txtSource == TxtSource.articlesender)
-                {
-                    SimplifiedRenderMode(nextToType);
                     return;
                 }
 
@@ -579,90 +593,27 @@ namespace TypeSunny
 
 
                 // 滚动逻辑（统一使用 paindutch-main 方案）
+                if (TextInfo.Blocks.Count > 0)
                 {
                     int NextBlockIndex = (nextToType - TextInfo.PageStartIndex);
 
-                    // 计算当前字符的Y坐标（相对于第一个Block）
-                    double currentPosY = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
-                        + TextInfo.Blocks[NextBlockIndex].ActualHeight / 2;
-
-                    // 使用统一方法计算目标滚动位置（始终居中显示）
-                    double targetOffset = CalculateScrollOffset(currentPosY);
-
-                    // 执行滚动（起始位置强制滚动，其他时候由 SmoothScrollTo 自动判断）
-                    SmoothScrollTo(targetOffset, forceScroll: (nextToType == 0));
-
-
-                    //跟随显示速度
-                    bool showSpeed = Config.GetBool("速度跟随提示") && !Config.GetBool("盲打模式") && !double.IsNaN(Score.GetValidSpeed()) && Score.GetValidSpeed() > 0;
-
-
-                    if (!showSpeed)
+                    // 确保索引在有效范围内
+                    if (NextBlockIndex >= 0 && NextBlockIndex < TextInfo.Blocks.Count)
                     {
-                        if (TbAcc.Visibility == Visibility.Visible)
-                            TbAcc.Visibility = Visibility.Hidden;
+                        // 强制更新布局，确保 ActualHeight 已计算
+                        TextInfo.Blocks[NextBlockIndex].UpdateLayout();
+                        TextInfo.Blocks[0].UpdateLayout();
+
+                        // 计算当前字符的Y坐标（相对于第一个Block）
+                        double currentPosY = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
+                            + TextInfo.Blocks[NextBlockIndex].ActualHeight / 2;
+
+                        // 使用统一方法计算目标滚动位置（始终居中显示）
+                        double targetOffset = CalculateScrollOffset(currentPosY);
+
+                        // 执行滚动（起始位置强制滚动，其他时候由 SmoothScrollTo 自动判断）
+                        SmoothScrollTo(targetOffset, forceScroll: (nextToType == 0));
                     }
-                    else
-                    {
-                        if (TbAcc.Visibility == Visibility.Hidden)
-                            TbAcc.Visibility = Visibility.Visible;
-
-                        double AccLeft = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).X + TextInfo.Blocks[NextBlockIndex].ActualWidth / 3;
-                        double AccTop = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y + TextInfo.Blocks[NextBlockIndex].ActualHeight - targetOffset;
-                        Canvas.SetTop(TbAcc, AccTop);
-                        Canvas.SetLeft(TbAcc, AccLeft);
-
-
-                        // 只显示速度
-                        TbAcc.Text = Score.GetValidSpeed().ToString("F2");
-                        TbAcc.Foreground = Colors.GetSpeedColor(Score.GetValidSpeed());
-
-                    }
-
-                    //跟随显示提示
-                    /*
-                    bool showAccuracy = Config.GetBool("增强键准提示") && !double.IsNaN(Score.GetAccuracy());
-                    bool showSpeed = Config.GetBool("增强速度提示") && !double.IsNaN(Score.GetValidSpeed());
-                    
-                    if (!showAccuracy && !showSpeed)
-                    {
-                        if (TbAcc.Visibility == Visibility.Visible)
-                            TbAcc.Visibility = Visibility.Hidden;
-                    }
-                    else
-                    {
-                        if (TbAcc.Visibility == Visibility.Hidden)
-                            TbAcc.Visibility = Visibility.Visible;
-                        
-                        double AccLeft = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).X + TextInfo.Blocks[NextBlockIndex].ActualWidth / 3;
-                        double AccTop = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y + TextInfo.Blocks[NextBlockIndex].ActualHeight - offset;
-                        Canvas.SetTop(TbAcc, AccTop);
-                        Canvas.SetLeft(TbAcc, AccLeft);
-                        
-                        // 根据启用的功能显示不同内容
-                        if (showAccuracy && showSpeed)
-                        {
-                            // 两个功能都启用，显示组合信息
-                            TbAcc.Text = $"{Score.GetValidSpeed():F0},{(100 * Score.GetAccuracy()):F1}%";
-                            // 使用速度颜色作为主色调
-                            TbAcc.Foreground = Colors.GetSpeedColor(Score.GetValidSpeed());
-                        }
-                        else if (showSpeed)
-                        {
-                            // 只显示速度
-                            TbAcc.Text = Score.GetValidSpeed().ToString("F2");
-                            TbAcc.Foreground = Colors.GetSpeedColor(Score.GetValidSpeed());
-                        }
-                        else if (showAccuracy)
-                        {
-                            // 只显示准确率
-                            TbAcc.Text = (100 * Score.GetAccuracy()).ToString("F2");
-                            TbAcc.Foreground = Colors.GetAccColor(Score.GetAccuracy());
-                        }
-                    }
-
-                    
-                    */
                 }
 
                 // 普通模式滚动和速度跟随提示（每次更新都执行，不仅在翻页时）
@@ -676,6 +627,10 @@ namespace TypeSunny
                         // 确保索引在有效范围内
                         if (NextBlockIndex >= 0 && NextBlockIndex < TextInfo.Blocks.Count)
                         {
+                            // 强制更新布局，确保 ActualHeight 已计算
+                            TextInfo.Blocks[NextBlockIndex].UpdateLayout();
+                            TextInfo.Blocks[0].UpdateLayout();
+
                             // 计算当前字符的Y坐标（相对于第一个Block）
                             double currentPosY = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
                                 + TextInfo.Blocks[NextBlockIndex].ActualHeight / 2;
@@ -700,7 +655,7 @@ namespace TypeSunny
                                     TbAcc.Visibility = Visibility.Visible;
 
                                 double AccLeft = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).X + TextInfo.Blocks[NextBlockIndex].ActualWidth / 3;
-                                double AccTop = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y + TextInfo.Blocks[NextBlockIndex].ActualHeight - targetOffset;
+                                double AccTop = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y + TextInfo.Blocks[NextBlockIndex].ActualHeight - ScDisplay.VerticalOffset;
                                 Canvas.SetTop(TbAcc, AccTop);
                                 Canvas.SetLeft(TbAcc, AccLeft);
 
@@ -805,16 +760,6 @@ namespace TypeSunny
         {
             double fs = DisplayFontSize;
 
-            // 方案三：检测是否到最后一行（最后30个字符），如果是直接滚到底部
-            bool isNearEnd = nextToType >= 0 && totalCount >= 0 && (totalCount - nextToType <= 30);
-
-            if (isNearEnd)
-            {
-                // 直接返回最大滚动位置（加上底部额外空间）
-                double bottomPaddingNearEnd = fs * 1.0; // 底部额外空间为一个字体大小
-                return ScDisplay.ScrollableHeight + bottomPaddingNearEnd;
-            }
-
             // 将当前字符保持在屏幕中心位置（48%位置）
             double center = ScDisplay.ViewportHeight * 0.48;
             double offset = currentPosY - center;
@@ -823,7 +768,7 @@ namespace TypeSunny
             if (offset < 0)
                 offset = 0;
 
-            // 方案二：最大滚动位置加上底部额外空间
+            // 最大滚动位置加上底部额外空间
             double bottomPadding = fs * 0.8; // 底部额外空间为0.8个字体大小
             double maxOffset = ScDisplay.ScrollableHeight + bottomPadding;
             if (offset > maxOffset)
@@ -1107,220 +1052,6 @@ namespace TypeSunny
             }
         }
 
-        /// <summary>
-        /// 文来简化渲染模式 - 使用单个 TextBlock 提升性能
-        /// </summary>
-        private void SimplifiedRenderMode(int nextToType)
-        {
-            // 如果是第一次加载或文本变更，需要重新渲染
-            // 或者TextBlock不在显示区域中（修复BUG：确保TextBlock始终在显示区域）
-            bool needRecreate = TextInfo.Blocks.Count != 1 ||
-                               (TextInfo.Blocks.Count > 0 && !TbDispay.Children.Contains(TextInfo.Blocks[0]));
-
-            if (needRecreate)
-            {
-                // 清空显示区域
-                TbDispay.Children.Clear();
-                ScDisplay.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
-                TextInfo.Blocks.Clear();
-
-                // 获取字体设置
-                var fm = GetCurrentFontFamily();
-                double fs = DisplayFontSize;
-
-                // 创建单个 TextBlock 显示所有文本
-                TextBlock tb = new TextBlock();
-                tb.FontSize = fs;
-                tb.FontFamily = fm;
-                tb.Background = BdDisplay.Background;
-                tb.TextWrapping = TextWrapping.Wrap;
-                tb.HorizontalAlignment = HorizontalAlignment.Stretch;
-                tb.VerticalAlignment = VerticalAlignment.Top;
-                tb.Foreground = Colors.DisplayForeground;
-
-                // 设置行高
-                tb.LineHeight = fs * (1.0 + Config.GetDouble("行距"));
-
-                TextInfo.Blocks.Add(tb);
-                TbDispay.Children.Add(tb);
-            }
-
-            // 更新文本内容和样式
-            TextBlock textBlock = TextInfo.Blocks[0];
-            textBlock.Inlines.Clear();
-
-            // 重置对象池索引，准备复用Run对象
-            ResetRunPool();
-
-            // 合并连续相同状态的字符，减少 Run 对象数量
-            StringBuilder currentText = new StringBuilder();
-            WordStates currentState = WordStates.NO_TYPE;
-            bool isFirstChar = true;
-
-            for (int i = 0; i < TextInfo.Words.Count; i++)
-            {
-                WordStates state = i < TextInfo.wordStates.Count ? TextInfo.wordStates[i] : WordStates.NO_TYPE;
-
-                // 如果状态改变，先输出之前的 Run
-                if (!isFirstChar && state != currentState)
-                {
-                    Run r = GetRunFromPool(); // 从对象池获取，避免重复创建
-                    r.Text = currentText.ToString();
-                    r.Foreground = Colors.DisplayForeground; // 显式设置前景色，避免继承失败
-
-                    switch (currentState)
-                    {
-                        case WordStates.WRONG:
-                            // 盲打模式：不显示任何提示
-                            // 跟打模式：错字显示红色
-                            r.Background = IsBlindType ? null : Colors.IncorrectBackground;
-                            break;
-                        case WordStates.RIGHT:
-                            // 盲打模式：不显示任何提示
-                            // 跟打模式：对的字显示绿色
-                            r.Background = IsBlindType ? null : Colors.CorrectBackground;
-                            break;
-                        default:
-                            r.Background = null;
-                            break;
-                    }
-
-                    textBlock.Inlines.Add(r);
-                    currentText.Clear();
-                }
-
-                currentText.Append(TextInfo.Words[i]);
-                currentState = state;
-                isFirstChar = false;
-            }
-
-            // 输出最后一段
-            if (currentText.Length > 0)
-            {
-                Run r = GetRunFromPool(); // 从对象池获取，避免重复创建
-                r.Text = currentText.ToString();
-                r.Foreground = Colors.DisplayForeground; // 显式设置前景色，避免继承失败
-
-                switch (currentState)
-                {
-                    case WordStates.WRONG:
-                        // 盲打模式：不显示任何提示
-                        // 跟打模式：错字显示红色
-                        r.Background = IsBlindType ? null : Colors.IncorrectBackground;
-                        break;
-                    case WordStates.RIGHT:
-                        // 盲打模式：不显示任何提示
-                        // 跟打模式：对的字显示绿色
-                        r.Background = IsBlindType ? null : Colors.CorrectBackground;
-                        break;
-                    default:
-                        r.Background = null;
-                        break;
-                }
-
-                textBlock.Inlines.Add(r);
-            }
-
-            // 自动滚动到当前输入位置
-            {
-                try
-                {
-                    // 等待UI更新完成后再计算滚动位置
-                    Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        try
-                        {
-                            if (textBlock.Inlines.Count == 0)
-                                return;
-
-                            // 使用 TextPointer 精确定位到第 nextToType 个字符
-                            // 注意：GetPositionAtOffset 的偏移量需要考虑特殊字符
-                            TextPointer startPointer = textBlock.ContentStart;
-
-                            // 计算实际的字符偏移量（包括换行符等）
-                            int actualOffset = 0;
-                            int targetCharIndex = 0;
-
-                            // 遍历所有文本内容，找到第 nextToType 个实际字符的位置
-                            foreach (Inline inline in textBlock.Inlines)
-                            {
-                                if (inline is Run run)
-                                {
-                                    if (targetCharIndex + run.Text.Length > nextToType)
-                                    {
-                                        // 目标字符在这个Run中
-                                        int offsetInRun = nextToType - targetCharIndex;
-                                        actualOffset += offsetInRun;
-                                        break;
-                                    }
-                                    else
-                                    {
-                                        // 累加这个Run的长度
-                                        targetCharIndex += run.Text.Length;
-                                        actualOffset += run.Text.Length;
-                                    }
-                                }
-                            }
-
-                            // 获取目标位置的 TextPointer
-                            TextPointer targetPointer = startPointer.GetPositionAtOffset(actualOffset, LogicalDirection.Forward);
-
-                            if (targetPointer == null)
-                                return;
-
-                            // 获取目标位置的矩形区域
-                            Rect rect = targetPointer.GetCharacterRect(LogicalDirection.Forward);
-
-                            // 使用统一方法计算目标滚动位置（始终居中显示）
-                            double targetOffset = CalculateScrollOffset(rect.Top, nextToType, TextInfo.Words.Count);
-
-                            // 执行滚动（起始位置强制滚动，其他时候由 SmoothScrollTo 自动判断）
-                            SmoothScrollTo(targetOffset, forceScroll: (nextToType == 0));
-
-                            // 更新速度跟随提示
-                            UpdateSpeedFollowHintForSimplified(nextToType, rect, targetOffset);
-                        }
-                        catch
-                        {
-                            // 忽略滚动错误
-                        }
-                    }), DispatcherPriority.Loaded);
-                }
-                catch
-                {
-                    // 忽略滚动错误
-                }
-            }
-        }
-
-        /// <summary>
-        /// 更新文来模式的速度跟随提示位置
-        /// </summary>
-        private void UpdateSpeedFollowHintForSimplified(int nextToType, Rect targetRect, double targetOffset)
-        {
-            bool showSpeed = Config.GetBool("速度跟随提示") && !Config.GetBool("盲打模式") && !double.IsNaN(Score.GetValidSpeed()) && Score.GetValidSpeed() > 0;
-
-            if (!showSpeed)
-            {
-                if (TbAcc.Visibility == Visibility.Visible)
-                    TbAcc.Visibility = Visibility.Hidden;
-            }
-            else
-            {
-                if (TbAcc.Visibility == Visibility.Hidden)
-                    TbAcc.Visibility = Visibility.Visible;
-
-                double AccLeft = targetRect.Left + targetRect.Width / 3;
-                double AccTop = targetRect.Top + targetRect.Height - ScDisplay.VerticalOffset;
-                Canvas.SetTop(TbAcc, AccTop);
-                Canvas.SetLeft(TbAcc, AccLeft);
-
-                // 只显示速度
-                TbAcc.Text = Score.GetValidSpeed().ToString("F2");
-                TbAcc.Foreground = Colors.GetSpeedColor(Score.GetValidSpeed());
-            }
-        }
-
         Timer Tdisplay = null;
 
         private void DispatchUpdateDisplay(object obj)
@@ -1442,8 +1173,9 @@ namespace TypeSunny
 
         public MainWindow()
         {
-            this.WindowStartupLocation = WindowStartupLocation.Manual;
             // InitCfg();
+
+            InitializeComponent();
 
             double left = Config.GetDouble("窗口坐标X");
             double top = Config.GetDouble("窗口坐标Y");
@@ -1454,23 +1186,33 @@ namespace TypeSunny
             var workArea = SystemParameters.WorkArea;
 
             // 设置合理的尺寸范围，避免窗口过大
-            if (width <= 0 || width > 1200)
-                width = 700;
-            if (height <= 0 || height > 800)
-                height = 500;
+            if (width <= 0 || width > 3000)
+                width = 966;
+            if (height <= 0 || height > 2000)
+                height = 750;
 
-            // 限制窗口位置在屏幕内
-            if (left < 0 || left + width > workArea.Width)
-                left = Math.Max(0, (workArea.Width - width) / 2);
-            if (top < 0 || top + height > workArea.Height)
-                top = Math.Max(0, (workArea.Height - height) / 2);
-
-            this.Left = left;
-            this.Top = top;
             this.Width = width;
             this.Height = height;
 
-            InitializeComponent();
+            // 检查保存的坐标是否合理
+            // 默认值0或很小的值、负值、超出屏幕范围的值都视为无效
+            bool positionValid = true;
+            if (left <= 10 || left < 0 || left >= workArea.Width - 100)
+                positionValid = false;
+            if (top <= 10 || top < 0 || top >= workArea.Height - 100)
+                positionValid = false;
+
+            // 如果位置无效，使用屏幕中心（不设置手动坐标）
+            if (!positionValid)
+            {
+                this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            }
+            else
+            {
+                this.WindowStartupLocation = WindowStartupLocation.Manual;
+                this.Left = left;
+                this.Top = top;
+            }
 
             // 延迟初始化赛文菜单到窗口加载完成后
             this.Loaded += (s, e) =>
@@ -1592,9 +1334,9 @@ namespace TypeSunny
 
         private void expd_Collapsed(object sender, RoutedEventArgs e)
         {
+            // 新布局中收起/展开逻辑已简化，此方法保留以兼容
             if (StateManager.ConfigLoaded)
             {
-                expander.Height = new GridLength(0);
                 Config.Set("成绩面板展开", false);
             }
         }
@@ -1682,42 +1424,6 @@ namespace TypeSunny
         // 字提字体缓存
         private FontFamily cachedZiTiFontFamily = null;
         private string cachedZiTiFontName = "";
-
-        // Run对象池，避免每次打字都创建新对象
-        private List<Run> runPool = new List<Run>();
-        private int runPoolIndex = 0;
-
-        /// <summary>
-        /// 从对象池获取或创建Run对象
-        /// </summary>
-        private Run GetRunFromPool()
-        {
-            Run r;
-            if (runPoolIndex < runPool.Count)
-            {
-                // 复用现有对象，清除旧属性
-                r = runPool[runPoolIndex++];
-                r.Text = "";
-                r.Background = null;
-                r.Foreground = null;
-            }
-            else
-            {
-                // 创建新对象并加入池
-                r = new Run();
-                runPool.Add(r);
-                runPoolIndex++;
-            }
-            return r;
-        }
-
-        /// <summary>
-        /// 重置对象池索引（准备下一轮复用）
-        /// </summary>
-        private void ResetRunPool()
-        {
-            runPoolIndex = 0;
-        }
 
         public FontFamily GetCurrentFontFamily()
         {
@@ -1819,18 +1525,74 @@ namespace TypeSunny
             this.Height = Config.GetDouble("窗口高度");
             this.Width = Config.GetDouble("窗口宽度");
 
-            // 加载成绩面板高度（兼容旧的"成绩面板展开"配置）
-            if (Config.GetBool("成绩面板展开"))
+            // 加载成绩面板展开状态
+            var grid_a = this.FindName("grid_a") as Grid;
+            if (grid_a != null)
             {
-                LoadResultsPanelHeight();
+                if (Config.GetBool("成绩面板展开"))
+                {
+                    _isResultsExpanded = true;
+                    // 成绩区高度已在ApplyDisplayInputRatio中设置
+                    resultsTextBoxGrid.Visibility = Visibility.Visible;
+                    gridSplitterResults.Visibility = Visibility.Visible;
+                    BtnToggleResults.Content = "▼";
+
+                    // 启用所有 GridSplitter
+                    gridSplitterArticleTyping.IsEnabled = true;
+                    gridSplitterResults.IsEnabled = true;
+
+                    // 保存展开时的窗口高度
+                    _expandedWindowHeight = this.ActualHeight;
+                }
+                else
+                {
+                    _isResultsExpanded = false;
+                    // 收起状态
+                    this.Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        // 获取发文区和跟打区的当前实际高度
+                        double articleHeight = grid_a.RowDefinitions[2].ActualHeight;
+                        double typingHeight = grid_a.RowDefinitions[4].ActualHeight;
+
+                        // 先将发文区和跟打区设置为固定像素高度
+                        grid_a.RowDefinitions[2].Height = new GridLength(articleHeight, GridUnitType.Pixel);
+                        grid_a.RowDefinitions[4].Height = new GridLength(typingHeight, GridUnitType.Pixel);
+
+                        // 只禁用成绩区上方的 GridSplitter
+                        gridSplitterArticleTyping.IsEnabled = true;
+                        gridSplitterResults.IsEnabled = false;
+
+                        // 设置成绩区 Border 的 margin 为 0
+                        resultsTextBoxGrid.Margin = new Thickness(0);
+
+                        // 设置成绩区行高度为0
+                        grid_a.RowDefinitions[6].Height = new GridLength(0, GridUnitType.Pixel);
+                        resultsTextBoxGrid.Visibility = Visibility.Collapsed;
+                        gridSplitterResults.Visibility = Visibility.Collapsed;
+                        BtnToggleResults.Content = "▲";
+
+                        // 计算收起后的窗口高度：当前窗口高度 - 成绩区实际高度 - GridSplitter高度
+                        double currentWindowHeight = this.ActualHeight;
+                        double resultsAreaHeight = grid_a.RowDefinitions[6].ActualHeight;
+                        double gridSplitterHeight = 5; // GridSplitter 的高度
+
+                        // 收起后的高度 = 当前高度 - 成绩区高度 - GridSplitter高度
+                        double collapsedHeight = currentWindowHeight - resultsAreaHeight - gridSplitterHeight;
+
+                        this.Height = collapsedHeight;
+
+                        // 延迟将发文区和跟打区改为 *，让它们可以自适应
+                        this.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            grid_a.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
+                            grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
+                        }), System.Windows.Threading.DispatcherPriority.Loaded);
+
+                        // 保存展开时的窗口高度
+                        _expandedWindowHeight = Config.GetDouble("窗口高度");
+                    }), System.Windows.Threading.DispatcherPriority.Loaded);
+                }
             }
-            else
-            {
-                expander.Height = new GridLength(0);
-            }
-
-
-
 
             TbxInput.FontFamily = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体")); ;
             SldZoom.Value = 40; // 默认字体大小
@@ -1962,14 +1724,73 @@ namespace TypeSunny
             this.Height = Config.GetDouble("窗口高度");
             this.Width = Config.GetDouble("窗口宽度");
 
-            // 加载成绩面板高度（兼容旧的"成绩面板展开"配置）
-            if (Config.GetBool("成绩面板展开"))
+            // 加载成绩面板展开状态
+            var grid_a = this.FindName("grid_a") as Grid;
+            if (grid_a != null)
             {
-                LoadResultsPanelHeight();
-            }
-            else
-            {
-                expander.Height = new GridLength(0);
+                if (Config.GetBool("成绩面板展开"))
+                {
+                    _isResultsExpanded = true;
+                    // 成绩区高度已在ApplyDisplayInputRatio中设置
+                    resultsTextBoxGrid.Visibility = Visibility.Visible;
+                    gridSplitterResults.Visibility = Visibility.Visible;
+                    BtnToggleResults.Content = "▼";
+
+                    // 启用所有 GridSplitter
+                    gridSplitterArticleTyping.IsEnabled = true;
+                    gridSplitterResults.IsEnabled = true;
+
+                    // 保存展开时的窗口高度
+                    _expandedWindowHeight = this.ActualHeight;
+                }
+                else
+                {
+                    _isResultsExpanded = false;
+                    // 收起状态
+                    this.Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        // 获取发文区和跟打区的当前实际高度
+                        double articleHeight = grid_a.RowDefinitions[2].ActualHeight;
+                        double typingHeight = grid_a.RowDefinitions[4].ActualHeight;
+
+                        // 先将发文区和跟打区设置为固定像素高度
+                        grid_a.RowDefinitions[2].Height = new GridLength(articleHeight, GridUnitType.Pixel);
+                        grid_a.RowDefinitions[4].Height = new GridLength(typingHeight, GridUnitType.Pixel);
+
+                        // 只禁用成绩区上方的 GridSplitter
+                        gridSplitterArticleTyping.IsEnabled = true;
+                        gridSplitterResults.IsEnabled = false;
+
+                        // 设置成绩区 Border 的 margin 为 0
+                        resultsTextBoxGrid.Margin = new Thickness(0);
+
+                        // 设置成绩区行高度为0
+                        grid_a.RowDefinitions[6].Height = new GridLength(0, GridUnitType.Pixel);
+                        resultsTextBoxGrid.Visibility = Visibility.Collapsed;
+                        gridSplitterResults.Visibility = Visibility.Collapsed;
+                        BtnToggleResults.Content = "▲";
+
+                        // 计算收起后的窗口高度：当前窗口高度 - 成绩区实际高度 - GridSplitter高度
+                        double currentWindowHeight = this.ActualHeight;
+                        double resultsAreaHeight = grid_a.RowDefinitions[6].ActualHeight;
+                        double gridSplitterHeight = 5; // GridSplitter 的高度
+
+                        // 收起后的高度 = 当前高度 - 成绩区高度 - GridSplitter高度
+                        double collapsedHeight = currentWindowHeight - resultsAreaHeight - gridSplitterHeight;
+
+                        this.Height = collapsedHeight;
+
+                        // 延迟将发文区和跟打区改为 *，让它们可以自适应
+                        this.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            grid_a.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
+                            grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
+                        }), System.Windows.Threading.DispatcherPriority.Loaded);
+
+                        // 保存展开时的窗口高度
+                        _expandedWindowHeight = Config.GetDouble("窗口高度");
+                    }), System.Windows.Threading.DispatcherPriority.Loaded);
+                }
             }
 
             TbxInput.FontFamily = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体")); ;
@@ -2119,9 +1940,12 @@ namespace TypeSunny
                 // 应用菜单背景色和字体色
                 MenuItemRace.Background = menuBg;
                 MenuItemRace.Foreground = menuFg;
+                MenuWenlai.Background = menuBg;
+                MenuWenlai.Foreground = menuFg;
 
-                // 应用赛文子菜单颜色
-                ApplyRaceMenuColors(menuBg, menuFg);
+                // 重新初始化两个菜单以应用新主题色（包括悬停效果）
+                InitializeRaceMenu();
+                InitializeWenlaiMenu();
 
                 // 更新标题进度条颜色（仅在启用进度条时）
                 if (Config.GetBool("显示进度条"))
@@ -2177,6 +2001,33 @@ namespace TypeSunny
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"应用赛文菜单颜色失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 应用文来菜单的颜色配置
+        /// </summary>
+        /// <param name="menuBg">菜单背景色</param>
+        /// <param name="menuFg">菜单前景色</param>
+        private void ApplyWenlaiMenuColors(System.Windows.Media.Brush menuBg, System.Windows.Media.Brush menuFg)
+        {
+            try
+            {
+                // 遍历文来菜单的所有子项
+                foreach (var item in MenuWenlai.Items)
+                {
+                    if (item is MenuItem menuItem)
+                    {
+                        menuItem.Background = menuBg;
+                        menuItem.Foreground = menuFg;
+                    }
+                }
+
+                System.Diagnostics.Debug.WriteLine("ApplyWenlaiMenuColors completed successfully");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"应用文来菜单颜色失败: {ex.Message}");
             }
         }
 
@@ -2270,57 +2121,25 @@ namespace TypeSunny
             // 根据滚轮方向调整字体大小
             double delta = e.Delta > 0 ? 2 : -2; // 向上滚增大，向下滚减小
 
-            // 根据sender判断是哪个控件
+            // 新布局中发文区和跟打区已分离，直接判断sender
             System.Windows.Controls.Control targetControl = null;
 
-            // 如果sender是grid_c，需要根据鼠标位置判断是发文区还是输入区
-            if (sender == grid_c)
+            // 检查是否在发文区（BdDisplay）
+            if (sender == BdDisplay || sender == ScDisplay || sender == TbDispay)
             {
-                Point mousePos = e.GetPosition(grid_c);
-
-                // 检查鼠标是否在发文区（BdDisplay）内
-                Point displayPos = BdDisplay.TransformToAncestor(grid_c).Transform(new Point(0, 0));
-                Rect displayRect = new Rect(displayPos.X, displayPos.Y, BdDisplay.ActualWidth, BdDisplay.ActualHeight);
-
-                // 检查鼠标是否在输入区（TbxInput）内
-                Point inputPos = TbxInput.TransformToAncestor(grid_c).Transform(new Point(0, 0));
-                Rect inputRect = new Rect(inputPos.X, inputPos.Y, TbxInput.ActualWidth, TbxInput.ActualHeight);
-
-                if (displayRect.Contains(mousePos))
-                {
-                    // 在发文区 - 更新字体大小配置并刷新显示
-                    double currentSize = DisplayFontSize;
-                    double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
-                    Config.Set("字体大小", newSize, 1);
-                    UpdateDisplay(UpdateLevel.PageArrange);
-                    System.Diagnostics.Debug.WriteLine($"发文区字体大小调整: {currentSize} -> {newSize}");
-                    return;
-                }
-                else if (inputRect.Contains(mousePos))
-                {
-                    // 在输入区
-                    targetControl = TbxInput;
-                }
-                else
-                {
-                    // 不在任何有效区域
-                    return;
-                }
-            }
-            else if (sender == TbxInput)
-            {
-                targetControl = TbxInput;
-                System.Diagnostics.Debug.WriteLine("TbxInput Ctrl+滚轮触发");
-            }
-            else if (sender == TbDispay || sender == ScDisplay || sender == BdDisplay)
-            {
-                // 更新所有发文区的TextBlock字体
+                // 在发文区 - 更新字体大小配置并刷新显示
                 double currentSize = DisplayFontSize;
                 double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
                 Config.Set("字体大小", newSize, 1);
                 UpdateDisplay(UpdateLevel.PageArrange);
                 System.Diagnostics.Debug.WriteLine($"发文区字体大小调整: {currentSize} -> {newSize}");
                 return;
+            }
+            // 检查是否在跟打区（TbxInput）
+            else if (sender == TbxInput)
+            {
+                targetControl = TbxInput;
+                System.Diagnostics.Debug.WriteLine("TbxInput Ctrl+滚轮触发");
             }
             else if (sender == TbxResults)
             {
@@ -2382,6 +2201,16 @@ namespace TypeSunny
 
 
         private string TxtResult = "";
+        private string trainerStatText = "";  // 练单器统计文本
+
+        /// <summary>
+        /// 更新练单器统计显示（由WinTrainer调用）
+        /// </summary>
+        public void UpdateTrainerStat(string statText)
+        {
+            trainerStatText = statText;
+            UpdateTypingStat();
+        }
 
         public void UpdateTypingStat(string newReport = "")
         {
@@ -2393,18 +2222,66 @@ namespace TypeSunny
             CounterLog.Write();
 
             StringBuilder sb = new StringBuilder();
+
+            // 第一行：今日字数统计 + 练单器统计（如果有）
             sb.Append("今日字数：");
             sb.Append(CounterLog.GetCurrent("字数") + CounterLog.Buffer[0]);
             sb.Append("   ");
             sb.Append("总字数：");
             sb.Append(CounterLog.GetSum("字数") + CounterLog.Buffer[0]);
-           
 
+            // 追加练单器统计到第一行末尾
+            if (!string.IsNullOrEmpty(trainerStatText))
+            {
+                sb.Append("   [练单] ");
+                sb.Append(trainerStatText);
+            }
+
+
+
+            // 第二行：当日详细统计（读取文章日志获取）
+            var todayRecords = ArticleLog.ReadRecords(DateTime.Today);
+            System.Diagnostics.Debug.WriteLine($"[成绩区] 今日记录数: {todayRecords.Count}");
+            if (todayRecords.Count > 0)
+            {
+                sb.AppendLine();
+
+                // 计算当日平均值
+                double avgSpeed = todayRecords.Average(r => r.Speed);
+                double avgHitRate = todayRecords.Average(r => r.HitRate);
+                double avgAccuracy = todayRecords.Average(r => r.Accuracy);
+                int totalWords = todayRecords.Sum(r => r.TotalWords);
+                int totalHits = todayRecords.Sum(r => r.TotalHit);
+                double totalTime = todayRecords.Sum(r => r.TotalSeconds);
+
+                // 根据屏蔽配置显示
+                var dayStats = new List<string>();
+
+                if (Config.GetBool("显示_字数"))
+                    dayStats.Add($"今日{totalWords}字");
+                if (Config.GetBool("显示_速度"))
+                    dayStats.Add($"均速{avgSpeed:F1}");
+                if (Config.GetBool("显示_击键"))
+                    dayStats.Add($"均击{avgHitRate:F1}");
+                if (Config.GetBool("显示_键准"))
+                    dayStats.Add($"均键准{avgAccuracy:P1}");
+                if (Config.GetBool("显示_总键数"))
+                    dayStats.Add($"总键{totalHits}");
+                if (Config.GetBool("显示_用时"))
+                    dayStats.Add($"用时{Score.FormatTime(totalTime)}");
+                dayStats.Add($"打文{todayRecords.Count}篇");
+
+                sb.Append(string.Join("  ", dayStats));
+            }
 
             sb.AppendLine();
 
             if (newReport != "")
+            {
                 TxtResult = newReport + "\n" + TxtResult;
+                // 保存当日成绩记录
+                CounterLog.AddDailyResult(newReport);
+            }
             sb.Append(TxtResult);
 
 
@@ -2432,6 +2309,49 @@ namespace TypeSunny
 
         void StopHelper()
         {
+            // 保存文章日志数据（在 Score 被重置之前）
+            TxtSource savedTxtSource = StateManager.txtSource;  // 保存文本来源
+            RetypeType savedRetypeType = StateManager.retypeType;  // 保存重打类型
+            int savedTotalWords = Score.TotalWordCount;
+            int savedInputWords = Score.InputWordCount;
+            double savedSpeed = Score.Speed;
+            double savedHitRate = Score.HitRate;
+            double savedAccuracy = Score.GetAccuracy() * 100;  // 键准（转换为百分制）
+            int savedWrong = Score.Wrong;
+            int savedBacks = (int)Score.GetBacks();
+            double savedCorrection = Score.GetCorrection();
+            double savedKPW = Score.KPW;
+            double savedLRRatio = Score.LRRatio;
+            int savedTotalHit = (int)Score.GetHit();
+            double savedTotalSeconds = Score.Time.TotalSeconds;
+            int savedWasteCodes = Score.WasteCodes;
+            double savedCiRatio = Score.GetCiRatio() * 100;  // 打词率（转换为百分制）
+            int savedChoose = Score.GetChoose();
+            int savedBiaoDing = Score.GetBiaoDing();
+            string savedArticleName = "";
+            string savedArticleMark = "";
+            string savedDifficultyName = "";
+
+            // 根据来源保存文章名和 mark
+            if (savedTxtSource == TxtSource.book)
+            {
+                savedArticleName = ArticleManager.Title ?? "未知文章";
+                savedArticleMark = "";  // 本地文章没有 mark
+                savedDifficultyName = "";  // 本地文章没有难度名称
+            }
+            else if (savedTxtSource == TxtSource.articlesender)
+            {
+                savedArticleName = articleCache.GetCurrentTitle() ?? "文来文章";
+                savedArticleMark = articleCache.GetCurrentMark() ?? "";
+                savedDifficultyName = articleCache.GetDifficultyName() ?? "";  // 从ArticleCache获取难度名称
+            }
+            else
+            {
+                savedArticleName = "其他来源";
+                savedArticleMark = "";
+                savedDifficultyName = "";
+            }
+
             TbxInput.IsReadOnly = true;
             StateManager.typingState = TypingState.end;
             sw.Stop();
@@ -2445,6 +2365,7 @@ namespace TypeSunny
 
 
             Score.InputWordCount = new StringInfo(TbxInput.Text).LengthInTextElements;
+            savedInputWords = Score.InputWordCount;  // 更新保存的输入字数
 
             //计算错字
 
@@ -2740,8 +2661,29 @@ namespace TypeSunny
                 }
                 else if (!Config.GetBool("慢字重打")) // 关闭了错字重打和慢字重打
                 {
-                    // 直接发送成绩+下一段
-                    NextAndSendArticleSender(result);
+                    // 检查是否是手动换段模式
+                    bool manualMode = Config.GetString("文来换段模式") == "手动";
+
+                    if (manualMode)
+                    {
+                        // 手动模式：只发送成绩，不自动发下一段
+                        if (Config.GetBool("自动发送成绩"))
+                        {
+                            if (QQGroupName != "")
+                            {
+                                QQHelper.SendQQMessage(QQGroupName, result, 0, this);
+                            }
+                            else
+                            {
+                                Win32SetText(result);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 自动模式：直接发送成绩+下一段
+                        NextAndSendArticleSender(result);
+                    }
                     return;
                 }
                 // 其他情况（开启了慢字重打），继续执行后续慢字检测逻辑
@@ -2780,45 +2722,6 @@ namespace TypeSunny
             {
                 TextInfo.SlowRec.Clear();
                 double slowThreshold = Config.GetDouble("慢字标准(单位:秒)") * 1000; // 转换为毫秒
-
-                // === 调试信息收集 ===
-                StringBuilder debugInfo = new StringBuilder();
-                debugInfo.AppendLine("========== 慢字检测调试信息 ==========");
-                debugInfo.AppendLine($"慢字标准: {slowThreshold}ms ({Config.GetDouble("慢字标准(单位:秒)")}秒)");
-                debugInfo.AppendLine($"CommitTime数量: {Score.CommitTime.Count}");
-                debugInfo.AppendLine($"CommitCharCount数量: {Score.CommitCharCount.Count}");
-                debugInfo.AppendLine($"TextInfo.Words数量: {TextInfo.Words.Count}");
-
-                if (Score.CommitTime.Count > 0)
-                {
-                    debugInfo.AppendLine("\n【上屏记录详情】:");
-                    for (int i = 0; i < Score.CommitTime.Count; i++)
-                    {
-                        long time = Score.CommitTime[i];
-                        int charCount = i < Score.CommitCharCount.Count ? Score.CommitCharCount[i] : 0;
-                        string text = i < Score.CommitText.Count ? Score.CommitText[i] : "N/A";
-                        long timeDiff = i > 0 ? (Score.CommitTime[i] - Score.CommitTime[i - 1]) : Score.CommitTime[i];
-
-                        // 计算有效字符数（排除符号）
-                        int validCharCount = 0;
-                        if (i < Score.CommitText.Count)
-                        {
-                            StringInfo si = new StringInfo(Score.CommitText[i]);
-                            for (int j = 0; j < si.LengthInTextElements; j++)
-                            {
-                                string ch = si.SubstringByTextElements(j, 1);
-                                if (!Score.ExcludePuncts.Contains(ch))
-                                {
-                                    validCharCount++;
-                                }
-                            }
-                        }
-
-                        double avgTime = validCharCount > 0 ? (double)timeDiff / validCharCount : 0;
-
-                        debugInfo.AppendLine($"  [{i}] 文本:'{text}' 总字数:{charCount}, 有效字数:{validCharCount}, 总时:{timeDiff}ms, 平均:{avgTime:F0}ms/字{(avgTime > slowThreshold && validCharCount > 0 ? " ← 慢!" : "")}");
-                    }
-                }
 
                 // === 新的检测逻辑 ===
                 int textPos = 0; // 当前在 TextInfo.Words 中的位置
@@ -2869,25 +2772,6 @@ namespace TypeSunny
                         textPos += charCount;
                     }
                 }
-
-                debugInfo.AppendLine("\n【检测结果】:");
-                if (TextInfo.SlowRec.Count > 0)
-                {
-                    foreach (var kvp in TextInfo.SlowRec)
-                    {
-                        debugInfo.AppendLine($"  慢字: 位置{kvp.Key}, 字符'{kvp.Value}'");
-                    }
-                }
-                else
-                {
-                    debugInfo.AppendLine("  无慢字");
-                }
-
-                debugInfo.AppendLine($"\n慢字总数: {TextInfo.SlowRec.Count}");
-                debugInfo.AppendLine("==========================================");
-
-                // 输出到日志（如果开启）
-                DebugLog.AppendLine(debugInfo.ToString());
             }
 
             // 合并错字和慢字重打逻辑
@@ -2927,15 +2811,90 @@ namespace TypeSunny
                 else if (StateManager.txtSource == TxtSource.articlesender)
                 {
                     // 文来模式：无错字且无慢字，进入下一段
-                    // 如果是重打模式，不发送成绩；如果是正文，发送成绩
-                    if (StateManager.retypeType == RetypeType.wrongRetype || StateManager.retypeType == RetypeType.slowRetype)
+                    // 检查是否是手动换段模式
+                    bool manualMode = Config.GetString("文来换段模式") == "手动";
+
+                    if (manualMode)
                     {
-                        NextAndSendArticleSender();  // 重打完成，不发送成绩
+                        // 手动模式：只发送成绩，不自动发下一段
+                        if (StateManager.retypeType != RetypeType.wrongRetype && StateManager.retypeType != RetypeType.slowRetype && Config.GetBool("自动发送成绩"))
+                        {
+                            if (QQGroupName != "")
+                            {
+                                QQHelper.SendQQMessage(QQGroupName, result, 0, this);
+                            }
+                            else
+                            {
+                                Win32SetText(result);
+                            }
+                        }
                     }
                     else
                     {
-                        NextAndSendArticleSender(result);  // 正文完成，发送成绩
+                        // 自动模式：继续发下一段
+                        // 如果是重打模式，不发送成绩；如果是正文，发送成绩
+                        if (StateManager.retypeType == RetypeType.wrongRetype || StateManager.retypeType == RetypeType.slowRetype)
+                        {
+                            NextAndSendArticleSender();  // 重打完成，不发送成绩
+                        }
+                        else
+                        {
+                            NextAndSendArticleSender(result);  // 正文完成，发送成绩
+                        }
                     }
+                }
+            }
+
+            // 记录文章日志（包括重打，但不包括打单器、错字重打、慢字重打）
+            if (StateManager.txtSource != TxtSource.trainer &&
+                savedRetypeType != RetypeType.wrongRetype &&
+                savedRetypeType != RetypeType.slowRetype)
+            {
+                try
+                {
+                    // 直接使用保存的值（已经在 StopHelper 开始时根据来源设置好了）
+                    string articleName = savedArticleName;
+                    string articleMark = savedArticleMark;
+
+                    var record = new ArticleLog.ArticleRecord
+                    {
+                        Time = DateTime.Now,
+                        ArticleName = articleName,
+                        TotalWords = savedTotalWords,
+                        InputWords = savedInputWords,
+                        Speed = savedSpeed,
+                        HitRate = savedHitRate,
+                        Accuracy = savedAccuracy,
+                        Wrong = savedWrong,
+                        Backs = savedBacks,
+                        Correction = savedCorrection,
+                        KPW = savedKPW,
+                        LRRatio = savedLRRatio,
+                        TotalHit = savedTotalHit,
+                        TotalSeconds = savedTotalSeconds,
+                        ArticleMark = savedArticleMark,
+                        WasteCodes = savedWasteCodes,
+                        CiRatio = savedCiRatio,
+                        Choose = savedChoose,
+                        BiaoDing = savedBiaoDing,
+                        DifficultyName = savedDifficultyName
+                    };
+
+                    // 根据来源记录到不同的日志（使用保存的 txtSource）
+                    if (savedTxtSource == TxtSource.articlesender)
+                    {
+                        // 文来文章记录到文来日志
+                        WenlaiLog.WriteRecord(record);
+                    }
+                    else
+                    {
+                        // 其他文章记录到文章日志
+                        ArticleLog.WriteRecord(record);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"记录文章日志失败: {ex.Message}");
                 }
             }
 
@@ -2992,9 +2951,6 @@ namespace TypeSunny
 
             bool IsInputEnd()
             {
-
-
-
                 if (!IsLookingType || TextInfo.Words.Count <= 3)
                 {
                     StringInfo sb = new StringInfo(TbxInput.Text);
@@ -3173,16 +3129,18 @@ namespace TypeSunny
         /// <summary>
         /// 通用发送方法（发送到剪切板或QQ群）
         /// </summary>
-        private void SendContentToClipboardOrQQ(string content)
+        private void SendContentToClipboardOrQQ(string content, bool focus = false)
         {
             if (QQGroupName != "")
             {
                 QQHelper.SendQQMessage(QQGroupName, content, 250, this);
+                FocusInput();  // 发送QQ后确保窗口激活
             }
             else
             {
                 Win32SetText(content);
-                FocusInput();
+                if (focus)
+                    FocusInput();
             }
         }
 
@@ -3191,6 +3149,9 @@ namespace TypeSunny
         /// </summary>
         private void NextAndSendArticleSender(string lastResult = "")
         {
+            // 检查换段模式
+            bool manualMode = Config.GetString("文来换段模式") == "手动";
+
             string segment = articleCache.GetNextSegment();
 
             if (string.IsNullOrEmpty(segment))
@@ -3200,59 +3161,78 @@ namespace TypeSunny
             }
             else
             {
-                // 格式化发文内容
-                string title = articleCache.GetCurrentTitle();
-                string mark = articleCache.GetCurrentMark();  // 使用文来接口返回的mark
-                string difficultyText = articleCache.GetCurrentDifficulty();  // 使用文来接口返回的难度
-                string formattedContent = FormatArticleSenderContent(title, segment, mark, difficultyText);
-
-                // 先发送QQ，再异步渲染（提升响应速度）
-                if (QQGroupName != "")
+                // 手动模式：不自动发送下一段，只发送成绩（如果有）
+                if (manualMode)
                 {
-                    if (!string.IsNullOrEmpty(lastResult))
+                    // 手动模式：只发送成绩，不发送下一段，不加载新文本
+                    if (!string.IsNullOrEmpty(lastResult) && Config.GetBool("自动发送成绩"))
                     {
-                        // 有成绩：根据"自动发送成绩"开关决定
-                        if (Config.GetBool("自动发送成绩"))
+                        if (QQGroupName != "")
                         {
-                            // 开启自动发送成绩：先发成绩，再发下一段
-                            QQHelper.SendQQMessageD(QQGroupName, lastResult, formattedContent, 0, this);
+                            QQHelper.SendQQMessage(QQGroupName, lastResult, 0, this);
                         }
                         else
                         {
-                            // 未开启自动发送成绩：只发下一段文章
+                            Win32SetText(lastResult);
+                        }
+                    }
+                }
+                else
+                {
+                    // 自动模式：保持原有逻辑
+                    // 格式化发文内容
+                    string title = articleCache.GetCurrentTitle();
+                    string mark = articleCache.GetCurrentMark();  // 使用文来接口返回的mark
+                    string difficultyText = articleCache.GetCurrentDifficulty();  // 使用文来接口返回的难度
+                    string formattedContent = FormatArticleSenderContent(title, segment, mark, difficultyText);
+
+                    // 先发送QQ，再异步渲染（提升响应速度）
+                    if (QQGroupName != "")
+                    {
+                        if (!string.IsNullOrEmpty(lastResult))
+                        {
+                            // 有成绩：根据"自动发送成绩"开关决定
+                            if (Config.GetBool("自动发送成绩"))
+                            {
+                                // 开启自动发送成绩：先发成绩，再发下一段
+                                QQHelper.SendQQMessageD(QQGroupName, lastResult, formattedContent, 0, this);
+                            }
+                            else
+                            {
+                                // 未开启自动发送成绩：只发下一段文章
+                                QQHelper.SendQQMessage(QQGroupName, formattedContent, 0, this);
+                            }
+                        }
+                        else
+                        {
+                            // 无成绩：只发下一段
                             QQHelper.SendQQMessage(QQGroupName, formattedContent, 0, this);
                         }
                     }
                     else
                     {
-                        // 无成绩：只发下一段
-                        QQHelper.SendQQMessage(QQGroupName, formattedContent, 0, this);
+                        // 没有选群：复制到剪切板
+                        // 根据"自动发送成绩"开关决定是否复制成绩
+                        string messageToSend = formattedContent;
+                        if (!string.IsNullOrEmpty(lastResult) && Config.GetBool("自动发送成绩"))
+                        {
+                            messageToSend = lastResult + "\n" + formattedContent;
+                        }
+                        Win32SetText(messageToSend);
                     }
-                }
-                else
-                {
-                    // 没有选群：复制到剪切板
-                    // 根据"自动发送成绩"开关决定是否复制成绩
-                    string messageToSend = formattedContent;
-                    if (!string.IsNullOrEmpty(lastResult) && Config.GetBool("自动发送成绩"))
-                    {
-                        messageToSend = lastResult + "\n" + formattedContent;
-                    }
-                    Win32SetText(messageToSend);
-                    FocusInput();
-                }
 
-                // 异步渲染文本，不等待渲染完成（fire-and-forget）
-                System.Threading.Tasks.Task.Run(() =>
-                {
-                    Dispatcher.Invoke(() =>
+                    // 异步渲染文本，不等待渲染完成（fire-and-forget）
+                    System.Threading.Tasks.Task.Run(() =>
                     {
-                        LoadText(segment, RetypeType.first, TxtSource.articlesender);
-                        // 重置进度条
-                        if (Config.GetBool("显示进度条"))
-                            TitleProgressBar.Width = 0;
+                        Dispatcher.Invoke(() =>
+                        {
+                            LoadText(segment, RetypeType.first, TxtSource.articlesender, switchBack: false);
+                            // 重置进度条
+                            if (Config.GetBool("显示进度条"))
+                                TitleProgressBar.Width = 0;
+                        });
                     });
-                });
+                }
             }
         }
 
@@ -3953,6 +3933,7 @@ namespace TypeSunny
 
         /// <summary>
         /// 更新窗口标题，显示字数进度和难度
+        /// 注意：难度单独显示在 TbkTitleDifficulty 控件中，不在标题文本中重复显示
         /// </summary>
         private void UpdateWindowTitle(int typedWords, int totalWords)
         {
@@ -3967,18 +3948,18 @@ namespace TypeSunny
             {
                 string progress = articleCache.GetProgress();
                 string title = articleCache.GetCurrentTitle();
-                TbkTitle.Text = $"晴跟打 - {title} [{progress}]     {typedWords}/{totalWords}     {currentDifficultyText}";
+                TbkTitle.Text = $"晴跟打 - {title} [{progress}]     {typedWords}/{totalWords}";
             }
             else if (StateManager.txtSource == TxtSource.book && ArticleManager.Title != "")
             {
                 // 文章管理模式，显示书名和段落进度
                 string bookTitle = ArticleManager.Title.Replace(".txt", "").Replace(".Txt", "").Replace(".TXT", "").Replace(".epub", "").Replace(".Epub", "").Replace(".EPUB", "");
                 string progress = $"{ArticleManager.Index}/{ArticleManager.MaxIndex}段";
-                TbkTitle.Text = $"晴跟打 - {bookTitle} [{progress}]     {typedWords}/{totalWords}     {currentDifficultyText}";
+                TbkTitle.Text = $"晴跟打 - {bookTitle} [{progress}]     {typedWords}/{totalWords}";
             }
             else
             {
-                TbkTitle.Text = $"晴跟打     {typedWords}/{totalWords}     {currentDifficultyText}";
+                TbkTitle.Text = $"晴跟打     {typedWords}/{totalWords}";
             }
         }
 
@@ -4163,7 +4144,7 @@ namespace TypeSunny
                     double difficulty = difficultyDict.Calc(currentText);
                     currentDifficultyText = "难度:" + difficultyDict.DiffText(difficulty);
                 }
-                TbkDifficulty.Text = currentDifficultyText;
+                TbkTitleDifficulty.Text = currentDifficultyText;
 
                 // 更新字提显示
                 UpdateZiTi();
@@ -4437,6 +4418,9 @@ namespace TypeSunny
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            // 应用当前选中的 Logo
+            ApplyCurrentLogo();
+
             // 初始化字提功能（使用配置中的方案）
             string scheme = Config.GetString("字提方案");
             if (!string.IsNullOrEmpty(scheme))
@@ -4482,6 +4466,10 @@ namespace TypeSunny
             }
 
             IntStringDict.Load();
+
+            // 加载当日成绩记录
+            CounterLog.LoadDailyResults();
+            TxtResult = CounterLog.GetDailyResults();
 
             // 强制刷新窗体背景色和字体色（确保主题生效）
             Dispatcher.BeginInvoke(new Action(() =>
@@ -4595,6 +4583,113 @@ namespace TypeSunny
             //      {
             //          return;
             //      }
+
+            // 启动版本检测
+            StartVersionCheck();
+        }
+
+        // 版本检测定时器
+        private System.Windows.Threading.DispatcherTimer _versionCheckTimer;
+        // 标记用户是否已关闭更新提醒
+        private bool _updateReminderDismissed = false;
+
+        /// <summary>
+        /// 启动版本检测（启动时检查 + 定时器每小时检查一次）
+        /// </summary>
+        private void StartVersionCheck()
+        {
+            // 启动时立即检查一次（如果距离上次检查超过24小时）
+            Task.Run(async () =>
+            {
+                try
+                {
+                    bool hasUpdate = await VersionManager.CheckUpdateAsync();
+                    if (hasUpdate)
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            // 只有在用户没有关闭过提醒时才显示
+                            if (!_updateReminderDismissed)
+                            {
+                                ShowUpdateReminder();
+                            }
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"版本检测失败: {ex.Message}");
+                }
+            });
+
+            // 启动定时器：每小时检查一次是否超过24小时
+            _versionCheckTimer = new System.Windows.Threading.DispatcherTimer();
+            _versionCheckTimer.Interval = TimeSpan.FromHours(1); // 每小时检查一次
+            _versionCheckTimer.Tick += async (s, e) =>
+            {
+                try
+                {
+                    bool hasUpdate = await VersionManager.CheckUpdateAsync();
+                    if (hasUpdate)
+                    {
+                        // 真正检查到有更新时，重置标志，允许显示提醒
+                        _updateReminderDismissed = false;
+                        ShowUpdateReminder();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"定时版本检测失败: {ex.Message}");
+                }
+            };
+            _versionCheckTimer.Start();
+        }
+
+        /// <summary>
+        /// 显示更新提醒
+        /// </summary>
+        private void ShowUpdateReminder()
+        {
+            // 检查窗口是否已关闭或正在关闭
+            if (!IsLoaded)
+                return;
+
+            // 如果用户已经关闭过提醒，不重复显示（除非24小时后重新检查）
+            if (_updateReminderDismissed)
+                return;
+
+            // 查找按钮
+            var btn = this.FindName("BtnUpdateReminder") as System.Windows.Controls.Button;
+            if (btn == null)
+                return;
+
+            // 如果提醒已经可见，不需要重复显示
+            if (btn.Visibility == Visibility.Visible)
+                return;
+
+            try
+            {
+                btn.Content = $"[有新版本 {VersionManager.LatestVersion}]";
+                btn.Visibility = Visibility.Visible;
+            }
+            catch
+            {
+                // 窗口已关闭，忽略错误
+            }
+        }
+
+        /// <summary>
+        /// 更新提醒被点击
+        /// </summary>
+        private void BtnUpdateReminder_Click(object sender, RoutedEventArgs e)
+        {
+            var btn = sender as System.Windows.Controls.Button;
+            if (btn != null)
+            {
+                btn.Visibility = Visibility.Collapsed;
+                _updateReminderDismissed = true;  // 标记用户已关闭
+                VersionManager.DismissUpdateReminder();
+            }
         }
 
         private void LoadTitleProgressBarColor()
@@ -4655,8 +4750,11 @@ namespace TypeSunny
                     mbt.IsChecked = true;
             }
 
+            // 提取纯群名（去掉表情前缀）
+            string header = mi.Header.ToString();
+            string groupName = header.Replace("🌊 -潜水-", "-潜水-").Replace("👥 ", "");
 
-            SelectQQGroup(mi.Header.ToString());
+            SelectQQGroup(groupName);
 
 
 
@@ -4714,7 +4812,7 @@ namespace TypeSunny
 
             {
                 MenuItem mi = new MenuItem();
-                mi.Header = "-潜水-";
+                mi.Header = "🌊 -潜水-";
                 mi.Click += MenuQQ_Click;
                 mi.IsCheckable = true;
 
@@ -4728,13 +4826,16 @@ namespace TypeSunny
             {
                 MenuItem mi = new MenuItem();
 
-                mi.Header = groupName;
+                mi.Header = "👥 " + groupName;
                 mi.Click += MenuQQ_Click;
                 mi.IsCheckable = true;
 
                 // 如果配置中的群名匹配，设置选中
                 if (groupName == currentGroup)
                     mi.IsChecked = true;
+                else if (!string.IsNullOrEmpty(currentGroup) && currentGroup == "-潜水-")
+                    // 如果当前选择的是潜水，确保普通群不被选中
+                    mi.IsChecked = false;
 
                 MenuQQGroup.Items.Add(mi);
 
@@ -4930,14 +5031,34 @@ namespace TypeSunny
 
         private void InternalHotkeyCtrlP(object sender, ExecutedRoutedEventArgs e)
         {
-            ArticleManager.NextSection();
-            SendArticle();
+            // 判断当前是文来模式还是本地文章模式
+            if (StateManager.txtSource == TxtSource.articlesender && articleCache.HasArticle())
+            {
+                // 文来模式：调用API获取下一段
+                LoadNextSegment();
+            }
+            else
+            {
+                // 本地文章模式：翻到下一页
+                ArticleManager.NextSection();
+                SendArticle();
+            }
         }
 
         private void InternalHotkeyCtrlO(object sender, ExecutedRoutedEventArgs e)
         {
-            ArticleManager.PrevSection();
-            SendArticle();
+            // 判断当前是文来模式还是本地文章模式
+            if (StateManager.txtSource == TxtSource.articlesender && articleCache.HasArticle())
+            {
+                // 文来模式：调用API获取上一段
+                LoadPreviousSegment();
+            }
+            else
+            {
+                // 本地文章模式：翻到上一页
+                ArticleManager.PrevSection();
+                SendArticle();
+            }
         }
 
 
@@ -5030,11 +5151,21 @@ namespace TypeSunny
         
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            // 停止版本检测定时器
+            if (_versionCheckTimer != null)
+            {
+                _versionCheckTimer.Stop();
+                _versionCheckTimer = null;
+            }
+
             CounterLog.Add("字数", CounterLog.Buffer[0]);
             CounterLog.Buffer[0] = 0;
             CounterLog.Add("击键数", CounterLog.Buffer[1]);
             CounterLog.Buffer[1] = 0;
             CounterLog.Write();
+
+            // 异步保存当日成绩记录（不阻塞关闭）
+            _ = CounterLog.SaveDailyResultsAsync();
 
             Config.Set("窗口坐标X", this.Left, 0);
             Config.Set("窗口坐标Y", this.Top, 0);
@@ -5069,6 +5200,7 @@ namespace TypeSunny
             }
 
             winConfig = new WinConfig();
+            winConfig.Owner = this;
             winConfig.ConfigSaved += new WinConfig.DelegateConfigSaved(ReloadCfg);
             winConfig.Show();
         }
@@ -5301,39 +5433,105 @@ namespace TypeSunny
             double brightness = (bgColor.R * 0.299 + bgColor.G * 0.587 + bgColor.B * 0.114) / 255.0;
             bool isDarkTheme = brightness < 0.5;
 
-            // 根据主题计算鼠标悬停颜色
-            System.Windows.Media.Color hoverBgColor;
+            // 根据主题计算鼠标悬停颜色 - 只使用边框高亮效果
+            System.Windows.Media.Color hoverBorderColor;
             System.Windows.Media.Color hoverFgColor;
 
             if (isDarkTheme)
             {
-                // 暗色主题：悬停时背景变亮，文字保持原色
-                hoverBgColor = System.Windows.Media.Color.FromRgb(
-                    (byte)Math.Min(255, bgColor.R + 40),
-                    (byte)Math.Min(255, bgColor.G + 40),
-                    (byte)Math.Min(255, bgColor.B + 40)
+                // 暗色主题：悬停时边框变亮
+                hoverBorderColor = System.Windows.Media.Color.FromRgb(
+                    (byte)Math.Min(255, bgColor.R + 80),
+                    (byte)Math.Min(255, bgColor.G + 80),
+                    (byte)Math.Min(255, bgColor.B + 80)
                 );
                 hoverFgColor = menuFg.Color;
             }
             else
             {
-                // 亮色主题：悬停时背景变深蓝色，文字变白
-                hoverBgColor = System.Windows.Media.Color.FromRgb(51, 153, 255); // 蓝色高亮
-                hoverFgColor = System.Windows.Media.Colors.White;
+                // 亮色主题：悬停时边框变深
+                hoverBorderColor = System.Windows.Media.Color.FromRgb(
+                    (byte)Math.Max(0, bgColor.R - 50),
+                    (byte)Math.Max(0, bgColor.G - 50),
+                    (byte)Math.Max(0, bgColor.B - 50)
+                );
+                hoverFgColor = menuFg.Color;
             }
 
-            // 创建触发器用于鼠标悬停
-            var trigger = new Trigger
+            var hoverBorderBrush = new System.Windows.Media.SolidColorBrush(hoverBorderColor);
+            var hoverFgBrush = new System.Windows.Media.SolidColorBrush(hoverFgColor);
+            hoverBorderBrush.Freeze();
+            hoverFgBrush.Freeze();
+
+            // 设置默认背景和前景色
+            style.Setters.Add(new Setter(MenuItem.BackgroundProperty, menuBg));
+            style.Setters.Add(new Setter(MenuItem.ForegroundProperty, menuFg));
+            style.Setters.Add(new Setter(MenuItem.BorderThicknessProperty, new System.Windows.Thickness(0)));
+            style.Setters.Add(new Setter(MenuItem.PaddingProperty, new System.Windows.Thickness(8, 6, 8, 6)));
+
+            // 鼠标悬停触发器 - 只添加边框效果，不改变背景色
+            var highlightTrigger = new Trigger
             {
                 Property = MenuItem.IsHighlightedProperty,
                 Value = true
             };
-            trigger.Setters.Add(new Setter(MenuItem.BackgroundProperty, new System.Windows.Media.SolidColorBrush(hoverBgColor)));
-            trigger.Setters.Add(new Setter(MenuItem.ForegroundProperty, new System.Windows.Media.SolidColorBrush(hoverFgColor)));
+            highlightTrigger.Setters.Add(new Setter(MenuItem.BorderBrushProperty, hoverBorderBrush));
+            highlightTrigger.Setters.Add(new Setter(MenuItem.BorderThicknessProperty, new System.Windows.Thickness(1)));
+            highlightTrigger.Setters.Add(new Setter(Control.ForegroundProperty, hoverFgBrush));
+            style.Triggers.Add(highlightTrigger);
 
-            style.Triggers.Add(trigger);
+            // 禁用状态触发器
+            var disabledTrigger = new Trigger
+            {
+                Property = UIElement.IsEnabledProperty,
+                Value = false
+            };
+            disabledTrigger.Setters.Add(new Setter(UIElement.OpacityProperty, 0.5));
+            style.Triggers.Add(disabledTrigger);
 
             return style;
+        }
+
+        /// <summary>
+        /// 创建带背景色的Separator
+        /// </summary>
+        private Separator CreateStyledSeparator(System.Windows.Media.SolidColorBrush menuBg)
+        {
+            var separator = new Separator();
+            var style = new Style(typeof(Separator));
+
+            // 根据主题计算分隔线颜色
+            var bgColor = menuBg.Color;
+            double brightness = (bgColor.R * 0.299 + bgColor.G * 0.587 + bgColor.B * 0.114) / 255.0;
+            bool isDarkTheme = brightness < 0.5;
+
+            System.Windows.Media.Color separatorColor;
+            if (isDarkTheme)
+            {
+                // 暗色主题：分隔线变亮
+                separatorColor = System.Windows.Media.Color.FromRgb(
+                    (byte)Math.Min(255, bgColor.R + 50),
+                    (byte)Math.Min(255, bgColor.G + 50),
+                    (byte)Math.Min(255, bgColor.B + 50)
+                );
+            }
+            else
+            {
+                // 亮色主题：分隔线变暗
+                separatorColor = System.Windows.Media.Color.FromRgb(
+                    (byte)Math.Max(0, bgColor.R - 40),
+                    (byte)Math.Max(0, bgColor.G - 40),
+                    (byte)Math.Max(0, bgColor.B - 40)
+                );
+            }
+
+            // 设置分隔线背景色和边距
+            style.Setters.Add(new Setter(Separator.BackgroundProperty, menuBg));
+            style.Setters.Add(new Setter(Separator.ForegroundProperty, new System.Windows.Media.SolidColorBrush(separatorColor)));
+            style.Setters.Add(new Setter(Separator.MarginProperty, new Thickness(0, 2, 0, 2)));
+            separator.Style = style;
+
+            return separator;
         }
 
         /// <summary>
@@ -5395,8 +5593,34 @@ namespace TypeSunny
                 var menuBg = Colors.FromString(Config.GetString("菜单背景色"));
                 var menuFg = Colors.FromString(Config.GetString("菜单字体色"));
 
+                // 为Menu控件和主MenuItem设置背景色和前景色（修复暗色主题显示问题）
+                MenuRace.Background = menuBg;
+                MenuRace.Foreground = menuFg;
+                MenuItemRace.Background = menuBg;
+                MenuItemRace.Foreground = menuFg;
+
+                // 当赛文菜单打开/关闭时检查登录状态
+                MenuItemRace.SubmenuOpened -= MenuItemRace_SubmenuOpened;
+                MenuItemRace.SubmenuOpened += MenuItemRace_SubmenuOpened;
+                MenuItemRace.SubmenuClosed -= MenuItemRace_SubmenuClosed;
+                MenuItemRace.SubmenuClosed += MenuItemRace_SubmenuClosed;
+
                 // 创建MenuItem样式以支持暗色主题
                 var menuItemStyle = CreateMenuItemStyle(menuBg, menuFg);
+
+                // 创建全局Menu样式，确保子菜单Popup也使用正确的背景色
+                var menuStyle = new Style(typeof(Menu));
+                menuStyle.Setters.Add(new Setter(Menu.BackgroundProperty, menuBg));
+                menuStyle.Setters.Add(new Setter(Menu.ForegroundProperty, menuFg));
+
+                // 创建全局ContextMenu样式
+                var contextMenuStyle = new Style(typeof(ContextMenu));
+                contextMenuStyle.Setters.Add(new Setter(ContextMenu.BackgroundProperty, menuBg));
+                contextMenuStyle.Setters.Add(new Setter(ContextMenu.ForegroundProperty, menuFg));
+
+                // 将样式添加到Window资源中
+                this.Resources["MenuStyle"] = menuStyle;
+                this.Resources["ContextMenuStyle"] = contextMenuStyle;
 
                 // ========== 第一部分：添加所有赛文API服务器 ==========
                 var serverManager = new TypeSunny.Net.RaceServerManager();
@@ -5476,7 +5700,7 @@ namespace TypeSunny
                         registerItem.Click += MenuItemRaceServerRegister_Click;
                         serverMenu.Items.Add(registerItem);
 
-                        serverMenu.Items.Add(new Separator());
+                        serverMenu.Items.Add(CreateStyledSeparator(menuBg));
                     }
                     else
                     {
@@ -5491,7 +5715,7 @@ namespace TypeSunny
                             Style = menuItemStyle
                         };
                         serverMenu.Items.Add(loginStatusItem);
-                        serverMenu.Items.Add(new Separator());
+                        serverMenu.Items.Add(CreateStyledSeparator(menuBg));
                     }
 
                     // 添加该服务器的所有赛文（作为子菜单）
@@ -5586,7 +5810,7 @@ namespace TypeSunny
                     }
 
                     // 底部添加刷新选项
-                    serverMenu.Items.Add(new Separator());
+                    serverMenu.Items.Add(CreateStyledSeparator(menuBg));
                     MenuItem refreshItem = new MenuItem { Header = "🔄 刷新赛文列表", Background = menuBg, Foreground = menuFg, Tag = $"server_{server.Id}", FontSize = 11, Style = menuItemStyle };
                     refreshItem.Click += MenuItemRefreshServer_Click;
                     serverMenu.Items.Add(refreshItem);
@@ -5598,7 +5822,7 @@ namespace TypeSunny
                 // 分隔符
                 if (servers.Count > 0)
                 {
-                    MenuItemRace.Items.Add(new Separator());
+                    MenuItemRace.Items.Add(CreateStyledSeparator(menuBg));
                 }
 
                 // ========== 第二部分：添加服务器菜单（简化为直接添加服务器） ==========
@@ -5606,7 +5830,7 @@ namespace TypeSunny
                 addServerItem.Click += MenuItemAddRaceServer_Click;
                 MenuItemRace.Items.Add(addServerItem);
 
-                MenuItemRace.Items.Add(new Separator());
+                MenuItemRace.Items.Add(CreateStyledSeparator(menuBg));
 
                 // ========== 第三部分：添加传统赛文源（锦标赛、极速杯） ==========
                 var raceConfigs = RaceConfig.GetRaceConfigs();
@@ -5622,22 +5846,34 @@ namespace TypeSunny
 
                     // 创建一级菜单项（赛文源名称，如"锦标赛"、"极速杯"）
                     MenuItem parentMenu = new MenuItem();
-                    parentMenu.Header = config.Name;
+                    // 为一级菜单添加图标（根据名称判断）
+                    string parentIcon = config.Name.Contains("锦标赛") ? "🏅 " : (config.Name.Contains("极速") ? "⚡ " : "🏁 ");
+                    parentMenu.Header = parentIcon + config.Name;
 
-                    // 应用菜单颜色
+                    // 应用菜单颜色和样式
                     parentMenu.Background = menuBg;
                     parentMenu.Foreground = menuFg;
+                    parentMenu.Style = menuItemStyle;
 
                     // 为每个功能创建子菜单项
                     foreach (var feature in config.Features)
                     {
                         MenuItem subMenu = new MenuItem();
-                        subMenu.Header = feature;
+                        // 为功能添加图标
+                        string featureIcon = feature switch
+                        {
+                            "载文" => "📄 ",
+                            "登录" => "🔑 ",
+                            "排行榜" => "🏆 ",
+                            _ => ""
+                        };
+                        subMenu.Header = featureIcon + feature;
                         subMenu.Tag = config.Type + "_" + feature; // 用于识别事件来源
 
-                        // 应用菜单颜色到子菜单
+                        // 应用菜单颜色和样式到子菜单
                         subMenu.Background = menuBg;
                         subMenu.Foreground = menuFg;
+                        subMenu.Style = menuItemStyle;
 
                         // 根据功能类型绑定事件
                         switch (feature)
@@ -5734,8 +5970,27 @@ namespace TypeSunny
                 var menuBg = Colors.FromString(Config.GetString("菜单背景色"));
                 var menuFg = Colors.FromString(Config.GetString("菜单字体色"));
 
+                // 为ContextMenu设置背景色和前景色
+                MenuWenlai.Background = menuBg;
+                MenuWenlai.Foreground = menuFg;
+
+
                 // 创建MenuItem样式以支持暗色主题
                 var menuItemStyle = CreateMenuItemStyle(menuBg, menuFg);
+
+                // 创建全局Menu样式，确保子菜单Popup也使用正确的背景色
+                var menuStyle = new Style(typeof(Menu));
+                menuStyle.Setters.Add(new Setter(Menu.BackgroundProperty, menuBg));
+                menuStyle.Setters.Add(new Setter(Menu.ForegroundProperty, menuFg));
+
+                // 创建全局ContextMenu样式
+                var contextMenuStyle = new Style(typeof(ContextMenu));
+                contextMenuStyle.Setters.Add(new Setter(ContextMenu.BackgroundProperty, menuBg));
+                contextMenuStyle.Setters.Add(new Setter(ContextMenu.ForegroundProperty, menuFg));
+
+                // 将样式添加到Window资源中
+                this.Resources["MenuStyle"] = menuStyle;
+                this.Resources["ContextMenuStyle"] = contextMenuStyle;
 
                 // 清空旧菜单
                 MenuWenlai.Items.Clear();
@@ -5764,7 +6019,7 @@ namespace TypeSunny
                         Style = menuItemStyle
                     };
                     MenuWenlai.Items.Add(loginStatusItem);
-                    MenuWenlai.Items.Add(new Separator());
+                    MenuWenlai.Items.Add(CreateStyledSeparator(menuBg));
 
                     // 退出登录
                     MenuItem logoutItem = new MenuItem
@@ -5777,7 +6032,7 @@ namespace TypeSunny
                     logoutItem.Click += MenuItemWenlaiLogout_Click;
                     MenuWenlai.Items.Add(logoutItem);
 
-                    MenuWenlai.Items.Add(new Separator());
+                    MenuWenlai.Items.Add(CreateStyledSeparator(menuBg));
                 }
                 else
                 {
@@ -5803,7 +6058,7 @@ namespace TypeSunny
                     registerItem.Click += MenuItemWenlaiRegister_Click;
                     MenuWenlai.Items.Add(registerItem);
 
-                    MenuWenlai.Items.Add(new Separator());
+                    MenuWenlai.Items.Add(CreateStyledSeparator(menuBg));
                 }
 
                 // 服务器设置（始终显示）
@@ -5816,6 +6071,108 @@ namespace TypeSunny
                 };
                 serverSettingsItem.Click += MenuItemWenlaiServerSettings_Click;
                 MenuWenlai.Items.Add(serverSettingsItem);
+
+                // 选择难度（需要登录，作为子菜单）
+                MenuItem difficultyItem = new MenuItem
+                {
+                    Header = "🎯 选择难度",
+                    Background = menuBg,
+                    Foreground = menuFg,
+                    Style = menuItemStyle,
+                    IsEnabled = isLoggedIn && !string.IsNullOrWhiteSpace(username)  // 只有登录时才能点击
+                };
+
+                if (isLoggedIn && !string.IsNullOrWhiteSpace(username))
+                {
+                    // 异步加载难度列表
+                    System.Threading.Tasks.Task.Run(async () =>
+                    {
+                        var difficulties = await ArticleFetcher.GetDifficultiesAsync();
+                        if (difficulties != null && difficulties.Count > 0)
+                        {
+                            // 回到UI线程更新菜单
+                            this.Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                // 获取当前选中的难度
+                                string currentDifficulty = Config.GetString("文来难度") ?? "";
+                                int currentDifficultyId = 0;
+                                if (!string.IsNullOrEmpty(currentDifficulty))
+                                {
+                                    int.TryParse(currentDifficulty, out currentDifficultyId);
+                                }
+
+                                // 查找当前难度名称
+                                string currentDifficultyName = "随机";
+                                if (currentDifficultyId > 0)
+                                {
+                                    var currentDiff = difficulties.FirstOrDefault(d => d.Id == currentDifficultyId);
+                                    if (currentDiff != null)
+                                    {
+                                        currentDifficultyName = currentDiff.Name;
+                                    }
+                                }
+
+                                // 更新主菜单项，显示当前选择的难度
+                                difficultyItem.Header = $"🎯 选择难度 [{currentDifficultyName}]";
+
+                                // 计算总段数
+                                int totalCount = difficulties.Sum(d => d.Count);
+
+                                // 添加"随机"选项
+                                MenuItem randomItem = new MenuItem
+                                {
+                                    Header = $"随机 ({totalCount}段){(currentDifficultyId == 0 ? " ✓" : "")}",
+                                    Background = menuBg,
+                                    Foreground = menuFg,
+                                    Style = menuItemStyle,
+                                    Tag = 0
+                                };
+                                randomItem.Click += (s, args) =>
+                                {
+                                    Config.Set("文来难度", "");
+                                    InitializeWenlaiMenu();  // 刷新菜单以更新标记
+                                };
+                                difficultyItem.Items.Add(randomItem);
+
+                                // 按难度ID排序并添加
+                                foreach (var diff in difficulties.OrderBy(d => d.Id))
+                                {
+                                    // 跳过文章数为0的难度
+                                    if (diff.Count == 0)
+                                        continue;
+
+                                    MenuItem diffMenuItem = new MenuItem
+                                    {
+                                        Header = $"{diff.Name} ({diff.Count}段){(diff.Id == currentDifficultyId ? " ✓" : "")}",
+                                        Background = menuBg,
+                                        Foreground = menuFg,
+                                        Style = menuItemStyle,
+                                        Tag = diff.Id
+                                    };
+                                    diffMenuItem.Click += (s, args) =>
+                                    {
+                                        Config.Set("文来难度", diff.Id.ToString());
+                                        InitializeWenlaiMenu();  // 刷新菜单以更新标记
+                                    };
+                                    difficultyItem.Items.Add(diffMenuItem);
+                                }
+                            }));
+                        }
+                    });
+                }
+                MenuWenlai.Items.Add(difficultyItem);
+
+                // 成绩统计（始终显示，放在最下面）
+                MenuWenlai.Items.Add(CreateStyledSeparator(menuBg));
+                MenuItem statisticsItem = new MenuItem
+                {
+                    Header = "📊 成绩统计",
+                    Background = menuBg,
+                    Foreground = menuFg,
+                    Style = menuItemStyle
+                };
+                statisticsItem.Click += MenuItemWenlaiStatistics_Click;
+                MenuWenlai.Items.Add(statisticsItem);
 
                 // 输出菜单项列表，验证菜单是否正确构建
                 System.Diagnostics.Debug.WriteLine($"  菜单项数量: {MenuWenlai.Items.Count}");
@@ -5868,12 +6225,53 @@ namespace TypeSunny
                 System.Diagnostics.Debug.WriteLine("  已登录，调用 InitializeRaceMenu...");
                 InitializeRaceMenu();
                 System.Diagnostics.Debug.WriteLine("  InitializeRaceMenu 完成");
+
+                // 通知所有打开的设置窗口刷新文来难度数据
+                NotifyConfigWindowsRefreshWenlai();
             }
             else
             {
                 System.Diagnostics.Debug.WriteLine("  未登录，跳过 InitializeRaceMenu");
             }
             System.Diagnostics.Debug.WriteLine("<<< MenuItemWenlaiLogin_Click 结束");
+        }
+
+        /// <summary>
+        /// 通知所有打开的设置窗口刷新文来难度数据
+        /// </summary>
+        private void NotifyConfigWindowsRefreshWenlai()
+        {
+            try
+            {
+                // 使用 Task.Run 避免阻塞 UI 线程
+                Task.Run(async () =>
+                {
+                    foreach (Window window in Application.Current.Windows)
+                    {
+                        if (window is WinConfig configWindow)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[MainWindow] 通知设置窗口刷新文来数据");
+
+                            // 在窗口的 Dispatcher 上执行
+                            await configWindow.Dispatcher.InvokeAsync(async () =>
+                            {
+                                try
+                                {
+                                    await configWindow.ReloadWenlaiDifficultyConfig();
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[MainWindow] 刷新设置窗口文来数据失败: {ex.Message}");
+                                }
+                            }, System.Windows.Threading.DispatcherPriority.Normal);
+                        }
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[MainWindow] 通知设置窗口刷新失败: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -5891,6 +6289,9 @@ namespace TypeSunny
             if (wenlaiHelper.IsLoggedIn())
             {
                 InitializeRaceMenu();
+
+                // 通知所有打开的设置窗口刷新文来难度数据
+                NotifyConfigWindowsRefreshWenlai();
             }
         }
 
@@ -5905,6 +6306,10 @@ namespace TypeSunny
                 wenlaiHelper.Logout();
                 // 重新初始化菜单以更新登录状态
                 InitializeWenlaiMenu();
+
+                // 通知所有打开的设置窗口刷新文来难度数据
+                NotifyConfigWindowsRefreshWenlai();
+
                 MessageBox.Show("已退出登录", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
@@ -5917,6 +6322,20 @@ namespace TypeSunny
             wenlaiHelper.ShowServerSettingsDialog(this);
             // 服务器地址改变后，重新初始化菜单
             InitializeWenlaiMenu();
+        }
+
+        private void MenuItemWenlaiStatistics_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var winStats = new WinStatistics(this);
+                winStats.Show();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"打开成绩统计窗口失败: {ex.Message}\n堆栈: {ex.StackTrace}");
+                MessageBox.Show($"打开成绩统计窗口失败: {ex.Message}\n\n堆栈: {ex.StackTrace}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void MenuItemLoadArticle_Click(object sender, RoutedEventArgs e) // 锦标赛载文
@@ -6376,6 +6795,75 @@ namespace TypeSunny
             InitializeRaceMenu();
         }
 
+        private bool isRefreshingRaceMenu = false;
+        private static bool hasCheckedRaceMenuLogin = false;
+
+        /// <summary>
+        /// 赛文菜单关闭时检查是否需要刷新（避免打断菜单打开）
+        /// </summary>
+        private void MenuItemRace_SubmenuClosed(object sender, RoutedEventArgs e)
+        {
+            // 避免重复检查
+            if (hasCheckedRaceMenuLogin || isRefreshingRaceMenu)
+                return;
+
+            try
+            {
+                // 检查赛文是否已登录
+                var accountManager = new TypeSunny.Net.AccountSystemManager();
+                var raceAccount = accountManager.GetAccount("赛文");
+
+                // 如果赛文已登录，检查菜单是否显示登录状态
+                if (raceAccount != null && !string.IsNullOrWhiteSpace(raceAccount.Username))
+                {
+                    // 检查菜单中是否有"登录"项
+                    if (MenuItemRace.Items.Count > 0 && MenuItemRace.Items[0] is MenuItem firstItem)
+                    {
+                        bool needsRefresh = HasLoginMenuItem(firstItem);
+
+                        if (needsRefresh)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[赛文菜单] 菜单关闭后检测到需要刷新，刷新菜单");
+                            hasCheckedRaceMenuLogin = true;
+                            isRefreshingRaceMenu = true;
+                            InitializeRaceMenu();
+                            isRefreshingRaceMenu = false;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[赛文菜单] 检查登录状态失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 赛文菜单打开时标记已检查
+        /// </summary>
+        private void MenuItemRace_SubmenuOpened(object sender, RoutedEventArgs e)
+        {
+            hasCheckedRaceMenuLogin = false;
+        }
+
+        /// <summary>
+        /// 递归检查菜单中是否包含"登录"菜单项
+        /// </summary>
+        private bool HasLoginMenuItem(MenuItem menu)
+        {
+            foreach (var item in menu.Items)
+            {
+                if (item is MenuItem menuItem)
+                {
+                    if (menuItem.Header != null && menuItem.Header.ToString().Contains("登录"))
+                        return true;
+                    if (menuItem.Items.Count > 0 && HasLoginMenuItem(menuItem))
+                        return true;
+                }
+            }
+            return false;
+        }
+
 
         private void BtnJbs_Click(object sender, RoutedEventArgs e) //锦标赛
         {
@@ -6484,7 +6972,7 @@ namespace TypeSunny
 
                         var message = new TextBlock
                         {
-                            Text = article.Content + "\n\n请选择操作：",
+                            Text = article.Content,
                             TextWrapping = TextWrapping.Wrap,
                             FontSize = 14
                         };
@@ -6638,7 +7126,6 @@ namespace TypeSunny
                         messageToSend = lastResult + "\n" + formattedContent;
                     }
                     Win32SetText(messageToSend);
-                    FocusInput();
                 }
 
                 // 异步渲染文本，不等待渲染完成（fire-and-forget）
@@ -6646,7 +7133,7 @@ namespace TypeSunny
                 {
                     Dispatcher.Invoke(() =>
                     {
-                        LoadText(segment, RetypeType.first, TxtSource.articlesender);
+                        LoadText(segment, RetypeType.first, TxtSource.articlesender, switchBack: false);
                         // 重置进度条
                         if (Config.GetBool("显示进度条"))
                             TitleProgressBar.Width = 0;
@@ -6656,7 +7143,7 @@ namespace TypeSunny
                 else
                 {
                     // 非自动发送模式，正常渲染
-                    LoadText(segment, RetypeType.first, TxtSource.articlesender);
+                    LoadText(segment, RetypeType.first, TxtSource.articlesender, switchBack: false);
                     // 重置进度条
                     if (Config.GetBool("显示进度条"))
                         TitleProgressBar.Width = 0;
@@ -6680,7 +7167,7 @@ namespace TypeSunny
             _ = LoadRandomArticleAsync(autoSend, lastResult);
         }
 
-        private void LoadNextSegment()
+        private async void LoadNextSegment()
         {
             if (!articleCache.HasArticle())
             {
@@ -6688,25 +7175,32 @@ namespace TypeSunny
                 return;
             }
 
-            string segment = articleCache.GetNextSegment();
+            // 获取当前书籍信息
+            int bookId = articleCache.GetBookId();
+            int sortNum = articleCache.GetSortNum();
+            int difficultyId = articleCache.GetDifficultyId();
 
-            if (string.IsNullOrEmpty(segment))
-            {
-                // 已经是最后一段，自动加载新文章
-                LoadRandomArticle();
-            }
-            else
-            {
-                // 加载下一段
-                LoadText(segment, RetypeType.first, TxtSource.articlesender);
+            // 调用API获取下一段（使用异步方法避免死锁）
+            ArticleData segmentData = await ArticleFetcher.FetchSegmentAsync(bookId, sortNum, 1, difficultyId);
 
-                // 重置进度条（LoadText后已显示标题）
-                if (Config.GetBool("显示进度条"))
-                    TitleProgressBar.Width = 0;
+            if (string.IsNullOrEmpty(segmentData.Content) || segmentData.Title == "获取失败" || segmentData.Title == "接口错误")
+            {
+                MessageBox.Show("获取下一段失败: " + segmentData.Content, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
             }
+
+            // 更新articleCache中的参数（bookId、sortNum、difficultyId等），以便下次翻页使用正确的参数
+            articleCache.LoadArticle(segmentData);
+
+            // 加载下一段
+            LoadText(segmentData.Content, RetypeType.first, TxtSource.articlesender, switchBack: false);
+
+            // 重置进度条
+            if (Config.GetBool("显示进度条"))
+                TitleProgressBar.Width = 0;
         }
 
-        private void LoadPreviousSegment()
+        private async void LoadPreviousSegment()
         {
             if (!articleCache.HasArticle())
             {
@@ -6714,12 +7208,27 @@ namespace TypeSunny
                 return;
             }
 
-            string segment = articleCache.GetPreviousSegment();
+            // 获取当前书籍信息
+            int bookId = articleCache.GetBookId();
+            int sortNum = articleCache.GetSortNum();
+            int difficultyId = articleCache.GetDifficultyId();
+
+            // 调用API获取上一段（使用异步方法避免死锁）
+            ArticleData segmentData = await ArticleFetcher.FetchSegmentAsync(bookId, sortNum, 0, difficultyId);
+
+            if (string.IsNullOrEmpty(segmentData.Content) || segmentData.Title == "获取失败" || segmentData.Title == "接口错误")
+            {
+                MessageBox.Show("获取上一段失败: " + segmentData.Content, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // 更新articleCache中的参数（bookId、sortNum、difficultyId等），以便下次翻页使用正确的参数
+            articleCache.LoadArticle(segmentData);
 
             // 加载上一段
-            LoadText(segment, RetypeType.first, TxtSource.articlesender);
+            LoadText(segmentData.Content, RetypeType.first, TxtSource.articlesender, switchBack: false);
 
-            // 重置进度条（LoadText后已显示标题）
+            // 重置进度条
             if (Config.GetBool("显示进度条"))
                 TitleProgressBar.Width = 0;
         }
@@ -6980,26 +7489,292 @@ namespace TypeSunny
             ShowWinTrainer();
         }
 
+        // 成绩面板展开/收起状态
+        private bool _isResultsExpanded = true;
 
+        // 保存展开状态时的主窗口高度
+        private double _expandedWindowHeight = 0;
+        // 保存收起时Row 2、Row 4和Row 6的像素高度
+        private double _collapsedArticleHeight = 0;
+        private double _collapsedTypingHeight = 0;
+        private double _collapsedResultsHeight = 0;
+
+        // 展开/收起按钮点击事件
+        private void BtnToggleResults_Click(object sender, RoutedEventArgs e)
+        {
+            _isResultsExpanded = !_isResultsExpanded;
+
+            // 获取主Grid（通过FindName）
+            var grid_a = this.FindName("grid_a") as Grid;
+            if (grid_a == null) return;
+
+            if (_isResultsExpanded)
+            {
+                // 展开：恢复成绩区，所有区域都使用 * 自动分配空间
+                BtnToggleResults.Content = "▼";
+                Config.Set("成绩面板展开", true);
+
+                // 隐藏底边框
+                var bottomBorder = this.FindName("bottomBorder") as Border;
+                if (bottomBorder != null)
+                {
+                    grid_a.RowDefinitions[7].Height = new GridLength(0, GridUnitType.Pixel);
+                    bottomBorder.Visibility = Visibility.Collapsed;
+                }
+
+                // 恢复Row 5和Row 6的MinHeight（清除MinHeight设置，使用默认值）
+                grid_a.RowDefinitions[5].ClearValue(RowDefinition.MinHeightProperty);
+                grid_a.RowDefinitions[6].ClearValue(RowDefinition.MinHeightProperty);
+
+                // 恢复成绩区 Border 的 margin
+                resultsTextBoxGrid.Margin = new Thickness(15, 5, 15, 10);
+                resultsTextBoxGrid.ClearValue(FrameworkElement.MinHeightProperty);
+                resultsTextBoxGrid.ClearValue(FrameworkElement.HeightProperty);
+
+                // 恢复TbxResults的属性
+                var tbxResults = this.FindName("TbxResults") as TextBox;
+                if (tbxResults != null)
+                {
+                    tbxResults.ClearValue(FrameworkElement.MinHeightProperty);
+                    tbxResults.Margin = new Thickness(0);  // 保持0
+                    tbxResults.ClearValue(FrameworkElement.HeightProperty);
+                    tbxResults.Padding = new Thickness(10, 5, 10, 10);
+                    tbxResults.Visibility = Visibility.Visible;
+                }
+
+                // 先把Row 2、Row 4和Row 6从像素转回Star，恢复它们的自适应能力
+                // 使用保存的高度比例来设置Star值，保持原来的比例关系
+                if (_collapsedArticleHeight > 0 && _collapsedTypingHeight > 0 && _collapsedResultsHeight > 0)
+                {
+                    // 找到最大的值作为基准，保持所有三个区域的比例关系
+                    double max = Math.Max(_collapsedArticleHeight, Math.Max(_collapsedTypingHeight, _collapsedResultsHeight));
+                    if (max > 0)
+                    {
+                        // 归一化到1-10的范围，保持比例
+                        double scaleFactor = 10.0 / max;
+                        grid_a.RowDefinitions[2].Height = new GridLength(_collapsedArticleHeight * scaleFactor, GridUnitType.Star);
+                        grid_a.RowDefinitions[4].Height = new GridLength(_collapsedTypingHeight * scaleFactor, GridUnitType.Star);
+                        grid_a.RowDefinitions[6].Height = new GridLength(_collapsedResultsHeight * scaleFactor, GridUnitType.Star);
+                    }
+                    else
+                    {
+                        // 使用配置的默认比例
+                        ApplyDisplayInputRatio();
+                    }
+                }
+                else
+                {
+                    // 使用配置的默认比例
+                    ApplyDisplayInputRatio();
+                }
+                grid_a.RowDefinitions[5].Height = new GridLength(5, GridUnitType.Pixel);
+                grid_a.RowDefinitions[5].ClearValue(RowDefinition.MinHeightProperty);
+                resultsTextBoxGrid.Visibility = Visibility.Visible;
+                gridSplitterResults.Visibility = Visibility.Visible;
+
+                // 启用所有 GridSplitter
+                gridSplitterArticleTyping.IsEnabled = true;
+                gridSplitterResults.IsEnabled = true;
+
+                // 恢复窗口高度
+                if (_expandedWindowHeight > 300)
+                {
+                    this.Height = _expandedWindowHeight;
+                }
+            }
+            else
+            {
+                // 收起：先获取各区域的比例，然后隐藏成绩区，最后调整窗口高度
+                _expandedWindowHeight = this.ActualHeight;
+
+                // 计算grid_a的内容高度
+                double gridContentHeight = 0;
+                for (int i = 0; i < 7; i++)
+                {
+                    gridContentHeight += grid_a.RowDefinitions[i].ActualHeight;
+                }
+
+                // 计算成绩区高度
+                double resultsAreaHeight = grid_a.RowDefinitions[6].ActualHeight;
+
+                // 关键：在收起前，先把Row 2和Row 4固定为当前高度
+                // 这样收起后它们的大小不会改变
+                double articleHeight = grid_a.RowDefinitions[2].ActualHeight;
+                double typingHeight = grid_a.RowDefinitions[4].ActualHeight;
+                grid_a.RowDefinitions[2].Height = new GridLength(articleHeight, GridUnitType.Pixel);
+                grid_a.RowDefinitions[4].Height = new GridLength(typingHeight, GridUnitType.Pixel);
+
+                // 保存收起时的高度，用于展开时恢复
+                _collapsedArticleHeight = articleHeight;
+                _collapsedTypingHeight = typingHeight;
+
+                // 计算收起前Row 6的实际高度并保存
+                double row6ActualHeightBefore = grid_a.RowDefinitions[6].ActualHeight;
+                _collapsedResultsHeight = row6ActualHeightBefore;
+
+                // 获取内部的TbxResults TextBox
+                var tbxResults = this.FindName("TbxResults") as TextBox;
+                var bottomBorder = this.FindName("bottomBorder") as Border;
+
+                // 然后设置成绩区高度为0并隐藏
+                resultsTextBoxGrid.Margin = new Thickness(0);
+                // 方案1：设置Row 6的Height=0和MinHeight=0（关键修复！）
+                grid_a.RowDefinitions[6].Height = new GridLength(0, GridUnitType.Pixel);
+                grid_a.RowDefinitions[6].MinHeight = 0;  // 关键！必须设置MinHeight=0
+                grid_a.RowDefinitions[5].Height = new GridLength(0, GridUnitType.Pixel);
+                grid_a.RowDefinitions[5].MinHeight = 0;  // 也设置Row 5的MinHeight=0
+
+                // 显示底边框：设置Row 7的高度为10px
+                if (bottomBorder != null)
+                {
+                    grid_a.RowDefinitions[7].Height = new GridLength(10, GridUnitType.Pixel);
+                    bottomBorder.Visibility = Visibility.Visible;
+                }
+
+                resultsTextBoxGrid.Visibility = Visibility.Collapsed;
+                gridSplitterResults.Visibility = Visibility.Collapsed;
+                gridSplitterResults.IsEnabled = false;
+
+                // 方案2：设置TextBox的属性，确保不占用空间
+                if (tbxResults != null)
+                {
+                    tbxResults.MinHeight = 0;
+                    tbxResults.Margin = new Thickness(0);  // 方案2：设置Margin=0
+                    tbxResults.Height = 0;
+                    // 方案3：设置VerticalContentAlignment和Padding
+                    tbxResults.VerticalContentAlignment = System.Windows.VerticalAlignment.Stretch;
+                    tbxResults.Padding = new Thickness(0);
+                    tbxResults.Visibility = Visibility.Collapsed;
+                }
+                resultsTextBoxGrid.MinHeight = 0;
+                resultsTextBoxGrid.Height = 0;
+
+                // 强制更新布局，获取Row 6收起后的实际高度
+                this.UpdateLayout();
+                double row6ActualHeightAfter = grid_a.RowDefinitions[6].ActualHeight;
+
+                // 计算新的窗口高度
+                // 收起后grid_a的高度 = 原grid_a高度 - 成绩区高度 - 分隔条2高度(5)
+                double collapsedGridHeight = gridContentHeight - resultsAreaHeight - 5;
+                // 收起后的窗口高度 = collapsedGridHeight + 窗口与grid_a的高度差
+                double windowOffset = _expandedWindowHeight - gridContentHeight;
+                double collapsedHeight = collapsedGridHeight + windowOffset;
+
+                BtnToggleResults.Content = "▲";
+                Config.Set("成绩面板展开", false);
+
+                this.Height = collapsedHeight;
+
+                // 延迟将发文区和跟打区改为Star，让它们可以自适应窗口调整
+                this.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    grid_a.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
+                    grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
+                }), System.Windows.Threading.DispatcherPriority.Loaded);
+
+            }
+        }
+
+        // GridSplitter拖动完成事件：保存发文区和跟打区的比例
+        private void GridSplitterArticleTyping_DragCompleted(object sender, DragCompletedEventArgs e)
+        {
+            if (StateManager.ConfigLoaded)
+            {
+                // 延迟保存，确保布局已经更新
+                this.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    SaveDisplayInputRatio();
+                }), System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+        }
+
+        // 辅助方法：获取Row名称
+        private string GetRowName(int index)
+        {
+            switch (index)
+            {
+                case 0: return "标题栏";
+                case 1: return "按纽区1";
+                case 2: return "发文区";
+                case 3: return "分隔条1";
+                case 4: return "跟打区+按纽2";
+                case 5: return "分隔条2";
+                case 6: return "成绩区";
+                default: return "";
+            }
+        }
+
+        // 获取所有可用的 Logo
+        public static string[] GetAvailableLogos()
+        {
+            try
+            {
+                string icoFolder = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "ico");
+                if (System.IO.Directory.Exists(icoFolder))
+                {
+                    var logos = new List<string>();
+                    foreach (string file in System.IO.Directory.GetFiles(icoFolder, "*.ico"))
+                    {
+                        // 获取文件名（不含扩展名）
+                        string name = System.IO.Path.GetFileNameWithoutExtension(file);
+                        logos.Add(name);
+                    }
+                    if (logos.Count > 0)
+                        return logos.ToArray();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"获取Logo列表失败: {ex.Message}");
+            }
+
+            // 如果读取失败，返回默认值
+            return new string[] { "sunny" };
+        }
+
+        // 应用当前选中的 Logo
+        public void ApplyCurrentLogo()
+        {
+            try
+            {
+                string currentLogo = Config.GetString("当前Logo");
+                // 图标文件是 Content 类型，需要使用相对于程序目录的路径
+                string iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "ico", $"{currentLogo}.ico");
+                if (System.IO.File.Exists(iconPath))
+                {
+                    var iconUri = new Uri(iconPath, UriKind.Absolute);
+                    // 更新窗口图标（任务栏、Alt+Tab等）
+                    this.Icon = new BitmapImage(iconUri);
+                    // 更新标题栏图标（窗口左上角显示的图标）
+                    TitleBarIcon.Source = new BitmapImage(iconUri);
+                    System.Diagnostics.Debug.WriteLine($"应用Logo成功: {iconPath}");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Logo文件不存在: {iconPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"应用Logo失败: {ex.Message}");
+            }
+        }
 
         WinTrainer winTrainer;
         private void ShowWinTrainer()
         {
 
             if (WinTrainer.Current != null)
-           // if (winTrainer != null)
             {
-                winTrainer.Show();
-                winTrainer.Focus();
-                winTrainer.Activate();
-                //         winTrainer.InitText();
+                WinTrainer.Current.Show();
+                WinTrainer.Current.Focus();
+                WinTrainer.Current.Activate();
             }
             else
             {
                 winTrainer = new WinTrainer();
                 winTrainer.Show();
                 winTrainer.Activate();
-                //    winTrainer.InitText();
             }
 
         }
@@ -7041,84 +7816,91 @@ namespace TypeSunny
 
         private void ApplyDisplayInputRatio()
         {
-            double ratio = Config.GetDouble("发文跟打框比例");
-            if (ratio <= 0 || ratio >= 100)
-                ratio = 75.0;
+            // 恢复发文区和跟打区的比例
+            var grid_a = this.FindName("grid_a") as Grid;
+            if (grid_a != null)
+            {
+                // 默认比例：发文区45%，跟打区35%，成绩区20%
+                double resultsRatio = Config.GetDouble("成绩区高度比例");
+                if (resultsRatio <= 0 || resultsRatio >= 1)
+                    resultsRatio = 0.2; // 默认成绩区占20%
 
-            RowDisplay.Height = new GridLength(ratio, GridUnitType.Star);
-            RowInput.Height = new GridLength(100 - ratio, GridUnitType.Star);
+                double articleTypingRatio = Config.GetDouble("发文区跟打区比例");
+                if (articleTypingRatio <= 0 || articleTypingRatio >= 1)
+                    articleTypingRatio = 0.56; // 默认发文区占(发文+跟打)的56%，即总高度的45%左右
+
+                // 发文区比例 = 总剩余比例 × 发文区跟打区比例
+                double articleRatio = (1 - resultsRatio) * articleTypingRatio;
+                // 跟打区比例 = 总剩余比例 × (1 - 发文区跟打区比例)
+                double typingRatio = (1 - resultsRatio) * (1 - articleTypingRatio);
+
+                grid_a.RowDefinitions[2].Height = new GridLength(articleRatio, GridUnitType.Star);
+                grid_a.RowDefinitions[4].Height = new GridLength(typingRatio, GridUnitType.Star);
+                grid_a.RowDefinitions[6].Height = new GridLength(resultsRatio, GridUnitType.Star);
+            }
         }
 
         private void SaveDisplayInputRatio()
         {
-            double total = RowDisplay.Height.Value + RowInput.Height.Value;
-            if (total <= 0)
-                return;
+            // 保存所有三个区域的比例
+            var grid_a = this.FindName("grid_a") as Grid;
+            if (grid_a != null)
+            {
+                double articleHeight = grid_a.RowDefinitions[2].ActualHeight;
+                double typingHeight = grid_a.RowDefinitions[4].ActualHeight;
+                double resultsHeight = grid_a.RowDefinitions[6].ActualHeight;
+                double total = articleHeight + typingHeight + resultsHeight;
 
-            double ratio = (RowDisplay.Height.Value / total) * 100;
-            ratio = Math.Max(10, Math.Min(90, ratio));
-            Config.Set("发文跟打框比例", ratio, 1);
+                if (total > 0)
+                {
+                    // 保存发文区占(发文+跟打)的比例
+                    double articleTypingTotal = articleHeight + typingHeight;
+                    double articleTypingRatio = articleTypingTotal > 0 ? articleHeight / articleTypingTotal : 0.5;
+
+                    // 保存成绩区占总比例
+                    double resultsRatio = resultsHeight / total;
+
+                    // 直接写入配置字典
+                    Config.dicts["发文区跟打区比例"] = articleTypingRatio.ToString("F6");
+                    Config.dicts["成绩区高度比例"] = resultsRatio.ToString("F6");
+
+                    // 立即写入配置文件
+                    Config.WriteConfig(0);
+                }
+            }
         }
 
         private void GridSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
         {
-            SaveDisplayInputRatio();
+            // 新布局中发文区和跟打区已分离，不再需要保存比例
+        }
+
+        // GridSplitter拖动完成事件：保存成绩区高度
+        private void GridSplitterResults_DragCompleted(object sender, DragCompletedEventArgs e)
+        {
+            if (StateManager.ConfigLoaded)
+            {
+                // 延迟保存，确保布局已经更新
+                this.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    SaveDisplayInputRatio();
+                }), System.Windows.Threading.DispatcherPriority.Loaded);
+            }
         }
 
         private void SaveResultsPanelHeight()
         {
-            if (expander.Height.Value > 0)
-            {
-                Config.Set("成绩面板高度", expander.Height.Value, 1);
-            }
+            // 已整合到SaveDisplayInputRatio中
+            SaveDisplayInputRatio();
         }
 
         private void LoadResultsPanelHeight()
         {
-            double height = Config.GetDouble("成绩面板高度");
-            if (height > 0)
-            {
-                expander.Height = new GridLength(height, GridUnitType.Pixel);
-            }
+            // 委托给ApplyDisplayInputRatio处理，保持逻辑统一
+            ApplyDisplayInputRatio();
         }
 
-        // 成绩区域拖动相关变量
-        private bool _isDraggingResults = false;
-        private double _dragStartY = 0;
-        private double _dragStartHeight = 0;
-
-        private void ResultsDragHandle_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            _isDraggingResults = true;
-            _dragStartY = e.GetPosition(this).Y;
-            _dragStartHeight = expander.ActualHeight;
-            ResultsDragHandle.CaptureMouse();
-        }
-
-        private void ResultsDragHandle_MouseMove(object sender, MouseEventArgs e)
-        {
-            if (_isDraggingResults && e.LeftButton == MouseButtonState.Pressed)
-            {
-                double currentY = e.GetPosition(this).Y;
-                double deltaY = currentY - _dragStartY;
-                double newHeight = _dragStartHeight - deltaY;
-
-                // 限制最小和最大高度
-                newHeight = Math.Max(30, Math.Min(newHeight, this.ActualHeight - 100));
-
-                expander.Height = new GridLength(newHeight, GridUnitType.Pixel);
-            }
-        }
-
-        private void ResultsDragHandle_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-        {
-            if (_isDraggingResults)
-            {
-                _isDraggingResults = false;
-                ResultsDragHandle.ReleaseMouseCapture();
-                SaveResultsPanelHeight();
-            }
-        }
+        // 新布局使用标准GridSplitter，不再需要手动拖动处理
 
         private void SldBlind_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
         {
@@ -7150,14 +7932,28 @@ namespace TypeSunny
 
         private void BtnMaximize_Click(object sender, RoutedEventArgs e)
         {
-            if (this.WindowState == WindowState.Maximized)
+            if (_isCustomMaximized)
             {
-                this.WindowState = WindowState.Normal;
+                // 恢复窗口
+                this.Left = _restoreBounds.X;
+                this.Top = _restoreBounds.Y;
+                this.Width = _restoreBounds.Width;
+                this.Height = _restoreBounds.Height;
+                _isCustomMaximized = false;
                 BtnMaximize.Content = "◻";
             }
             else
             {
-                this.WindowState = WindowState.Maximized;
+                // 保存当前窗口位置和大小
+                _restoreBounds = new Rect(this.Left, this.Top, this.Width, this.Height);
+
+                // 使用工作区（不含任务栏）进行最大化
+                var workArea = SystemParameters.WorkArea;
+                this.Left = workArea.Left;
+                this.Top = workArea.Top;
+                this.Width = workArea.Width;
+                this.Height = workArea.Height;
+                _isCustomMaximized = true;
                 BtnMaximize.Content = "◰";
             }
         }

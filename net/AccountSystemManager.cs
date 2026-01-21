@@ -218,7 +218,7 @@ namespace TypeSunny.Net
         /// 更新登录信息
         /// </summary>
         public void UpdateLoginInfo(string serviceName, string username, string password,
-            string displayName, int userId, string cookies = null, string clientKeyXml = null)
+            string displayName, int userId, string cookies = null, string clientKeyXml = null, string domain = null)
         {
             var account = GetAccount(serviceName);
             bool isNewAccount = false;
@@ -234,6 +234,12 @@ namespace TypeSunny.Net
             account.UserId = userId;
             account.LastLoginTime = DateTime.Now;
 
+            // 如果传入了domain参数，更新账号的Domain
+            if (!string.IsNullOrWhiteSpace(domain))
+            {
+                account.Domain = domain;
+            }
+
             if (cookies != null)
                 account.Cookies = cookies;
             if (clientKeyXml != null)
@@ -246,14 +252,21 @@ namespace TypeSunny.Net
             // 如果域名相同，同步更新其他账号
             if (!string.IsNullOrWhiteSpace(account.Domain))
             {
-                string domain = ExtractDomain(account.Domain);
-                System.Diagnostics.Debug.WriteLine($"  检查同域名服务进行同步，域名={domain}");
+                string extractedDomain = ExtractDomain(account.Domain);
+                System.Diagnostics.Debug.WriteLine($"  检查同域名服务进行同步，域名={extractedDomain}");
+                System.Diagnostics.Debug.WriteLine($"  当前所有账号数量: {accounts.Count}");
+
+                bool foundSyncTarget = false;
 
                 foreach (var otherAccount in accounts.Values)
                 {
+                    string otherDomain = ExtractDomain(otherAccount.Domain);
+                    System.Diagnostics.Debug.WriteLine($"    检查账号: {otherAccount.ServiceName}, Domain={otherAccount.Domain}, Extracted={otherDomain}, Match={otherDomain == extractedDomain}");
+
                     if (otherAccount.ServiceName != serviceName &&
-                        ExtractDomain(otherAccount.Domain) == domain)
+                        otherDomain == extractedDomain)
                     {
+                        foundSyncTarget = true;
                         otherAccount.Username = username;
                         otherAccount.Password = password;
                         otherAccount.DisplayName = displayName;
@@ -264,6 +277,27 @@ namespace TypeSunny.Net
                         System.Diagnostics.Debug.WriteLine($"✓ 同步登录信息到相同域名的服务: {otherAccount.ServiceName}");
                     }
                 }
+
+                // 如果没找到同域名账号，检查是否需要创建"赛文"账号
+                if (!foundSyncTarget && serviceName == "文来")
+                {
+                    System.Diagnostics.Debug.WriteLine($"  ⚠ 未找到同域名的现有账号，检查是否需要创建赛文账号");
+                    // 尝试获取赛文服务器地址配置
+                    try
+                    {
+                        var raceServerUrl = Config.GetString("赛文服务器地址");
+                        if (!string.IsNullOrWhiteSpace(raceServerUrl) && ExtractDomain(raceServerUrl) == extractedDomain)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"  ✓ 赛文服务器地址与文来相同，自动创建/更新赛文账号");
+                            UpdateLoginInfo("赛文", username, password, displayName, userId, cookies, clientKeyXml, raceServerUrl);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"  ⚠ 检查赛文服务器地址时出错: {ex.Message}");
+                    }
+                }
+
                 SaveToConfig();
             }
             else

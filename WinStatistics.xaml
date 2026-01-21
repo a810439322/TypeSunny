@@ -1,0 +1,292 @@
+<Window x:Class="TypeSunny.WinStatistics"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="成绩统计" Height="600" Width="1000" Icon="/Resources/ico/sunny.ico"
+        MinHeight="500" MinWidth="800"
+        WindowStartupLocation="CenterOwner"
+        Background="Transparent"
+        AllowsTransparency="True"
+        WindowStyle="None"
+        ResizeMode="CanResizeWithGrip">
+    <Border x:Name="mainBorder"
+            CornerRadius="10"
+            BorderThickness="2"
+            Margin="5"
+            MouseLeftButtonDown="Border_MouseLeftButtonDown">
+        <Border.Effect>
+            <DropShadowEffect Color="Black" Opacity="0.3" BlurRadius="10" ShadowDepth="2"/>
+        </Border.Effect>
+        <Grid x:Name="mainGrid" Margin="15">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 标题栏 -->
+            <Grid Grid.Row="0" Margin="0,0,0,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock x:Name="txtTitle" Grid.Column="0"
+                           Text="成绩统计"
+                           FontSize="20" FontWeight="Bold"
+                           VerticalAlignment="Center"/>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button x:Name="btnRefresh" Content="刷新" Width="60" Height="28"
+                            VerticalAlignment="Center" Margin="0,0,5,0"
+                            Click="BtnRefresh_Click"/>
+                    <Button x:Name="btnClose" Content="✕" Width="35" Height="28"
+                            VerticalAlignment="Center"
+                            Click="BtnClose_Click"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- TabControl -->
+            <TabControl x:Name="tabControl" Grid.Row="1" BorderThickness="1,1,1,1">
+                <TabControl.Resources>
+                    <!-- DataGrid 样式 - 确保所有元素背景色正确 -->
+                    <Style TargetType="DataGrid">
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Style.Resources>
+                            <Style TargetType="ScrollViewer">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Resources>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                    </Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                    </Style>
+                                </Style.Resources>
+                            </Style>
+                        </Style.Resources>
+                    </Style>
+                </TabControl.Resources>
+                <!-- 文来统计 Tab -->
+                <TabItem Header="文来统计">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- 统计范围选择 -->
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="范围:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <RadioButton x:Name="rbWenlaiToday" Content="今日" IsChecked="True"
+                                        VerticalAlignment="Center" Margin="0,0,10,0" Checked="WenlaiRadioButton_CheckedChanged"/>
+                            <RadioButton x:Name="rbWenlaiDays7" Content="7日内" VerticalAlignment="Center"
+                                        Margin="0,0,10,0" Checked="WenlaiRadioButton_CheckedChanged"/>
+                            <RadioButton x:Name="rbWenlaiDays30" Content="30日内" VerticalAlignment="Center"
+                                        Margin="0,0,10,0" Checked="WenlaiRadioButton_CheckedChanged"/>
+                            <RadioButton x:Name="rbWenlaiDays365" Content="365日内" VerticalAlignment="Center"
+                                        Margin="0,0,10,0" Checked="WenlaiRadioButton_CheckedChanged"/>
+                            <RadioButton x:Name="rbWenlaiCustom" Content="自定义" VerticalAlignment="Center"
+                                        Margin="0,0,15,0" Checked="WenlaiRadioButton_CheckedChanged"/>
+                        </StackPanel>
+
+                        <!-- 自定义日期选择 -->
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10" Visibility="Collapsed"
+                                    x:Name="spWenlaiCustomDates">
+                            <TextBlock Text="从:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <DatePicker x:Name="dpWenlaiStart" Width="110" Height="28" VerticalAlignment="Center"/>
+                            <TextBlock Text="到:" VerticalAlignment="Center" Margin="10,0,5,0"/>
+                            <DatePicker x:Name="dpWenlaiEnd" Width="110" Height="28" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                            <Button x:Name="btnWenlaiQuery" Content="查询" Width="70" Height="28"
+                                    VerticalAlignment="Center" Click="BtnWenlaiQuery_Click"/>
+                        </StackPanel>
+
+                        <!-- DataGrid -->
+                        <DataGrid x:Name="dgWenlaiStats" Grid.Row="2"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  SelectionMode="Single"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  CanUserResizeColumns="True"
+                                  CanUserSortColumns="False"
+                                  EnableRowVirtualization="True"
+                                  EnableColumnVirtualization="True"
+                                  BorderThickness="1"
+                                  FontSize="13"
+                                  RowHeight="28"
+                                  ColumnHeaderHeight="32"
+                                  CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="难度" Binding="{Binding DifficultyName}" Width="80" MinWidth="60"/>
+                                <DataGridTextColumn Header="次数" Binding="{Binding Count}" Width="60" MinWidth="50"/>
+                                <DataGridTextColumn Header="均速" Binding="{Binding AvgSpeed, StringFormat={}{0:F2}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="均击" Binding="{Binding AvgHitRate, StringFormat={}{0:F2}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="键准" Binding="{Binding AvgAccuracy, StringFormat={}{0:F2}%}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="码长" Binding="{Binding AvgKPW, StringFormat={}{0:F2}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="回改" Binding="{Binding AvgCorrection, StringFormat={}{0:F1}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="退格" Binding="{Binding TotalBacks}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="打词率" Binding="{Binding AvgCiRatio, StringFormat={}{0:F2}%}" Width="80" MinWidth="70"/>
+                                <DataGridTextColumn Header="最高速" Binding="{Binding MaxSpeed, StringFormat={}{0:F2}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="最低速" Binding="{Binding MinSpeed, StringFormat={}{0:F2}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="总字数" Binding="{Binding TotalWords}" Width="80" MinWidth="70"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </TabItem>
+
+                <!-- 本地文章统计 Tab -->
+                <TabItem Header="本地文章统计">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- 统计范围选择 -->
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="范围:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <RadioButton x:Name="rbLocalToday" Content="今日" IsChecked="True"
+                                        VerticalAlignment="Center" Margin="0,0,10,0" Checked="LocalRadioButton_CheckedChanged"/>
+                            <RadioButton x:Name="rbLocalDays7" Content="7日内" VerticalAlignment="Center"
+                                        Margin="0,0,10,0" Checked="LocalRadioButton_CheckedChanged"/>
+                            <RadioButton x:Name="rbLocalDays30" Content="30日内" VerticalAlignment="Center"
+                                        Margin="0,0,10,0" Checked="LocalRadioButton_CheckedChanged"/>
+                            <RadioButton x:Name="rbLocalDays365" Content="365日内" VerticalAlignment="Center"
+                                        Margin="0,0,10,0" Checked="LocalRadioButton_CheckedChanged"/>
+                            <RadioButton x:Name="rbLocalCustom" Content="自定义" VerticalAlignment="Center"
+                                        Margin="0,0,15,0" Checked="LocalRadioButton_CheckedChanged"/>
+                        </StackPanel>
+
+                        <!-- 自定义日期选择 -->
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10" Visibility="Collapsed"
+                                    x:Name="spLocalCustomDates">
+                            <TextBlock Text="从:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <DatePicker x:Name="dpLocalStart" Width="110" Height="28" VerticalAlignment="Center"/>
+                            <TextBlock Text="到:" VerticalAlignment="Center" Margin="10,0,5,0"/>
+                            <DatePicker x:Name="dpLocalEnd" Width="110" Height="28" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                            <Button x:Name="btnLocalQuery" Content="查询" Width="70" Height="28"
+                                    VerticalAlignment="Center" Click="BtnLocalQuery_Click"/>
+                        </StackPanel>
+
+                        <!-- DataGrid -->
+                        <DataGrid x:Name="dgLocalStats" Grid.Row="2"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  SelectionMode="Single"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  CanUserResizeColumns="True"
+                                  CanUserSortColumns="False"
+                                  EnableRowVirtualization="True"
+                                  EnableColumnVirtualization="True"
+                                  BorderThickness="1"
+                                  FontSize="13"
+                                  RowHeight="28"
+                                  ColumnHeaderHeight="32"
+                                  CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="书名" Binding="{Binding BookName}" Width="*" MinWidth="150"/>
+                                <DataGridTextColumn Header="次数" Binding="{Binding Count}" Width="60" MinWidth="50"/>
+                                <DataGridTextColumn Header="均速" Binding="{Binding AvgSpeed, StringFormat={}{0:F2}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="均击" Binding="{Binding AvgHitRate, StringFormat={}{0:F2}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="键准" Binding="{Binding AvgAccuracy, StringFormat={}{0:F2}%}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="码长" Binding="{Binding AvgKPW, StringFormat={}{0:F2}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="回改" Binding="{Binding AvgCorrection, StringFormat={}{0:F1}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="退格" Binding="{Binding TotalBacks}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="打词率" Binding="{Binding AvgCiRatio, StringFormat={}{0:F2}%}" Width="80" MinWidth="70"/>
+                                <DataGridTextColumn Header="总字数" Binding="{Binding TotalWords}" Width="80" MinWidth="70"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </TabItem>
+
+                <!-- 打单器统计 Tab -->
+                <TabItem Header="打单器统计">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- 统计范围选择 -->
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="范围:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <RadioButton x:Name="rbTrainerToday" Content="今日" IsChecked="True"
+                                        VerticalAlignment="Center" Margin="0,0,10,0" Checked="TrainerRadioButton_CheckedChanged"/>
+                            <RadioButton x:Name="rbTrainerDays7" Content="7日内" VerticalAlignment="Center"
+                                        Margin="0,0,10,0" Checked="TrainerRadioButton_CheckedChanged"/>
+                            <RadioButton x:Name="rbTrainerDays30" Content="30日内" VerticalAlignment="Center"
+                                        Margin="0,0,10,0" Checked="TrainerRadioButton_CheckedChanged"/>
+                            <RadioButton x:Name="rbTrainerDays365" Content="365日内" VerticalAlignment="Center"
+                                        Margin="0,0,10,0" Checked="TrainerRadioButton_CheckedChanged"/>
+                            <RadioButton x:Name="rbTrainerCustom" Content="自定义" VerticalAlignment="Center"
+                                        Margin="0,0,15,0" Checked="TrainerRadioButton_CheckedChanged"/>
+                        </StackPanel>
+
+                        <!-- 自定义日期选择 -->
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10" Visibility="Collapsed"
+                                    x:Name="spTrainerCustomDates">
+                            <TextBlock Text="从:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <DatePicker x:Name="dpTrainerStart" Width="110" Height="28" VerticalAlignment="Center"/>
+                            <TextBlock Text="到:" VerticalAlignment="Center" Margin="10,0,5,0"/>
+                            <DatePicker x:Name="dpTrainerEnd" Width="110" Height="28" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                            <Button x:Name="btnTrainerQuery" Content="查询" Width="70" Height="28"
+                                    VerticalAlignment="Center" Click="BtnTrainerQuery_Click"/>
+                        </StackPanel>
+
+                        <!-- DataGrid -->
+                        <DataGrid x:Name="dgTrainerStats" Grid.Row="2"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  SelectionMode="Single"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  CanUserResizeColumns="True"
+                                  CanUserSortColumns="False"
+                                  EnableRowVirtualization="True"
+                                  EnableColumnVirtualization="True"
+                                  BorderThickness="1"
+                                  FontSize="13"
+                                  RowHeight="28"
+                                  ColumnHeaderHeight="32"
+                                  CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="标题" Binding="{Binding Title}" Width="*" MinWidth="150"/>
+                                <DataGridTextColumn Header="组数" Binding="{Binding GroupCount}" Width="60" MinWidth="50"/>
+                                <DataGridTextColumn Header="均速" Binding="{Binding AvgSpeed, StringFormat={}{0:F2}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="均击" Binding="{Binding AvgHitRate, StringFormat={}{0:F2}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="键准" Binding="{Binding AvgAccuracy, StringFormat={}{0:F2}%}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="码长" Binding="{Binding AvgKPW, StringFormat={}{0:F2}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="回改" Binding="{Binding AvgCorrection, StringFormat={}{0:F1}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="退格" Binding="{Binding TotalBacks}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="打词率" Binding="{Binding AvgCiRatio, StringFormat={}{0:F2}%}" Width="80" MinWidth="70"/>
+                                <DataGridTextColumn Header="最佳" Binding="{Binding BestSpeed, StringFormat={}{0:F2}}" Width="70" MinWidth="60"/>
+                                <DataGridTextColumn Header="总字数" Binding="{Binding TotalWords}" Width="80" MinWidth="70"/>
+                                <DataGridTextColumn Header="实际字数" Binding="{Binding TotalInputWords}" Width="80" MinWidth="70"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+
+            <!-- 状态栏 -->
+            <StatusBar x:Name="statusBar" Grid.Row="2" Margin="0,10,0,0">
+                <StatusBarItem>
+                    <TextBlock x:Name="txtStatus" Text="就绪" FontSize="12"/>
+                </StatusBarItem>
+            </StatusBar>
+
+            <!-- 缩放手柄 -->
+            <Grid x:Name="resizeGrip" Grid.Row="2" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                  Width="20" Height="20" Margin="0,0,-10,-10"
+                  Background="Transparent" Cursor="SizeNWSE"
+                  MouseLeftButtonDown="ResizeGrip_MouseLeftButtonDown">
+                <Path Data="M 0,10 L 10,10 L 10,0" Stroke="{Binding ElementName=mainBorder, Path=BorderBrush}" StrokeThickness="1.5"/>
+                <Path Data="M 5,15 L 15,15 L 15,5" Stroke="{Binding ElementName=mainBorder, Path=BorderBrush}" StrokeThickness="1.5"/>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

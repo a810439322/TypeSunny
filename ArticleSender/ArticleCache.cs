@@ -15,7 +15,10 @@ namespace TypeSunny.ArticleSender
         private int currentSegmentIndex;
         private int segmentLength;
         private string articleMark;  // 保存文章的mark标记
-        private string articleDifficulty;  // 保存文章的难度
+        private string articleDifficulty;  // 保存文章的难度描述
+        private int bookId;  // 书籍ID
+        private int sortNum;  // 当前段号
+        private int difficultyId;  // 难度ID，来自custom_difficulty字段
 
         /// <summary>
         /// 当前段落索引（从1开始）
@@ -38,14 +41,28 @@ namespace TypeSunny.ArticleSender
         {
             currentArticle = article;
             articleMark = article.Mark ?? "";  // 保存mark标记
-            articleDifficulty = article.Difficulty ?? "";  // 保存难度
+            articleDifficulty = article.Difficulty ?? "";  // 保存难度描述
+            bookId = article.BookId;  // 保存书籍ID
+            sortNum = article.SortNum;  // 保存段号
+            difficultyId = article.DifficultyId;  // 保存难度ID（来自custom_difficulty）
             segmentLength = Config.GetInt("文来字数");
 
             if (segmentLength <= 0)
                 segmentLength = 500; // 默认500字
 
-            // 将文章分段
-            segments = SplitIntoSegments(article.FullContent, segmentLength);
+            // 判断是否是文来的文章（有 bookId 和 sortNum）
+            bool isWenlaiArticle = article.BookId > 0 && article.SortNum > 0;
+
+            if (isWenlaiArticle)
+            {
+                // 文来文章：服务端已根据 length 和 strict_length 参数处理，直接使用返回的内容
+                segments = new List<string> { article.Content };
+            }
+            else
+            {
+                // 其他文章：需要按段长度分段
+                segments = SplitIntoSegments(article.FullContent, segmentLength);
+            }
             currentSegmentIndex = 0;
         }
 
@@ -182,12 +199,67 @@ namespace TypeSunny.ArticleSender
         }
 
         /// <summary>
-        /// 获取当前文章的难度（来自文来接口的difficulty字段）
+        /// 获取当前文章的难度描述（来自文来接口的difficulty字段）
         /// </summary>
-        /// <returns>难度，如 "一般(2.05)"</returns>
+        /// <returns>难度描述，如 "一般(2.05)"</returns>
         public string GetCurrentDifficulty()
         {
             return articleDifficulty;
+        }
+
+        /// <summary>
+        /// 获取当前书籍的ID（用于获取下一段/上一段）
+        /// </summary>
+        public int GetBookId()
+        {
+            return bookId;
+        }
+
+        /// <summary>
+        /// 获取当前段号（用于获取下一段/上一段）
+        /// </summary>
+        public int GetSortNum()
+        {
+            return sortNum;
+        }
+
+        /// <summary>
+        /// 获取当前难度ID（用于获取下一段/上一段）
+        /// </summary>
+        public int GetDifficultyId()
+        {
+            return difficultyId;
+        }
+
+        /// <summary>
+        /// 根据难度ID获取难度名称（从API接口获取）
+        /// </summary>
+        /// <returns>难度名称，如"简"、"普"、"难"等</returns>
+        public string GetDifficultyName()
+        {
+            if (difficultyId > 0)
+            {
+                // 使用 ArticleFetcher 获取难度列表
+                var difficulties = ArticleFetcher.GetDifficulties();
+
+                // 如果缓存为空，尝试同步加载
+                if (difficulties.Count == 0)
+                {
+                    // 同步加载难度列表
+                    var task = ArticleFetcher.GetDifficultiesAsync();
+                    task.Wait();  // 等待异步完成
+                    difficulties = task.Result;
+                }
+
+                var difficulty = difficulties.FirstOrDefault(d => d.Id == difficultyId);
+                if (difficulty != null)
+                {
+                    return difficulty.Name;
+                }
+            }
+
+            // 如果没有难度ID，返回空字符串
+            return "";
         }
     }
 }

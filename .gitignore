@@ -54,3 +54,4 @@ $RECYCLE.BIN/
 # Build scripts output
 *.zip
 *.rar
+nul

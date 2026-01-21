@@ -5,47 +5,430 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TypeSunny"
         mc:Ignorable="d"
-        Title="设置" Height="600" Width="1400" Icon="/Resources/logo-512.png" Background="#505050"  Foreground="LightGray" SizeToContent="Height" Loaded="Window_Loaded" Closing="Window_Closing">
+        Title="设置" Height="650" Width="900"
+        Loaded="Window_Loaded" Closing="Window_Closing"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResize" BorderThickness="0">
+    <Window.Resources>
+        <!-- 导航按钮样式 - 覆盖默认悬停效果 -->
+        <Style x:Key="NavButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                CornerRadius="0"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- iOS 风格 ToggleSwitch 样式 -->
+        <Style x:Key="ModernToggleStyle" TargetType="CheckBox">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid Cursor="Hand">
+                            <!-- 背景轨道 -->
+                            <Border x:Name="ToggleTrack"
+                                    Width="50" Height="26"
+                                    Background="#666666"
+                                    CornerRadius="13"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"/>
+                            <!-- 开关圆点 -->
+                            <Border x:Name="ToggleThumb"
+                                    Width="22" Height="22"
+                                    Background="White"
+                                    CornerRadius="11"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    Margin="2,0,0,0">
+                                <Border.RenderTransform>
+                                    <TranslateTransform x:Name="ThumbTransform"/>
+                                </Border.RenderTransform>
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="ToggleTrack"
+                                                          Storyboard.TargetProperty="Background.Color"
+                                                          To="#34C759"
+                                                          Duration="0:0:0.2"/>
+                                            <DoubleAnimation Storyboard.TargetName="ThumbTransform"
+                                                           Storyboard.TargetProperty="X"
+                                                           To="24"
+                                                           Duration="0:0:0.2"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="ToggleTrack"
+                                                          Storyboard.TargetProperty="Background.Color"
+                                                          To="#666666"
+                                                          Duration="0:0:0.2"/>
+                                            <DoubleAnimation Storyboard.TargetName="ThumbTransform"
+                                                           Storyboard.TargetProperty="X"
+                                                           To="0"
+                                                           Duration="0:0:0.2"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+    </Window.Resources>
+
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*"></RowDefinition>
-            <RowDefinition Height="auto"></RowDefinition>
-            <RowDefinition Height="10"></RowDefinition>
-        </Grid.RowDefinitions>
+        <!-- 外层边框 -->
+        <Border x:Name="MainBorder" BorderThickness="1" BorderBrush="#ADADAD" CornerRadius="7" ClipToBounds="True" Margin="5">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="30"/>  <!-- 标题栏 -->
+                    <RowDefinition Height="*"/>    <!-- 主内容区 -->
+                    <RowDefinition Height="auto"/> <!-- 按钮区 -->
+                    <RowDefinition Height="5"/>    <!-- 底部间距 -->
+                </Grid.RowDefinitions>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <Grid Name="GridMain" Margin="20,10,20,10">
-                <Grid.ColumnDefinitions>
-                    <!-- 第1组：界面设置 -->
-                    <ColumnDefinition Width="Auto"></ColumnDefinition>
-                    <ColumnDefinition Width="Auto"></ColumnDefinition>
-                    <ColumnDefinition Width="20"></ColumnDefinition>
-                    <!-- 第2组：跟打设置 -->
-                    <ColumnDefinition Width="Auto"></ColumnDefinition>
-                    <ColumnDefinition Width="Auto"></ColumnDefinition>
-                    <ColumnDefinition Width="20"></ColumnDefinition>
-                    <!-- 第3组：网络设置 -->
-                    <ColumnDefinition Width="Auto"></ColumnDefinition>
-                    <ColumnDefinition Width="Auto"></ColumnDefinition>
-                    <ColumnDefinition Width="20"></ColumnDefinition>
-                    <!-- 第4组：其他设置 -->
-                    <ColumnDefinition Width="Auto"></ColumnDefinition>
-                    <ColumnDefinition Width="Auto"></ColumnDefinition>
-                </Grid.ColumnDefinitions>
+                <!-- 自定义标题栏 -->
+                <Border x:Name="TitleBarBorder" Grid.Row="0" CornerRadius="5,5,0,0" ClipToBounds="True" Margin="2,2,2,0">
+                    <Grid x:Name="TitleBarGrid" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown" Margin="0" VerticalAlignment="Stretch" Background="Transparent">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                            <Image x:Name="TitleBarIcon" Source="/Resources/ico/sunny.ico" Width="20" Height="20" Margin="0,0,8,0"/>
+                            <TextBlock x:Name="TitleBarText" Text="设置" VerticalAlignment="Center" FontSize="14"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Button x:Name="BtnMinimize" Content="━" Width="45" Height="30" Click="BtnMinimize_Click" BorderThickness="0" Background="Transparent">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="border" Background="{TemplateBinding Background}">
+                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Trigger.EnterActions>
+                                                                <BeginStoryboard>
+                                                                    <Storyboard>
+                                                                        <ColorAnimation Storyboard.TargetName="border"
+                                                                                      Storyboard.TargetProperty="Background.Color"
+                                                                                      To="#50FFFFFF"
+                                                                                      Duration="0:0:0.15"/>
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </Trigger.EnterActions>
+                                                            <Trigger.ExitActions>
+                                                                <BeginStoryboard>
+                                                                    <Storyboard>
+                                                                        <ColorAnimation Storyboard.TargetName="border"
+                                                                                      Storyboard.TargetProperty="Background.Color"
+                                                                                      To="Transparent"
+                                                                                      Duration="0:0:0.15"/>
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </Trigger.ExitActions>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <Button x:Name="BtnMaximize" Content="◻" Width="45" Height="30" Click="BtnMaximize_Click" BorderThickness="0" Background="Transparent">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="border" Background="{TemplateBinding Background}">
+                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Trigger.EnterActions>
+                                                                <BeginStoryboard>
+                                                                    <Storyboard>
+                                                                        <ColorAnimation Storyboard.TargetName="border"
+                                                                                      Storyboard.TargetProperty="Background.Color"
+                                                                                      To="#50FFFFFF"
+                                                                                      Duration="0:0:0.15"/>
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </Trigger.EnterActions>
+                                                            <Trigger.ExitActions>
+                                                                <BeginStoryboard>
+                                                                    <Storyboard>
+                                                                        <ColorAnimation Storyboard.TargetName="border"
+                                                                                      Storyboard.TargetProperty="Background.Color"
+                                                                                      To="Transparent"
+                                                                                      Duration="0:0:0.15"/>
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </Trigger.ExitActions>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <Button x:Name="BtnClose" Content="×" Width="45" Height="30" Click="BtnClose_Click" BorderThickness="0" Background="Transparent">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="border" Background="{TemplateBinding Background}">
+                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Trigger.EnterActions>
+                                                                <BeginStoryboard>
+                                                                    <Storyboard>
+                                                                        <ColorAnimation Storyboard.TargetName="border"
+                                                                                      Storyboard.TargetProperty="Background.Color"
+                                                                                      To="#E81123"
+                                                                                      Duration="0:0:0.15"/>
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </Trigger.EnterActions>
+                                                            <Trigger.ExitActions>
+                                                                <BeginStoryboard>
+                                                                    <Storyboard>
+                                                                        <ColorAnimation Storyboard.TargetName="border"
+                                                                                      Storyboard.TargetProperty="Background.Color"
+                                                                                      To="Transparent"
+                                                                                      Duration="0:0:0.15"/>
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </Trigger.ExitActions>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- 主内容区：左右分栏 -->
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="200"></ColumnDefinition>
+                        <ColumnDefinition Width="*"></ColumnDefinition>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 左侧导航栏 -->
+                    <Border x:Name="NavBorder" Grid.Column="0"
+                            BorderThickness="0,0,1,0">
+                        <StackPanel Name="NavPanel"
+                                    VerticalAlignment="Top"
+                                    Margin="0,20,0,0">
+                            <!-- 导航按钮将通过代码动态生成 -->
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 右侧内容区 -->
+                    <ScrollViewer Grid.Column="1"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <Grid Name="ContentPanel" Margin="30,20,30,20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"></ColumnDefinition>
+                                <ColumnDefinition Width="*"></ColumnDefinition>
+                            </Grid.ColumnDefinitions>
+                            <!-- 内容将通过代码动态生成 -->
+                        </Grid>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- 底部按钮区 -->
+                <Grid Grid.Row="2" Margin="0,10,0,10">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,20,0">
+                        <Button x:Name="Cancel" Content="关闭" Width="80" Height="32" Margin="0,0,10,0" Click="Cancel_Click">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="border"
+                                                        Background="{TemplateBinding Background}"
+                                                        BorderThickness="1"
+                                                        BorderBrush="#CCCCCC"
+                                                        CornerRadius="4"
+                                                        Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Trigger.EnterActions>
+                                                            <BeginStoryboard>
+                                                                <Storyboard>
+                                                                    <ColorAnimation Storyboard.TargetName="border"
+                                                                                  Storyboard.TargetProperty="Background.Color"
+                                                                                  To="#F0F0F0"
+                                                                                  Duration="0:0:0.15"/>
+                                                                </Storyboard>
+                                                            </BeginStoryboard>
+                                                        </Trigger.EnterActions>
+                                                        <Trigger.ExitActions>
+                                                            <BeginStoryboard>
+                                                                <Storyboard>
+                                                                    <ColorAnimation Storyboard.TargetName="border"
+                                                                                  Storyboard.TargetProperty="Background.Color"
+                                                                                  To="White"
+                                                                                  Duration="0:0:0.15"/>
+                                                                </Storyboard>
+                                                            </BeginStoryboard>
+                                                        </Trigger.ExitActions>
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter TargetName="border" Property="Background" Value="#E0E0E0"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Setter Property="Background" Value="White"/>
+                                    <Setter Property="Foreground" Value="#333333"/>
+                                    <Setter Property="FontSize" Value="13"/>
+                                    <Setter Property="Cursor" Value="Hand"/>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button x:Name="Save" Content="应用" Width="80" Height="32" Click="Save_Click">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="border"
+                                                        Background="{TemplateBinding Background}"
+                                                        BorderThickness="0"
+                                                        CornerRadius="4"
+                                                        Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Trigger.EnterActions>
+                                                            <BeginStoryboard>
+                                                                <Storyboard>
+                                                                    <ColorAnimation Storyboard.TargetName="border"
+                                                                                  Storyboard.TargetProperty="Background.Color"
+                                                                                  To="#0062CC"
+                                                                                  Duration="0:0:0.15"/>
+                                                                </Storyboard>
+                                                            </BeginStoryboard>
+                                                        </Trigger.EnterActions>
+                                                        <Trigger.ExitActions>
+                                                            <BeginStoryboard>
+                                                                <Storyboard>
+                                                                    <ColorAnimation Storyboard.TargetName="border"
+                                                                                  Storyboard.TargetProperty="Background.Color"
+                                                                                  To="#0078D4"
+                                                                                  Duration="0:0:0.15"/>
+                                                                </Storyboard>
+                                                            </BeginStoryboard>
+                                                        </Trigger.ExitActions>
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter TargetName="border" Property="Background" Value="#005A9E"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Setter Property="Background" Value="#0078D4"/>
+                                    <Setter Property="Foreground" Value="White"/>
+                                    <Setter Property="FontSize" Value="13"/>
+                                    <Setter Property="Cursor" Value="Hand"/>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <!-- 底部边框 -->
+                <Border Grid.Row="3" Background="Transparent" BorderThickness="0,0,0,0" CornerRadius="0,0,7,7" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
             </Grid>
-        </ScrollViewer>
+        </Border>
 
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"></ColumnDefinition>
-                <ColumnDefinition  Width="*"></ColumnDefinition>
-            </Grid.ColumnDefinitions>
+        <!-- Resize边框 -->
+        <!-- 四个边 -->
+        <Border Name="ResizeTop" Background="Transparent" Height="10" VerticalAlignment="Top"
+                MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
+                MouseMove="ResizeBorder_MouseMove"
+                MouseLeave="ResizeBorder_MouseLeave"/>
+        <Border Name="ResizeBottom" Background="Transparent" Height="10" VerticalAlignment="Bottom"
+                MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
+                MouseMove="ResizeBorder_MouseMove"
+                MouseLeave="ResizeBorder_MouseLeave"/>
+        <Border Name="ResizeLeft" Background="Transparent" Width="10" HorizontalAlignment="Left"
+                MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
+                MouseMove="ResizeBorder_MouseMove"
+                MouseLeave="ResizeBorder_MouseLeave"/>
+        <Border Name="ResizeRight" Background="Transparent" Width="10" HorizontalAlignment="Right"
+                MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
+                MouseMove="ResizeBorder_MouseMove"
+                MouseLeave="ResizeBorder_MouseLeave"/>
 
-            <Button x:Name="Save" Content="应用" Grid.Column="0" Width="auto" Margin="20,5,20,5" Click="Save_Click"></Button>
-            <Button x:Name="Cancel" Content="关闭" Grid.Column="1" Width="auto" Margin="20,5,20,5" Click="Cancel_Click"></Button>
-        </Grid>
-
+        <!-- 四个角 -->
+        <Border Name="ResizeTopLeft" Background="Transparent" Width="16" Height="16"
+                HorizontalAlignment="Left" VerticalAlignment="Top"
+                MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
+                MouseMove="ResizeBorder_MouseMove"
+                MouseLeave="ResizeBorder_MouseLeave"/>
+        <Border Name="ResizeTopRight" Background="Transparent" Width="16" Height="16"
+                HorizontalAlignment="Right" VerticalAlignment="Top"
+                MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
+                MouseMove="ResizeBorder_MouseMove"
+                MouseLeave="ResizeBorder_MouseLeave"/>
+        <Border Name="ResizeBottomLeft" Background="Transparent" Width="16" Height="16"
+                HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
+                MouseMove="ResizeBorder_MouseMove"
+                MouseLeave="ResizeBorder_MouseLeave"/>
+        <Border Name="ResizeBottomRight" Background="Transparent" Width="16" Height="16"
+                HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                MouseLeftButtonDown="ResizeBorder_MouseLeftButtonDown"
+                MouseMove="ResizeBorder_MouseMove"
+                MouseLeave="ResizeBorder_MouseLeave"/>
     </Grid>
-
-
 </Window>
