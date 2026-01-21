@@ -13,7 +13,7 @@ namespace TypeSunny
     public static class VersionManager
     {
         // GitHub 版本文件 URL（使用 jsDelivr CDN 加速）
-        private const string VersionFileUrl = "https://cdn.jsdelivr.net/gh/a810439322/TypeSunny@main/Version/version.txt";
+        private const string VersionFileUrl = "https://cdn.jsdelivr.net/gh/a810439322/TypeSunny@master/Version/version.txt";
 
         // 当前版本（从 GeneratedVersion.cs 读取，由 MSBuild 在编译时生成）
         public static string CurrentVersion => GeneratedVersion.CurrentVersion;
