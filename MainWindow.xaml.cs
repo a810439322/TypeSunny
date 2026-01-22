@@ -3179,8 +3179,10 @@ namespace TypeSunny
 
             // -----第xxx段-sha1(xxxxxxxx)-晴发文
             // 使用文来接口返回的mark（如"2-277101"）替代本地段号
-            string sha1 = CalculateSHA1(content);
-            sb.Append($"-----第{mark}段-sha1({sha1})-晴发文");
+            //string sha1 = CalculateSHA1(content);
+            //sb.Append($"-----第{mark}段-sha1({sha1})-晴发文");
+            
+            sb.Append($"-----第{mark}段-晴发文");
 
             return sb.ToString();
         }
