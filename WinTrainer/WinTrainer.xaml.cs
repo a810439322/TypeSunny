@@ -127,6 +127,38 @@ namespace TypeSunny
         private List<double> roundSpeeds = new List<double>();     // 本轮每段速度
         private bool hasStartedPractice = false;  // 是否已经开始练习（有有效成绩）
 
+        // 文章独立统计数据
+        private Dictionary<string, ArticleStatisticsData> articleStatisticsDict = new Dictionary<string, ArticleStatisticsData>();
+
+        /// <summary>
+        /// 文章统计数据结构
+        /// </summary>
+        [Serializable]
+        private class ArticleStatisticsData
+        {
+            public int RoundTotalWords { get; set; }
+            public int RoundActualWords { get; set; }
+            public int RoundCorrectWords { get; set; }
+            public double RoundTotalTime { get; set; }
+            public int RoundCompletedGroups { get; set; }
+            public List<double> RoundHitRates { get; set; }
+            public List<double> RoundSpeeds { get; set; }
+            public bool HasStartedPractice { get; set; }
+            public int LastSection { get; set; }  // 上次练习到的段号
+            public int RetypeCount { get; set; }  // 重打次数
+            public double MaxHitRate { get; set; }  // 最高击键率
+            public List<List<string>> DisplayRoot { get; set; }  // 乱序后的文章内容
+
+            public ArticleStatisticsData()
+            {
+                RoundHitRates = new List<double>();
+                RoundSpeeds = new List<double>();
+                DisplayRoot = new List<List<string>>();
+            }
+        }
+
+        private const string StatisticsFileName = "TrainerStatistics.dat";
+
 
 
 
@@ -177,6 +209,12 @@ namespace TypeSunny
 
         private void ReadTxt() //从文件重新读取码表
         {
+            // 保存当前文章的统计数据（如果不是第一次加载）
+            if (!string.IsNullOrEmpty(TxtFile))
+            {
+                SaveCurrentArticleStatistics();
+            }
+
             TxtFile = FileSelector.SelectedItem.ToString();
             string filename = Folder + TxtFile + ".txt";
             if (CfgInit)
@@ -188,120 +226,131 @@ namespace TypeSunny
                 }
             }
 
-            string mbtxt = File.ReadAllText(filename).Trim().Replace("\r", "");//.Replace(" ", "\t");
-            do
+            // 加载新文章的统计数据（不重置，保留每个文章的独立记录）
+            // 必须在解析文章内容之前加载，因为 LoadArticleStatistics 会恢复 DisplayRoot
+            LoadArticleStatistics(TxtFile);
+
+            // 如果已经有保存的 DisplayRoot（包括乱序状态），跳过文章解析
+            if (articleStatisticsDict.ContainsKey(TxtFile) &&
+                articleStatisticsDict[TxtFile].DisplayRoot != null &&
+                articleStatisticsDict[TxtFile].DisplayRoot.Count > 0)
             {
-                mbtxt = mbtxt.Replace("\n\n", "\n");
-            } while (mbtxt.Contains("\n\n"));
-
-            do
-            {
-                mbtxt = mbtxt.Replace("  ", " ");
-            } while (mbtxt.Contains("  "));
-
-            string[] lines = mbtxt.Split(new char[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            //         List<word> TrainTable = new();
-
-
-
-            DisplayRoot.Clear();
-
-          
-
-            int MaxLineLen = (from line in lines select line.Length).Max();
-            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-
-            if (!chars.Contains( lines[0].Substring(0,1)) && MaxLineLen> 4) //变长
-            {
-                mode = "varible";
-
-                int group = 0;
-                foreach (string line in lines)
-                {
-                    DisplayRoot.Add(new List<string>());
-
-                    StringInfo si = new StringInfo(line);
-
-                    for (int i = 0; i < si.LengthInTextElements; i++)
-                    {
-                        string name = si.SubstringByTextElements(i, 1);
-                        DisplayRoot[group].Add(name);
-
-                    }
-
-                    group++;
-                }
-
-                TotalGroup = group;
-
-
-                MaxGroupSize = 0;
-                AverageGroupSize = 0;
-                foreach (var g in DisplayRoot)
-                {
-                    AverageGroupSize += g.Count;
-                    if (MaxGroupSize < g.Count)
-                        MaxGroupSize = g.Count;
-                }
-                AverageGroupSize /= TotalGroup;
-
+                // DisplayRoot 已在 LoadArticleStatistics 中恢复
+                // 重新计算 TotalGroup
+                TotalGroup = DisplayRoot.Count;
             }
             else
             {
-                List<String> RootList = new List<String>();
-                mode = "fixed";
-
-
-
-
-                foreach (string line in lines)
+                // 没有保存的数据，从文件读取文章内容
+                string mbtxt = File.ReadAllText(filename).Trim().Replace("\r", "");//.Replace(" ", "\t");
+                do
                 {
-                    if (line.Length >= 1)
-                        RootList.Add(line);
+                    mbtxt = mbtxt.Replace("\n\n", "\n");
+                } while (mbtxt.Contains("\n\n"));
+
+                do
+                {
+                    mbtxt = mbtxt.Replace("  ", " ");
+                } while (mbtxt.Contains("  "));
+
+                string[] lines = mbtxt.Split(new char[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+
+
+                DisplayRoot.Clear();
+
+
+
+                int MaxLineLen = (from line in lines select line.Length).Max();
+                const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+                if (!chars.Contains( lines[0].Substring(0,1)) && MaxLineLen> 4) //变长
+                {
+                    mode = "varible";
+
+                    int group = 0;
+                    foreach (string line in lines)
+                    {
+                        DisplayRoot.Add(new List<string>());
+
+                        StringInfo si = new StringInfo(line);
+
+                        for (int i = 0; i < si.LengthInTextElements; i++)
+                        {
+                            string name = si.SubstringByTextElements(i, 1);
+                            DisplayRoot[group].Add(name);
+
+                        }
+
+                        group++;
+                    }
+
+                    TotalGroup = group;
+
+
+                    MaxGroupSize = 0;
+                    AverageGroupSize = 0;
+                    foreach (var g in DisplayRoot)
+                    {
+                        AverageGroupSize += g.Count;
+                        if (MaxGroupSize < g.Count)
+                            MaxGroupSize = g.Count;
+                    }
+                    AverageGroupSize /= TotalGroup;
 
                 }
-
-
-                TotalGroup = (RootList.Count + Convert.ToInt32(cfg["每组字数"]) - 1) / Convert.ToInt32(cfg["每组字数"]);
-
-
-
-                MaxGroupSize = Convert.ToInt32(cfg["每组字数"]);
-
-                int k = 0;
-
-                for (int i = 0; i < TotalGroup; i++)
+                else
                 {
-                    DisplayRoot.Add(new List<string>());
+                    List<String> RootList = new List<String>();
+                    mode = "fixed";
 
-                    int jmax;
-                    if (i < TotalGroup - 1)
-                    {
-                        jmax = Convert.ToInt32(cfg["每组字数"]);
-                    }
-                    else
-                    {
-                        jmax = RootList.Count - Convert.ToInt32(cfg["每组字数"]) * (TotalGroup - 1);
-                    }
-                    for (int j = 0; j < jmax; j++)
-                    {
-                        DisplayRoot[i].Add(RootList[k]);
 
-                        k++;
+
+
+                    foreach (string line in lines)
+                    {
+                        if (line.Length >= 1)
+                            RootList.Add(line);
+
+                    }
+
+
+                    TotalGroup = (RootList.Count + Convert.ToInt32(cfg["每组字数"]) - 1) / Convert.ToInt32(cfg["每组字数"]);
+
+
+
+                    MaxGroupSize = Convert.ToInt32(cfg["每组字数"]);
+
+                    int k = 0;
+
+                    for (int i = 0; i < TotalGroup; i++)
+                    {
+                        DisplayRoot.Add(new List<string>());
+
+                        int jmax;
+                        if (i < TotalGroup - 1)
+                        {
+                            jmax = Convert.ToInt32(cfg["每组字数"]);
+                        }
+                        else
+                        {
+                            jmax = RootList.Count - Convert.ToInt32(cfg["每组字数"]) * (TotalGroup - 1);
+                        }
+                        for (int j = 0; j < jmax; j++)
+                        {
+                            DisplayRoot[i].Add(RootList[k]);
+
+                            k++;
+                        }
                     }
                 }
             }
 
+            // JumpGroup() 会覆盖已恢复的段号，所以不需要调用
+            // LoadArticleStatistics() 已经恢复了段号，InitSlider() 和 InitGroup() 会使用它
 
-
-            JumpGroup();
-
-            RetypeCount = 0;
-            MaxHitRate = 0;
+            // RetypeCount 和 MaxHitRate 已在 LoadArticleStatistics 中恢复或初始化，不要重置
             InitSlider();
-
-            // 重置本轮统计
-            ResetRoundStatistics();
 
             InitGroup();
 
@@ -481,10 +530,11 @@ namespace TypeSunny
                 roundCompletedGroups++;
                 roundHitRates.Add(hitrate);
                 roundSpeeds.Add(Score.Speed);
+                bool wasNotStarted = !hasStartedPractice;
                 hasStartedPractice = true;  // 标记已开始练习
 
                 string t =  "击键 " + hitrate.ToString("F2") + "/" + TargetHit.ToString("0.00");
-                AutoNextGroup();
+                AutoNextGroup();  // 这里会保存统计数据（段号已更新）
                 string matchText = GetMatchText();
                 MainWindow.Current.LoadText(matchText, RetypeType.first, TxtSource.trainer, false, true);
 
@@ -495,6 +545,11 @@ namespace TypeSunny
                 // 更新本轮统计显示
                 UpdateRoundStatus();
 
+                // 更新UI状态
+                if (wasNotStarted)
+                {
+                    UpdateUIState();
+                }
             }
             else
             {
@@ -510,6 +565,8 @@ namespace TypeSunny
                 }
          //       if (RetypeCount + 1 >= 5 && (RetypeCount + 1) % 5 == 0) //重打5次发一下成绩
 
+                // 练习失败后也要保存统计数据（但段号不变）
+                SaveCurrentArticleStatistics();
             }
         }
 
@@ -642,8 +699,9 @@ namespace TypeSunny
         }
         private void InitGroup() //初始化组
         {
-            RetypeCount = 0;
-            MaxHitRate = 0;
+            // 不要重置 RetypeCount 和 MaxHitRate，因为 LoadArticleStatistics() 可能已经恢复了它们
+            // RetypeCount = 0;  // 已移除
+            // MaxHitRate = 0;    // 已移除
 
 
             InGroupRand();
@@ -668,6 +726,9 @@ namespace TypeSunny
             // 更新本轮统计显示（初始化时清空）
             UpdateRoundStatus();
 
+            // 更新UI状态（进度条/重置按钮/按钮文字）
+            UpdateUIState();
+
 
         }
 
@@ -677,6 +738,9 @@ namespace TypeSunny
         {
 
             cfg["上次的段数"] = (Convert.ToInt32(cfg["上次的段数"]) + 1).ToString();
+
+            // 段号更新后保存统计数据（确保保存的是最新的段号）
+            SaveCurrentArticleStatistics();
 
             // 检查是否完成一整轮
             if (Convert.ToInt32(cfg["上次的段数"]) == TotalGroup)
@@ -716,6 +780,240 @@ namespace TypeSunny
             roundHitRates.Clear();
             roundSpeeds.Clear();
             hasStartedPractice = false;
+
+            // 清空练单器窗口内的成绩显示
+            stattxt2.Text = "";
+
+            // 清空主窗口成绩栏的显示
+            if (MainWindow.Current != null)
+            {
+                MainWindow.Current.UpdateTrainerStat("");
+            }
+
+            // 重置后也要保存
+            SaveCurrentArticleStatistics();
+            UpdateUIState();
+        }
+
+        /// <summary>
+        /// 保存当前文章的统计数据到字典
+        /// </summary>
+        private void SaveCurrentArticleStatistics()
+        {
+            if (string.IsNullOrEmpty(TxtFile))
+                return;
+
+            var data = new ArticleStatisticsData
+            {
+                RoundTotalWords = roundTotalWords,
+                RoundActualWords = roundActualWords,
+                RoundCorrectWords = roundCorrectWords,
+                RoundTotalTime = roundTotalTime,
+                RoundCompletedGroups = roundCompletedGroups,
+                RoundHitRates = new List<double>(roundHitRates),
+                RoundSpeeds = new List<double>(roundSpeeds),
+                HasStartedPractice = hasStartedPractice,
+                LastSection = Convert.ToInt32(cfg["上次的段数"]),
+                RetypeCount = RetypeCount,
+                MaxHitRate = MaxHitRate,
+                // 深拷贝 DisplayRoot
+                DisplayRoot = DisplayRoot.Select(section => new List<string>(section)).ToList()
+            };
+
+            articleStatisticsDict[TxtFile] = data;
+            SaveStatisticsToFile();
+        }
+
+        /// <summary>
+        /// 加载指定文章的统计数据
+        /// </summary>
+        private void LoadArticleStatistics(string articleName)
+        {
+            if (string.IsNullOrEmpty(articleName))
+                return;
+
+            if (articleStatisticsDict.ContainsKey(articleName))
+            {
+                var data = articleStatisticsDict[articleName];
+                roundTotalWords = data.RoundTotalWords;
+                roundActualWords = data.RoundActualWords;
+                roundCorrectWords = data.RoundCorrectWords;
+                roundTotalTime = data.RoundTotalTime;
+                roundCompletedGroups = data.RoundCompletedGroups;
+                roundHitRates = new List<double>(data.RoundHitRates);
+                roundSpeeds = new List<double>(data.RoundSpeeds);
+                hasStartedPractice = data.HasStartedPractice;
+
+                // 恢复段号
+                cfg["上次的段数"] = data.LastSection.ToString();
+                // 恢复重打次数和最高击键率
+                RetypeCount = data.RetypeCount;
+                MaxHitRate = data.MaxHitRate;
+                // 恢复文章内容（包括乱序状态）
+                if (data.DisplayRoot != null && data.DisplayRoot.Count > 0)
+                {
+                    DisplayRoot.Clear();
+                    foreach (var section in data.DisplayRoot)
+                    {
+                        DisplayRoot.Add(new List<string>(section));
+                    }
+                }
+            }
+            else
+            {
+                // 新文章，初始化为空数据
+                roundTotalWords = 0;
+                roundActualWords = 0;
+                roundCorrectWords = 0;
+                roundTotalTime = 0;
+                roundCompletedGroups = 0;
+                roundHitRates = new List<double>();
+                roundSpeeds = new List<double>();
+                hasStartedPractice = false;
+                RetypeCount = 0;
+                MaxHitRate = 0;
+            }
+
+            UpdateUIState();
+        }
+
+        /// <summary>
+        /// 保存统计数据到文件
+        /// </summary>
+        private void SaveStatisticsToFile()
+        {
+            try
+            {
+                using (StreamWriter writer = new StreamWriter(StatisticsFileName))
+                {
+                    foreach (var kvp in articleStatisticsDict)
+                    {
+                        var data = kvp.Value;
+                        writer.WriteLine($"{kvp.Key}\t{data.RoundTotalWords}\t{data.RoundActualWords}\t{data.RoundCorrectWords}\t{data.RoundTotalTime}\t{data.RoundCompletedGroups}\t{data.HasStartedPractice}\t{data.LastSection}\t{data.RetypeCount}\t{data.MaxHitRate}");
+
+                        // 保存击键率和速度列表
+                        writer.WriteLine($"H\t{string.Join(",", data.RoundHitRates)}");
+                        writer.WriteLine($"S\t{string.Join(",", data.RoundSpeeds)}");
+
+                        // 保存 DisplayRoot（乱序后的文章内容）
+                        // 格式：D\t段数\t每段的字数（逗号分隔）
+                        writer.Write("D\t");
+                        writer.Write(data.DisplayRoot.Count);
+                        foreach (var section in data.DisplayRoot)
+                        {
+                            writer.Write($"\t{string.Join("|", section)}");
+                        }
+                        writer.WriteLine();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"保存统计数据失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 从文件加载统计数据
+        /// </summary>
+        private void LoadStatisticsFromFile()
+        {
+            if (!File.Exists(StatisticsFileName))
+                return;
+
+            try
+            {
+                using (StreamReader reader = new StreamReader(StatisticsFileName))
+                {
+                    string line;
+                    string currentArticle = null;
+                    ArticleStatisticsData data = null;
+
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(line))
+                            continue;
+
+                        if (line.StartsWith("H\t"))
+                        {
+                            // 击键率列表
+                            if (data != null)
+                            {
+                                var hitRateStr = line.Substring(2);
+                                if (!string.IsNullOrEmpty(hitRateStr))
+                                {
+                                    data.RoundHitRates = hitRateStr.Split(',').Select(s => double.TryParse(s, out double val) ? val : 0).ToList();
+                                }
+                            }
+                        }
+                        else if (line.StartsWith("S\t"))
+                        {
+                            // 速度列表
+                            if (data != null)
+                            {
+                                var speedStr = line.Substring(2);
+                                if (!string.IsNullOrEmpty(speedStr))
+                                {
+                                    data.RoundSpeeds = speedStr.Split(',').Select(s => double.TryParse(s, out double val) ? val : 0).ToList();
+                                }
+                            }
+                        }
+                        else if (line.StartsWith("D\t"))
+                        {
+                            // DisplayRoot（乱序后的文章内容）
+                            if (data != null)
+                            {
+                                var parts = line.Split('\t');
+                                if (parts.Length >= 2)
+                                {
+                                    int sectionCount = int.TryParse(parts[1], out int count) ? count : 0;
+                                    data.DisplayRoot = new List<List<string>>();
+                                    for (int i = 0; i < sectionCount && i + 2 < parts.Length; i++)
+                                    {
+                                        var sectionStr = parts[i + 2];
+                                        if (!string.IsNullOrEmpty(sectionStr))
+                                        {
+                                            var section = sectionStr.Split('|').Where(s => !string.IsNullOrEmpty(s)).ToList();
+                                            data.DisplayRoot.Add(section);
+                                        }
+                                        else
+                                        {
+                                            data.DisplayRoot.Add(new List<string>());
+                                        }
+                                    }
+                                }
+                                // DisplayRoot 是最后一行，保存数据
+                                articleStatisticsDict[currentArticle] = data;
+                            }
+                        }
+                        else
+                        {
+                            // 文章数据行
+                            var parts = line.Split('\t');
+                            if (parts.Length >= 10)
+                            {
+                                currentArticle = parts[0];
+                                data = new ArticleStatisticsData
+                                {
+                                    RoundTotalWords = int.TryParse(parts[1], out int totalWords) ? totalWords : 0,
+                                    RoundActualWords = int.TryParse(parts[2], out int actualWords) ? actualWords : 0,
+                                    RoundCorrectWords = int.TryParse(parts[3], out int correctWords) ? correctWords : 0,
+                                    RoundTotalTime = double.TryParse(parts[4], out double totalTime) ? totalTime : 0,
+                                    RoundCompletedGroups = int.TryParse(parts[5], out int completedGroups) ? completedGroups : 0,
+                                    HasStartedPractice = bool.TryParse(parts[6], out bool started) ? started : false,
+                                    LastSection = int.TryParse(parts[7], out int lastSection) ? lastSection : 0,
+                                    RetypeCount = int.TryParse(parts[8], out int retypeCount) ? retypeCount : 0,
+                                    MaxHitRate = double.TryParse(parts[9], out double maxHitRate) ? maxHitRate : 0
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"加载统计数据失败: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -896,6 +1194,8 @@ namespace TypeSunny
             UpdateFileList();
             InitCfg();
 
+            // 加载持久化的统计数据
+            LoadStatisticsFromFile();
 
             ReadTxt();
             ShowWords();
@@ -965,20 +1265,26 @@ namespace TypeSunny
 
         private void RandAllGroup()
         {
+            // 获取当前段号，只对剩余段乱序
+            int currentSection = Convert.ToInt32(cfg["上次的段数"]);
 
             if (mode == "fixed")
             {
                 List<string> RootList = new List<string>();
 
-                foreach (var ss in DisplayRoot)
+                // 只收集从当前段开始到最后的段
+                for (int i = currentSection; i < DisplayRoot.Count; i++)
                 {
-                    foreach (string s in ss)
+                    foreach (string s in DisplayRoot[i])
                     {
                         RootList.Add(s);
                     }
                 }
 
                 int count = RootList.Count;
+
+                if (count == 0)
+                    return;
 
 
                 int[] arr = new int[count];
@@ -1021,9 +1327,23 @@ namespace TypeSunny
 
 
                 int k = 0;
+                // 保留已打过的段，只重新生成从当前段开始的段
+                List<List<string>> oldSections = new List<List<string>>();
+                for (int i = 0; i < currentSection; i++)
+                {
+                    oldSections.Add(DisplayRoot[i]);
+                }
+
                 DisplayRoot.Clear();
 
-                for (int i = 0; i < TotalGroup; i++)
+                // 添加已打过的段（保持不变）
+                for (int i = 0; i < currentSection; i++)
+                {
+                    DisplayRoot.Add(oldSections[i]);
+                }
+
+                // 添加乱序后的剩余段
+                for (int i = currentSection; i < TotalGroup; i++)
                 {
                     DisplayRoot.Add(new List<string>());
 
@@ -1034,7 +1354,7 @@ namespace TypeSunny
                     }
                     else
                     {
-                        jmax = count - Convert.ToInt32(cfg["每组字数"]) * (TotalGroup - 1);
+                        jmax = count - Convert.ToInt32(cfg["每组字数"]) * (TotalGroup - 1 - currentSection);
                     }
                     for (int j = 0; j < jmax; j++)
                     {
@@ -1050,52 +1370,49 @@ namespace TypeSunny
             }
             else if (mode == "varible")
             {
-
-
                 int count = DisplayRoot.Count;
 
+                // 只对剩余段进行乱序
+                int remainingCount = count - currentSection;
+                if (remainingCount <= 0)
+                    return;
 
-                int[] arr = new int[count];
+                int[] arr = new int[remainingCount];
 
-                for (int j = 0; j < count; j++)
+                for (int j = 0; j < remainingCount; j++)
                 {
-                    arr[j] = j;
+                    arr[j] = currentSection + j;
                 }
 
-                int[] arr2 = new int[count];
+                int[] arr2 = new int[remainingCount];
 
 
                 Random rand = new Random();
 
-                for (int j = 0; j < count; j++)
+                for (int j = 0; j < remainingCount; j++)
                 {
-                    int rd_rng = count - j;
+                    int rd_rng = remainingCount - j;
                     int r = rand.Next(rd_rng);
                     arr2[j] = arr[r];
-                    arr[r] = arr[rd_rng - 1];
+                    arr[r] = arr[rd_rng - 1 + currentSection];
 
                 }
 
 
 
+                // 保存旧段顺序
                 List<List<string>> tmpstr = new List<List<string>>();
                 for (int i = 0; i < count; i++)
                 {
-                    tmpstr.Add(new List<string>());
+                    tmpstr.Add(new List<string>(DisplayRoot[i]));
                 }
 
 
-                for (int j = 0; j < count; j++)
+                // 重新排列剩余段
+                for (int j = 0; j < remainingCount; j++)
                 {
-                    tmpstr[j] = DisplayRoot[arr2[j]];
+                    DisplayRoot[currentSection + j] = tmpstr[arr2[j]];
                 }
-
-                for (int j = 0; j < count; j++)
-                {
-                    DisplayRoot[j] = tmpstr[j];
-                }
-
-
 
                 InitGroup();
 
@@ -1287,6 +1604,18 @@ namespace TypeSunny
             QQHelper.SendQQMessage(MainWindow.Current.QQGroupName, GetMatchText(), 150, MainWindow.Current);
         }
 
+        /// <summary>
+        /// 重置统计数据按钮点击事件
+        /// </summary>
+        private void BtnReset_Click(object sender, RoutedEventArgs e)
+        {
+            var result = MessageBox.Show("确定要重置当前文章的统计数据吗？", "重置确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result == MessageBoxResult.Yes)
+            {
+                ResetRoundStatistics();
+            }
+        }
+
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
 
@@ -1294,11 +1623,22 @@ namespace TypeSunny
                 e.Cancel = false;
             else
             {
+                // 窗口隐藏前保存统计数据
+                SaveCurrentArticleStatistics();
                 e.Cancel = true;//取消这次关闭事件
                 Hide();//隐藏窗口，以便下次调用show
             }
 
 
+        }
+
+        private void Window_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            // 窗口显示时加载统计数据
+            if (this.IsVisible && CfgInit)
+            {
+                LoadArticleStatistics(TxtFile);
+            }
         }
 
         // ==================== 窗口控制相关方法 ====================
@@ -1597,6 +1937,29 @@ namespace TypeSunny
                 if (DisplayRoot != null)
                     InitGroup();
                 WriteCfg();
+            }
+        }
+
+        // ==================== UI状态控制方法 ====================
+
+        /// <summary>
+        /// 根据练习状态更新UI：进度条/重置按钮可见性、按钮文字
+        /// </summary>
+        private void UpdateUIState()
+        {
+            if (hasStartedPractice)
+            {
+                // 练习开始后：隐藏进度条，显示重置按钮，按钮改为"余字乱序"
+                sld.Visibility = Visibility.Collapsed;
+                BtnReset.Visibility = Visibility.Visible;
+                BtnRandAll.Content = "余字乱序";
+            }
+            else
+            {
+                // 未开始练习：显示进度条，隐藏重置按钮，按钮为"全体乱序"
+                sld.Visibility = Visibility.Visible;
+                BtnReset.Visibility = Visibility.Collapsed;
+                BtnRandAll.Content = "全体乱序";
             }
         }
 

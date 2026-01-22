@@ -104,6 +104,20 @@ namespace TypeSunny.Net
 
                 raceAPI = new RaceAPI(serverUrl, account.ClientKeyXml);
 
+                // 设置密钥不匹配时的自动重新登录回调
+                raceAPI.OnKeyMismatchCallback = async () =>
+                {
+                    System.Diagnostics.Debug.WriteLine($"[赛文] 密钥不匹配，触发自动重新登录");
+                    var (success, cookies, keyXml) = await accountManager.ReloginAsync(SERVICE_NAME, serverUrl);
+                    if (success)
+                    {
+                        // 更新本地状态
+                        currentUserId = accountManager.GetAccount(SERVICE_NAME)?.UserId ?? currentUserId;
+                        currentUsername = accountManager.GetAccount(SERVICE_NAME)?.DisplayName ?? currentUsername;
+                    }
+                    return (cookies, keyXml);
+                };
+
                 // 加载Cookie
                 if (!string.IsNullOrWhiteSpace(account.Cookies))
                 {

@@ -493,6 +493,17 @@ namespace TypeSunny.ArticleSender
                 int sortNum = msgObj["sort_num"]?.ToObject<int>() ?? 0;
                 int difficultyId = msgObj["custom_difficulty"]?.ToObject<int>() ?? 0;
 
+                // 从缓存的难度列表中查找难度名称（如"简"、"普"、"难"）
+                string difficultyName = "";
+                if (difficultyId > 0 && cachedDifficulties != null)
+                {
+                    var difficultyInfo = cachedDifficulties.FirstOrDefault(d => d.Id == difficultyId);
+                    if (difficultyInfo != null)
+                    {
+                        difficultyName = difficultyInfo.Name;
+                    }
+                }
+
                 // 应用字符过滤规则（全角转半角、字符映射、白名单过滤）
                 content = Filter.ProcFilter(content);
 
@@ -506,6 +517,7 @@ namespace TypeSunny.ArticleSender
                     FullContent = fullContent,
                     Mark = mark,
                     Difficulty = difficultyText,
+                    DifficultyName = difficultyName,
                     BookId = bookId,
                     SortNum = sortNum,
                     DifficultyId = difficultyId
@@ -674,6 +686,17 @@ namespace TypeSunny.ArticleSender
                 int responseSortNum = msgObj["sort_num"]?.ToObject<int>() ?? 0;
                 int difficultyId = msgObj["custom_difficulty"]?.ToObject<int>() ?? 0;
 
+                // 从缓存的难度列表中查找难度名称（如"简"、"普"、"难"）
+                string difficultyName = "";
+                if (difficultyId > 0 && cachedDifficulties != null)
+                {
+                    var difficultyInfo = cachedDifficulties.FirstOrDefault(d => d.Id == difficultyId);
+                    if (difficultyInfo != null)
+                    {
+                        difficultyName = difficultyInfo.Name;
+                    }
+                }
+
                 // 应用字符过滤规则
                 content = Filter.ProcFilter(content);
                 string fullContent = content;
@@ -685,6 +708,7 @@ namespace TypeSunny.ArticleSender
                     FullContent = fullContent,
                     Mark = mark,
                     Difficulty = difficultyText,
+                    DifficultyName = difficultyName,
                     BookId = responseBookId,
                     SortNum = responseSortNum,
                     DifficultyId = difficultyId
@@ -734,6 +758,7 @@ namespace TypeSunny.ArticleSender
         public string FullContent { get; set; }
         public string Mark { get; set; }  // 段落标记，格式如 "1-34112" 表示第1段/共34112段
         public string Difficulty { get; set; }  // 难度描述，格式如 "一般(2.05)"
+        public string DifficultyName { get; set; }  // 难度名称，如 "简"、"普"、"难"
         public int BookId { get; set; }  // 书籍ID，用于获取下一段/上一段
         public int SortNum { get; set; }  // 当前段号，用于获取下一段/上一段
         public int DifficultyId { get; set; }  // 难度ID，来自custom_difficulty字段，对应/api/stats_by_difficulty中的id

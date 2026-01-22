@@ -1,4 +1,6 @@
-﻿namespace TypeSunny
+﻿using System;
+
+namespace TypeSunny
 {
     public enum TypingState
     {
@@ -50,5 +52,8 @@
         static public string CurrentRaceServerId = "";
         static public int CurrentRaceId = -1;
         //       static public bool IsChangSheng = false;
+
+        // 最后一次有效输入的时间（用于赛文字提5秒限制）
+        static public DateTime LastInputTime = DateTime.Now;
     }
 }

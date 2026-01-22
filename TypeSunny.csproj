@@ -119,7 +119,6 @@
     <Compile Include="GroupedDiffRes.cs" />
     <Compile Include="IntStringDict.cs" />
     <Compile Include="Net\AccountSystemManager.cs" />
-    <Compile Include="Net\ChangSheng.cs" />
     <Compile Include="Net\JBS.cs" />
     <Compile Include="Net\JbsHelper.cs" />
     <Compile Include="Net\JiSuCup.cs" />

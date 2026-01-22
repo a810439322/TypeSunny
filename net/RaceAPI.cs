@@ -21,6 +21,16 @@ namespace TypeSunny.Net
         private string clientKeyXml;  // 客户端密钥对（用于持久化）
 
         /// <summary>
+        /// 密钥不匹配时需要重新登录的回调（返回新的Cookie和ClientKeyXml）
+        /// </summary>
+        public Func<Task<(string cookies, string clientKeyXml)>> OnKeyMismatchCallback { get; set; }
+
+        /// <summary>
+        /// 是否正在重试（防止递归）
+        /// </summary>
+        private bool isRetrying = false;
+
+        /// <summary>
         /// 初始化赛文API客户端
         /// </summary>
         /// <param name="serverUrl">服务器地址，例如 http://localhost:8000</param>
@@ -120,6 +130,62 @@ namespace TypeSunny.Net
             catch
             {
                 return "";
+            }
+        }
+
+        /// <summary>
+        /// 解密认证数据，当密钥不匹配时自动触发重新登录
+        /// </summary>
+        private async Task<JObject> DecryptAuthenticatedWithRetry(string encryptedData)
+        {
+            try
+            {
+                return cryptoClient.DecryptAuthenticated(encryptedData);
+            }
+            catch (Exception ex)
+            {
+                // 检查是否是 OAEP 填充解码错误（密钥不匹配）
+                if ((ex.Message.Contains("OAEP") || ex.Message.Contains("填充")) && !isRetrying)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[赛文] 检测到密钥不匹配，尝试自动重新登录: {ex.Message}");
+
+                    if (OnKeyMismatchCallback != null)
+                    {
+                        isRetrying = true;
+                        try
+                        {
+                            // 触发重新登录回调
+                            var (newCookies, newKeyXml) = await OnKeyMismatchCallback();
+
+                            // 重新初始化加密客户端
+                            if (!string.IsNullOrWhiteSpace(newKeyXml))
+                            {
+                                clientKeyXml = newKeyXml;
+                                // 重新获取服务器公钥并初始化
+                                string publicKey = await GetPublicKeyAsync();
+                                cryptoClient = new RaceCryptoClient(publicKey, clientKeyXml);
+                            }
+
+                            // 重新加载Cookie
+                            if (!string.IsNullOrWhiteSpace(newCookies))
+                            {
+                                LoadCookiesFromString(newCookies);
+                            }
+
+                            System.Diagnostics.Debug.WriteLine($"[赛文] 重新登录成功，重试解密");
+
+                            // 重试解密
+                            return cryptoClient.DecryptAuthenticated(encryptedData);
+                        }
+                        finally
+                        {
+                            isRetrying = false;
+                        }
+                    }
+                }
+
+                // 如果无法自动恢复，抛出原异常
+                throw;
             }
         }
 
@@ -313,7 +379,7 @@ namespace TypeSunny.Net
                 {
                     // 解密数据（使用客户端私钥，因为服务器用客户端公钥加密）
                     string encryptedResponse = result["encrypted_data"].ToString();
-                    responseData = cryptoClient.DecryptAuthenticated(encryptedResponse);
+                    responseData = await DecryptAuthenticatedWithRetry(encryptedResponse);
                 }
                 else
                 {
@@ -435,7 +501,7 @@ namespace TypeSunny.Net
                 {
                     // 解密数据（使用客户端私钥，因为服务器用客户端公钥加密）
                     string encryptedResponse = result["encrypted_data"].ToString();
-                    responseData = cryptoClient.DecryptAuthenticated(encryptedResponse);
+                    responseData = await DecryptAuthenticatedWithRetry(encryptedResponse);
                 }
                 else
                 {
@@ -715,7 +781,7 @@ namespace TypeSunny.Net
                 {
                     // 解密数据（使用客户端私钥，因为这是需要认证的接口）
                     string encryptedData = result["encrypted_data"].ToString();
-                    responseData = cryptoClient.DecryptAuthenticated(encryptedData);
+                    responseData = await DecryptAuthenticatedWithRetry(encryptedData);
                 }
                 else
                 {
@@ -891,7 +957,7 @@ namespace TypeSunny.Net
                 {
                     // 解密数据（使用客户端私钥，因为这是需要认证的接口）
                     string encryptedResponse = result["encrypted_data"].ToString();
-                    responseData = cryptoClient.DecryptAuthenticated(encryptedResponse);
+                    responseData = await DecryptAuthenticatedWithRetry(encryptedResponse);
                 }
                 else
                 {

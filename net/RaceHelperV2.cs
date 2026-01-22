@@ -31,6 +31,36 @@ namespace TypeSunny.Net
         }
 
         /// <summary>
+        /// 创建 RaceAPI 实例并设置密钥不匹配回调
+        /// </summary>
+        private async Task<RaceAPI> CreateRaceAPIAsync(RaceServer server)
+        {
+            var api = new RaceAPI(server.Url, server.ClientKeyXml);
+
+            // 设置密钥不匹配时的自动重新登录回调
+            api.OnKeyMismatchCallback = async () =>
+            {
+                System.Diagnostics.Debug.WriteLine($"[赛文V2] 密钥不匹配，触发自动重新登录: {server.Name}");
+                var (success, cookies, keyXml) = await accountManager.ReloginAsync(server.Id, server.Url);
+                if (success)
+                {
+                    // 更新服务器密钥
+                    var updatedAccount = accountManager.GetAccount(server.Id);
+                    if (updatedAccount != null)
+                    {
+                        server.ClientKeyXml = updatedAccount.ClientKeyXml;
+                        server.UserId = updatedAccount.UserId;
+                        server.Username = updatedAccount.DisplayName;
+                    }
+                }
+                return (cookies, keyXml);
+            };
+
+            await api.InitializeAsync();
+            return api;
+        }
+
+        /// <summary>
         /// 显示登录对话框
         /// </summary>
         public void ShowLoginDialog(Window owner, string serverId)
@@ -128,9 +158,8 @@ namespace TypeSunny.Net
 
                 try
                 {
-                    // 使用服务器保存的客户端密钥对（如果有）
-                    var api = new RaceAPI(server.Url, server.ClientKeyXml);
-                    await api.InitializeAsync();
+                    // 使用 CreateRaceAPIAsync 创建 API 实例（会自动设置密钥不匹配回调）
+                    var api = await CreateRaceAPIAsync(server);
                     var result = await api.LoginAsync(txtUsername.Text, txtPassword.Password);
 
                     if (result.Success)
@@ -295,9 +324,8 @@ namespace TypeSunny.Net
 
                 try
                 {
-                    // 使用服务器保存的客户端密钥对（如果有）
-                    var api = new RaceAPI(server.Url, server.ClientKeyXml);
-                    await api.InitializeAsync();
+                    // 使用 CreateRaceAPIAsync 创建 API 实例（会自动设置密钥不匹配回调）
+                    var api = await CreateRaceAPIAsync(server);
                     var result = await api.RegisterAsync(txtUsername.Text, txtPassword.Password);
 
                     if (result.Success)
@@ -352,6 +380,10 @@ namespace TypeSunny.Net
 
             // 从 AccountSystemManager 同步登录信息（支持同域名自动登录）
             // 遍历所有账号，找到域名匹配的账号
+
+            // 先强制重新加载配置（确保获取最新数据）
+            accountManager.Reload();
+
             var allAccounts = accountManager.GetAllAccounts();
             AccountInfo matchedAccount = null;
 
@@ -376,17 +408,12 @@ namespace TypeSunny.Net
 
             if (matchedAccount != null)
             {
-                // 同步账号信息到 server 对象
-                if (server.UserId != matchedAccount.UserId || server.DisplayName != matchedAccount.DisplayName)
-                {
-                    server.UserId = matchedAccount.UserId;
-                    server.DisplayName = matchedAccount.DisplayName;
-                    server.Username = matchedAccount.Username;
-                    server.Password = matchedAccount.Password;
-                    server.ClientKeyXml = matchedAccount.ClientKeyXml;
-
-                    System.Diagnostics.Debug.WriteLine($"✓ 赛文API已同步登录信息: {matchedAccount.DisplayName} (UserId={matchedAccount.UserId})");
-                }
+                // 直接同步账号信息到 server 对象
+                server.UserId = matchedAccount.UserId;
+                server.DisplayName = matchedAccount.DisplayName;
+                server.Username = matchedAccount.Username;
+                server.Password = matchedAccount.Password;
+                server.ClientKeyXml = matchedAccount.ClientKeyXml;
             }
 
             if (!server.IsLoggedIn())
@@ -396,8 +423,8 @@ namespace TypeSunny.Net
 
             try
             {
-                var api = new RaceAPI(server.Url, server.ClientKeyXml);
-                await api.InitializeAsync();
+                // 使用 CreateRaceAPIAsync 创建 API 实例（会自动设置密钥不匹配回调）
+                var api = await CreateRaceAPIAsync(server);
                 var result = await api.GetDailyArticleAsync(raceId, server.UserId);
 
                 if (result.Success)
@@ -531,8 +558,8 @@ namespace TypeSunny.Net
                     InputMethod = inputMethod
                 };
 
-                var api = new RaceAPI(server.Url, server.ClientKeyXml);
-                await api.InitializeAsync();
+                // 使用 CreateRaceAPIAsync 创建 API 实例（会自动设置密钥不匹配回调）
+                var api = await CreateRaceAPIAsync(server);
                 var result = await api.SubmitScoreAsync(scoreData);
 
                 if (result.Success)

@@ -820,6 +820,17 @@ namespace TypeSunny
                 return;
             }
 
+            // 赛文模式：5秒没有字上屏时才显示字提
+            if (StateManager.txtSource == TxtSource.raceApi)
+            {
+                var timeSinceLastInput = DateTime.Now - StateManager.LastInputTime;
+                if (timeSinceLastInput.TotalSeconds < 5)
+                {
+                    TbkZiTi.Text = "";
+                    return;
+                }
+            }
+
             // 获取下一个需要打的字
             StringInfo si = new StringInfo(TbxInput.Text);
             int nextIndex = si.LengthInTextElements;
@@ -1262,6 +1273,9 @@ namespace TypeSunny
                         raceHelper.UpdateLoginStatus();
                         raceHelper.UpdateArticleButtonStatus();
                     }
+
+                    // 后台静默迁移旧数据
+                    _ = StartDataMigrationInBackground();
                 }
                 catch (Exception ex)
                 {
@@ -1300,6 +1314,26 @@ namespace TypeSunny
 
             // 注意：UpdateLoginStatus 和 UpdateArticleButtonStatus 已移到 Loaded 事件中调用
             // 因为此时菜单项还未创建完成
+        }
+
+        /// <summary>
+        /// 后台静默迁移旧数据
+        /// </summary>
+        private async System.Threading.Tasks.Task StartDataMigrationInBackground()
+        {
+            try
+            {
+                // 同时启动三个日志系统的迁移
+                await System.Threading.Tasks.Task.WhenAll(
+                    ArticleLog.MigrateOldDataAsync(),
+                    WenlaiLog.MigrateOldDataAsync(),
+                    TrainerLog.MigrateOldDataAsync()
+                );
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"数据迁移失败: {ex.Message}");
+            }
         }
 
 
@@ -2312,6 +2346,13 @@ namespace TypeSunny
             // 保存文章日志数据（在 Score 被重置之前）
             TxtSource savedTxtSource = StateManager.txtSource;  // 保存文本来源
             RetypeType savedRetypeType = StateManager.retypeType;  // 保存重打类型
+
+            // 调试：输出当前状态
+            System.Diagnostics.Debug.WriteLine($"[StopHelper] 开始 - txtSource={savedTxtSource}, retypeType={savedRetypeType}, TotalWords={Score.TotalWordCount}");
+            // 同时写入日志文件
+
+            try
+            {
             int savedTotalWords = Score.TotalWordCount;
             int savedInputWords = Score.InputWordCount;
             double savedSpeed = Score.Speed;
@@ -2343,7 +2384,7 @@ namespace TypeSunny
             {
                 savedArticleName = articleCache.GetCurrentTitle() ?? "文来文章";
                 savedArticleMark = articleCache.GetCurrentMark() ?? "";
-                savedDifficultyName = articleCache.GetDifficultyName() ?? "";  // 从ArticleCache获取难度名称
+                savedDifficultyName = articleCache.GetCurrentDifficultyName();
             }
             else
             {
@@ -2355,6 +2396,8 @@ namespace TypeSunny
             TbxInput.IsReadOnly = true;
             StateManager.typingState = TypingState.end;
             sw.Stop();
+            // 停止字提定时器
+            StopZiTiTimer();
          
 
             Score.HitRate = Score.GetHit() / Score.Time.TotalSeconds;
@@ -2366,6 +2409,7 @@ namespace TypeSunny
 
             Score.InputWordCount = new StringInfo(TbxInput.Text).LengthInTextElements;
             savedInputWords = Score.InputWordCount;  // 更新保存的输入字数
+
 
             //计算错字
 
@@ -2434,6 +2478,7 @@ namespace TypeSunny
                 }
             }
 
+
             TbkStatusTop.Text = Score.Progress();
             if (StateManager.retypeType != RetypeType.wrongRetype)
                 UpdateTypingStat(Score.Report());// + " " + ;
@@ -2457,7 +2502,7 @@ namespace TypeSunny
                 System.Diagnostics.Debug.WriteLine($"[锦标赛] 读取到的输入法: [{inputMethod}], 是否为空: {string.IsNullOrWhiteSpace(inputMethod)}");
                 if (string.IsNullOrWhiteSpace(inputMethod))
                 {
-                    MessageBox.Show("请先在设置中填写赛文输入法名称\n（网络设置 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
                 string sendResult = jbsHelper.SubmitScore(
@@ -2486,7 +2531,7 @@ namespace TypeSunny
                 System.Diagnostics.Debug.WriteLine($"[极速杯] 读取到的输入法: [{inputMethod}], 是否为空: {string.IsNullOrWhiteSpace(inputMethod)}");
                 if (string.IsNullOrWhiteSpace(inputMethod))
                 {
-                    MessageBox.Show("请先在设置中填写赛文输入法名称\n（网络设置 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
                 string sendResult = jiSuCupHelper.SubmitScore(
@@ -2516,7 +2561,7 @@ namespace TypeSunny
                 System.Diagnostics.Debug.WriteLine($"[赛文API] 读取到的输入法: [{inputMethod}], 是否为空: {string.IsNullOrWhiteSpace(inputMethod)}");
                 if (string.IsNullOrWhiteSpace(inputMethod))
                 {
-                    MessageBox.Show("请先在设置中填写赛文输入法名称\n（网络设置 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
@@ -2780,6 +2825,7 @@ namespace TypeSunny
                 bool hasWrong = Config.GetBool("错字重打") && TextInfo.WrongRec.Count > 0;
                 bool hasSlow = Config.GetBool("慢字重打") && TextInfo.SlowRec.Count > 0;
 
+
                 if (hasWrong || hasSlow)
                 {
                     StringBuilder sb = new StringBuilder();
@@ -2808,9 +2854,10 @@ namespace TypeSunny
                     RetypeType retypeType = hasWrong ? RetypeType.wrongRetype : RetypeType.slowRetype;
                     LoadText(sb.ToString(), retypeType, TxtSource.unchange, true, true);
                 }
-                else if (StateManager.txtSource == TxtSource.articlesender)
+                else if (savedTxtSource == TxtSource.articlesender)
                 {
                     // 文来模式：无错字且无慢字，进入下一段
+
                     // 检查是否是手动换段模式
                     bool manualMode = Config.GetString("文来换段模式") == "手动";
 
@@ -2844,12 +2891,18 @@ namespace TypeSunny
                     }
                 }
             }
+            else
+            {
+            }
+
 
             // 记录文章日志（包括重打，但不包括打单器、错字重打、慢字重打）
-            if (StateManager.txtSource != TxtSource.trainer &&
+            System.Diagnostics.Debug.WriteLine($"[StopHelper] 记录日志判断 - savedTxtSource={savedTxtSource}, savedRetypeType={savedRetypeType}");
+            if (savedTxtSource != TxtSource.trainer &&
                 savedRetypeType != RetypeType.wrongRetype &&
                 savedRetypeType != RetypeType.slowRetype)
             {
+                System.Diagnostics.Debug.WriteLine($"[StopHelper] 条件满足，准备记录 - articleName={savedArticleName}");
                 try
                 {
                     // 直接使用保存的值（已经在 StopHelper 开始时根据来源设置好了）
@@ -2884,11 +2937,14 @@ namespace TypeSunny
                     if (savedTxtSource == TxtSource.articlesender)
                     {
                         // 文来文章记录到文来日志
+                        System.Diagnostics.Debug.WriteLine($"[StopHelper] 调用 WenlaiLog.WriteRecord - TotalWords={savedTotalWords}, ArticleMark={savedArticleMark}");
                         WenlaiLog.WriteRecord(record);
+                        System.Diagnostics.Debug.WriteLine($"[StopHelper] WenlaiLog.WriteRecord 调用完成");
                     }
                     else
                     {
                         // 其他文章记录到文章日志
+                        System.Diagnostics.Debug.WriteLine($"[StopHelper] 调用 ArticleLog.WriteRecord - TotalWords={savedTotalWords}");
                         ArticleLog.WriteRecord(record);
                     }
                 }
@@ -2896,6 +2952,9 @@ namespace TypeSunny
                 {
                     System.Diagnostics.Debug.WriteLine($"记录文章日志失败: {ex.Message}");
                 }
+            }}
+            catch (Exception ex)
+            {
             }
 
 
@@ -3354,6 +3413,46 @@ namespace TypeSunny
         private void timerUpdateProgress(object obj)
         {
             Dispatcher.Invoke(DisplayProgress);
+        }
+
+        // 字提定时器（用于赛文5秒限制）
+        private System.Windows.Threading.DispatcherTimer _ziTiTimer;
+
+        // 启动字提定时器
+        private void StartZiTiTimer()
+        {
+            if (_ziTiTimer != null)
+            {
+                _ziTiTimer.Stop();
+                _ziTiTimer = null;
+            }
+
+            // 只有赛文模式才需要定时器
+            if (StateManager.txtSource == TxtSource.raceApi && Config.GetBool("启用字提"))
+            {
+                _ziTiTimer = new System.Windows.Threading.DispatcherTimer();
+                _ziTiTimer.Interval = TimeSpan.FromSeconds(1); // 每秒检查一次
+                _ziTiTimer.Tick += (s, e) =>
+                {
+                    // 检查是否超过5秒没有输入
+                    var timeSinceLastInput = DateTime.Now - StateManager.LastInputTime;
+                    if (timeSinceLastInput.TotalSeconds >= 5)
+                    {
+                        UpdateZiTi();
+                    }
+                };
+                _ziTiTimer.Start();
+            }
+        }
+
+        // 停止字提定时器
+        private void StopZiTiTimer()
+        {
+            if (_ziTiTimer != null)
+            {
+                _ziTiTimer.Stop();
+                _ziTiTimer = null;
+            }
         }
 
         // 判断按键是否是有效的输入按键(字母、数字、符号、空格、退格等)
@@ -3993,6 +4092,10 @@ namespace TypeSunny
 
             StateManager.retypeType = retypeType;
 
+            // 调试：输出LoadText的参数和状态
+            System.Diagnostics.Debug.WriteLine($"[LoadText] source={source}, retypeType={retypeType}, StateManager.txtSource={StateManager.txtSource}");
+            // 同时写入日志文件
+
             //设置段号
             if (retypeType == RetypeType.wrongRetype)
             {
@@ -4078,6 +4181,10 @@ namespace TypeSunny
             {
                 StateManager.typingState = TypingState.ready;
                 StateManager.LastType = false;
+                // 重置最后输入时间（用于赛文字提5秒限制）
+                StateManager.LastInputTime = DateTime.Now;
+                // 启动字提定时器
+                StartZiTiTimer();
 
                 switch (retypeType)
                 {
@@ -4396,6 +4503,17 @@ namespace TypeSunny
                 sw.Start();
                 StateManager.typingState = TypingState.typing;
                 timerProgress = new Timer(timerUpdateProgress, null, 0, 250);
+            }
+
+            // 更新最后输入时间（用于赛文字提5秒限制）
+            if (e.Changes.Count > 0 && e.Changes.First().AddedLength > 0)
+            {
+                StateManager.LastInputTime = DateTime.Now;
+                // 立即更新字提（赛文模式下会隐藏字提，因为还没到5秒）
+                if (StateManager.txtSource == TxtSource.raceApi)
+                {
+                    UpdateZiTi();
+                }
             }
 
             if (StateManager.TextInput || Score.BimeHit > 0)
@@ -5151,6 +5269,12 @@ namespace TypeSunny
         
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            // 确保文来日志队列被清空
+            WenlaiLog.Shutdown();
+
+            // 确保文章日志队列被清空
+            ArticleLog.Shutdown();
+
             // 停止版本检测定时器
             if (_versionCheckTimer != null)
             {
@@ -5164,8 +5288,11 @@ namespace TypeSunny
             CounterLog.Buffer[1] = 0;
             CounterLog.Write();
 
-            // 异步保存当日成绩记录（不阻塞关闭）
-            _ = CounterLog.SaveDailyResultsAsync();
+            // 保存当日成绩记录
+            CounterLog.SaveDailyResults();
+
+            // 确保打单器日志队列被清空
+            CounterLog.Shutdown();
 
             Config.Set("窗口坐标X", this.Left, 0);
             Config.Set("窗口坐标Y", this.Top, 0);
@@ -5671,6 +5798,8 @@ namespace TypeSunny
                         server.UserId = matchedAccount.UserId;
                         server.Username = matchedAccount.Username;
                         server.DisplayName = matchedAccount.DisplayName;
+                        server.Password = matchedAccount.Password;
+                        server.ClientKeyXml = matchedAccount.ClientKeyXml;
                     }
                     else
                     {
@@ -5715,6 +5844,19 @@ namespace TypeSunny
                             Style = menuItemStyle
                         };
                         serverMenu.Items.Add(loginStatusItem);
+
+                        // 添加退出登录菜单项
+                        MenuItem logoutItem = new MenuItem
+                        {
+                            Header = "🚪 退出登录",
+                            Background = menuBg,
+                            Foreground = menuFg,
+                            Tag = $"server_{server.Id}",
+                            Style = menuItemStyle
+                        };
+                        logoutItem.Click += MenuItemRaceServerLogout_Click;
+                        serverMenu.Items.Add(logoutItem);
+
                         serverMenu.Items.Add(CreateStyledSeparator(menuBg));
                     }
 
@@ -5735,15 +5877,22 @@ namespace TypeSunny
                             };
 
                             // 添加赛文信息说明（调整颜色以适应暗色主题）
+                            string countStr = race.CharCount > 0 ? $"{race.CharCount}字" : "";
                             string diffStr = $"难度{race.DifficultyGroup}";
                             string submitStr = race.AllowResubmit ? "可重复" : "每日一次";
+
+                            // 拼接信息：字数 · 难度 · 提交方式
+                            string infoText = "      ";
+                            if (!string.IsNullOrWhiteSpace(countStr))
+                                infoText += $"{countStr} · ";
+                            infoText += $"{diffStr} · {submitStr}";
 
                             // 根据背景色计算合适的灰色文字颜色
                             var infoColor = GetSecondaryTextColor(menuBg);
 
                             MenuItem infoItem = new MenuItem
                             {
-                                Header = $"      {diffStr} · {submitStr}",
+                                Header = infoText,
                                 Background = menuBg,
                                 Foreground = new System.Windows.Media.SolidColorBrush(infoColor),
                                 IsEnabled = false,
@@ -6352,7 +6501,7 @@ namespace TypeSunny
             string inputMethod = Config.GetString("赛文输入法");
             if (string.IsNullOrWhiteSpace(inputMethod))
             {
-                MessageBox.Show("请先在设置中填写赛文输入法名称\n（网络设置 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -6408,7 +6557,7 @@ namespace TypeSunny
             string inputMethod = Config.GetString("赛文输入法");
             if (string.IsNullOrWhiteSpace(inputMethod))
             {
-                MessageBox.Show("请先在设置中填写赛文输入法名称\n（网络设置 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -6497,6 +6646,50 @@ namespace TypeSunny
             raceHelperV2.ShowRegisterDialog(this, serverId);
         }
 
+        // 赛文服务器 - 退出登录
+        private void MenuItemRaceServerLogout_Click(object sender, RoutedEventArgs e)
+        {
+            MenuItem menuItem = sender as MenuItem;
+            if (menuItem == null || menuItem.Tag == null)
+                return;
+
+            string tag = menuItem.Tag.ToString();
+            string serverId = tag.Replace("server_", "");
+
+            var serverManager = new TypeSunny.Net.RaceServerManager();
+            var server = serverManager.GetAllServers().Find(s => s.Id == serverId);
+            if (server == null)
+                return;
+
+            // 确认退出登录
+            var result = MessageBox.Show($"确定要退出服务器「{server.GetDisplayName()}」的登录吗？", "退出登录", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result != MessageBoxResult.Yes)
+                return;
+
+            var accountManager = new TypeSunny.Net.AccountSystemManager();
+
+            // 清除服务器登录信息
+            server.UserId = -1;
+            server.Username = "";
+            server.DisplayName = "";
+            server.Password = "";
+            // 注意：不清除 ClientKeyXml，以便下次登录时可以使用相同的密钥对
+            serverManager.SaveToConfig();
+
+            // 清除所有与该服务器相关的账号（server.Id、server.Name、"赛文"）
+            // 不清除"文来"账号，保持与文来退出逻辑的一致性
+            accountManager.ClearAccount(serverId);
+            accountManager.ClearAccount(server.Name);
+            accountManager.ClearAccount("赛文");
+
+            System.Diagnostics.Debug.WriteLine($"✓ 已清除服务器登录: {server.Name}（ID={serverId}, 名称={server.Name}）");
+
+            // 刷新菜单
+            RefreshRaceMenu();
+
+            System.Diagnostics.Debug.WriteLine($"✓ 已退出服务器登录: {server.Name}");
+        }
+
         // 赛文服务器 - 载文
         private async void MenuItemRaceServerLoadArticle_Click(object sender, RoutedEventArgs e)
         {
@@ -6504,7 +6697,7 @@ namespace TypeSunny
             string inputMethod = Config.GetString("赛文输入法");
             if (string.IsNullOrWhiteSpace(inputMethod))
             {
-                MessageBox.Show("请先在设置中填写赛文输入法名称\n（网络设置 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -6523,28 +6716,36 @@ namespace TypeSunny
 
             string article = await raceHelperV2.LoadDailyArticle(serverId, raceId);
 
-            if (article != null && article.Length > 0 && !article.Contains("失败") && !article.Contains("不存在") && !article.Contains("未登录"))
-            {
-                // 保存当前服务器和赛文ID，用于提交成绩
-                StateManager.CurrentRaceServerId = serverId;
-                StateManager.CurrentRaceId = raceId;
-
-                // 标记今天已载文（用于不可重复提交的赛文）
-                var serverManager = raceHelperV2.GetServerManager();
-                var server = serverManager.GetAllServers().Find(s => s.Id == serverId);
-                if (server != null)
-                {
-                    server.MarkTodaySubmitted(raceId);
-                    // 刷新菜单以更新"今日已完成"状态
-                    RefreshRaceMenu();
-                }
-
-                LoadText(article, RetypeType.first, TxtSource.raceApi);
-            }
-            else
+            // 先检查是否是错误消息（以"载文失败"或"请先登录"开头）
+            if (!string.IsNullOrWhiteSpace(article) && (article.StartsWith("载文失败") || article.StartsWith("请先登录")))
             {
                 MessageBox.Show(article, "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
             }
+
+            // 检查文章内容是否有效
+            if (string.IsNullOrWhiteSpace(article) || article.Length < 10)
+            {
+                MessageBox.Show($"文章内容异常: {article ?? "空"}", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // 文章内容有效，加载到打字区
+            // 保存当前服务器和赛文ID，用于提交成绩
+            StateManager.CurrentRaceServerId = serverId;
+            StateManager.CurrentRaceId = raceId;
+
+            // 标记今天已载文（用于不可重复提交的赛文）
+            var serverManager = raceHelperV2.GetServerManager();
+            var server = serverManager.GetAllServers().Find(s => s.Id == serverId);
+            if (server != null)
+            {
+                server.MarkTodaySubmitted(raceId);
+                // 刷新菜单以更新"今日已完成"状态
+                RefreshRaceMenu();
+            }
+
+            LoadText(article, RetypeType.first, TxtSource.raceApi);
         }
 
         // 赛文服务器 - 排行榜
@@ -6803,6 +7004,14 @@ namespace TypeSunny
         /// </summary>
         private void MenuItemRace_SubmenuClosed(object sender, RoutedEventArgs e)
         {
+            // 检查是否是整个赛文菜单关闭（而不是子菜单关闭）
+            // 通过检查 sender 是否是 MenuItemRace 来判断
+            if (sender != MenuItemRace)
+            {
+                // 只是子菜单关闭，不处理
+                return;
+            }
+
             // 避免重复检查
             if (hasCheckedRaceMenuLogin || isRefreshingRaceMenu)
                 return;

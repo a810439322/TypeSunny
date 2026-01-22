@@ -16,6 +16,7 @@ namespace TypeSunny.ArticleSender
         private int segmentLength;
         private string articleMark;  // 保存文章的mark标记
         private string articleDifficulty;  // 保存文章的难度描述
+        private string articleDifficultyName;  // 保存文章的难度名称（如"简"、"普"、"难"）
         private int bookId;  // 书籍ID
         private int sortNum;  // 当前段号
         private int difficultyId;  // 难度ID，来自custom_difficulty字段
@@ -42,6 +43,7 @@ namespace TypeSunny.ArticleSender
             currentArticle = article;
             articleMark = article.Mark ?? "";  // 保存mark标记
             articleDifficulty = article.Difficulty ?? "";  // 保存难度描述
+            articleDifficultyName = article.DifficultyName ?? "";  // 保存难度名称
             bookId = article.BookId;  // 保存书籍ID
             sortNum = article.SortNum;  // 保存段号
             difficultyId = article.DifficultyId;  // 保存难度ID（来自custom_difficulty）
@@ -205,6 +207,15 @@ namespace TypeSunny.ArticleSender
         public string GetCurrentDifficulty()
         {
             return articleDifficulty;
+        }
+
+        /// <summary>
+        /// 获取当前文章的难度名称（来自文来接口的custom_difficulty字段查询）
+        /// </summary>
+        /// <returns>难度名称，如 "简"、"普"、"难"</returns>
+        public string GetCurrentDifficultyName()
+        {
+            return articleDifficultyName;
         }
 
         /// <summary>

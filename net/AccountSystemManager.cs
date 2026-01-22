@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace TypeSunny.Net
 {
@@ -108,6 +110,15 @@ namespace TypeSunny.Net
         }
 
         /// <summary>
+        /// 重新从配置文件加载账号信息（用于多窗口同步）
+        /// </summary>
+        public void Reload()
+        {
+            LoadFromConfig();
+            System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] 重新加载配置，当前账号数量: {accounts.Count}");
+        }
+
+        /// <summary>
         /// 保存账号信息到配置文件
         /// </summary>
         private void SaveToConfig()
@@ -170,12 +181,16 @@ namespace TypeSunny.Net
                 return;
             }
 
+            // 检查是否是已存在的账号
+            bool isExistingAccount = accounts.ContainsKey(account.ServiceName);
+
             // 如果域名与已有账号相同且当前账号信息为空，则复制已有账号信息
-            if (!skipDomainSharing && !string.IsNullOrWhiteSpace(account.Domain))
+            // 只在账号是新建的情况下才进行域名共享复制（避免退出登录后被自动覆盖）
+            if (!skipDomainSharing && !isExistingAccount && !string.IsNullOrWhiteSpace(account.Domain))
             {
                 string domain = ExtractDomain(account.Domain);
                 var existingAccount = FindAccountByDomain(domain);
-                System.Diagnostics.Debug.WriteLine($"  域名共享检查: domain={domain}, existingAccount={existingAccount?.ServiceName ?? "null"}");
+                System.Diagnostics.Debug.WriteLine($"  域名共享检查: domain={domain}, existingAccount={existingAccount?.ServiceName ?? "null"}, isExistingAccount={isExistingAccount}");
 
                 if (existingAccount != null &&
                     existingAccount.ServiceName != account.ServiceName &&
@@ -370,6 +385,71 @@ namespace TypeSunny.Net
         {
             accounts.Clear();
             SaveToConfig();
+        }
+
+        /// <summary>
+        /// 自动重新登录（使用保存的密码）
+        /// </summary>
+        /// <param name="serviceName">服务名称</param>
+        /// <param name="serverUrl">服务器URL（可选，用于获取账号信息）</param>
+        /// <returns>(success, cookies, clientKeyXml)</returns>
+        public async Task<(bool success, string cookies, string clientKeyXml)> ReloginAsync(string serviceName, string serverUrl = null)
+        {
+            var account = GetAccount(serviceName);
+            if (account == null)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] 重新登录失败：账号不存在 {serviceName}");
+                return (false, "", "");
+            }
+
+            if (string.IsNullOrWhiteSpace(account.Username) || string.IsNullOrWhiteSpace(account.Password))
+            {
+                System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] 重新登录失败：缺少用户名或密码 {serviceName}");
+                return (false, "", "");
+            }
+
+            // 使用账号的 Domain 或传入的 serverUrl
+            string url = serverUrl ?? account.Domain;
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] 重新登录失败：服务器地址为空 {serviceName}");
+                return (false, "", "");
+            }
+
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] 开始自动重新登录: {serviceName}");
+
+                // 创建新的 RaceAPI 实例（使用保存的密钥）
+                var api = new RaceAPI(url, account.ClientKeyXml);
+                await api.InitializeAsync();
+                var result = await api.LoginAsync(account.Username, account.Password);
+
+                if (result.Success)
+                {
+                    // 解析返回的用户信息
+                    JObject data = result.Data;
+                    int userId = data["user"]?["id"]?.ToObject<int>() ?? account.UserId;
+                    string displayName = data["user"]?["username"]?.ToString() ?? account.DisplayName;
+
+                    // 更新账号信息
+                    UpdateLoginInfo(serviceName, account.Username, account.Password,
+                        displayName, userId, api.GetCookiesAsString(), api.GetClientKeyXml());
+
+                    System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] 自动重新登录成功: {serviceName}");
+                    return (true, api.GetCookiesAsString(), api.GetClientKeyXml());
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] 自动重新登录失败: {serviceName} - {result.Message}");
+                    return (false, "", "");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] 自动重新登录异常: {serviceName} - {ex.Message}");
+                return (false, "", "");
+            }
         }
     }
 }

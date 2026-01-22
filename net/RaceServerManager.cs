@@ -15,6 +15,8 @@ namespace TypeSunny.Net
         public int DifficultyGroup { get; set; }
         public bool AllowResubmit { get; set; }
         public bool IsActive { get; set; }
+        public int CharCount { get; set; } = 0;  // 字数限制
+        public bool StrictLength { get; set; } = false;  // 是否严格字数模式
 
         /// <summary>
         /// 格式化显示赛文信息
@@ -26,7 +28,12 @@ namespace TypeSunny.Net
 
             string diffStr = $"难度{DifficultyGroup}";
             string submitStr = AllowResubmit ? "可重复" : "每日一次";
-            return $"{Name} ({diffStr}·{submitStr})";
+            string countStr = CharCount > 0 ? $"{CharCount}字" : "";
+
+            if (!string.IsNullOrWhiteSpace(countStr))
+                return $"{Name} ({countStr}·{diffStr}·{submitStr})";
+            else
+                return $"{Name} ({diffStr}·{submitStr})";
         }
     }
 
@@ -431,7 +438,9 @@ namespace TypeSunny.Net
                             Name = raceData["name"]?.ToString() ?? "",
                             DifficultyGroup = raceData["difficulty_group"]?.ToObject<int>() ?? 1,
                             AllowResubmit = raceData["allow_resubmit"]?.ToObject<bool>() ?? false,
-                            IsActive = true
+                            IsActive = true,
+                            CharCount = raceData["char_count"]?.ToObject<int>() ?? 0,
+                            StrictLength = raceData["strict_length"]?.ToObject<bool>() ?? false
                         });
                     }
 

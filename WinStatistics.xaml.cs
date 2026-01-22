@@ -472,17 +472,17 @@ namespace TypeSunny
             if (selectedTab.Header?.ToString() == "文来统计")
             {
                 var range = GetSelectedWenlaiRange();
-                LoadWenlaiStatistics(range);
+                _ = LoadWenlaiStatistics(range);
             }
             else if (selectedTab.Header?.ToString() == "本地文章统计")
             {
                 var range = GetSelectedLocalRange();
-                LoadLocalStatistics(range);
+                _ = LoadLocalStatistics(range);
             }
             else if (selectedTab.Header?.ToString() == "打单器统计")
             {
                 var range = GetSelectedTrainerRange();
-                LoadTrainerStatistics(range);
+                _ = LoadTrainerStatistics(range);
             }
         }
 
@@ -495,29 +495,15 @@ namespace TypeSunny
 
         #region 文来统计
 
-        private async void LoadWenlaiStatistics(StatsRange range, DateTime? customStart = null, DateTime? customEnd = null)
+        private async System.Threading.Tasks.Task LoadWenlaiStatistics(StatsRange range, DateTime? customStart = null, DateTime? customEnd = null)
         {
             try
             {
                 if (txtStatus != null)
                     txtStatus.Text = "加载中...";
 
-                DateTime startDate, endDate;
-                if (range == StatsRange.Custom && customStart.HasValue && customEnd.HasValue)
-                {
-                    startDate = customStart.Value.Date;
-                    endDate = customEnd.Value.Date.AddDays(1).AddTicks(-1);
-                }
-                else
-                {
-                    GetDateRange(range, out startDate, out endDate);
-                }
-
-                // 从文来日志读取日期范围内的记录
-                var records = await Task.Run(() => WenlaiLog.ReadRecordsInRange(startDate, endDate));
-
-                // 计算统计数据
-                var stats = CalculateWenlaiStats(records);
+                // 直接读取预计算的统计数据（无需时间范围筛选，显示全部累计数据）
+                var stats = await Task.Run(() => WenlaiLog.ReadStatistics());
 
                 // 绑定到 DataGrid - 只有在有数据时才绑定
                 if (dgWenlaiStats != null)
@@ -544,40 +530,6 @@ namespace TypeSunny
             }
         }
 
-        private List<WenlaiStatisticsItem> CalculateWenlaiStats(List<ArticleLog.ArticleRecord> records)
-        {
-            if (records.Count == 0)
-                return new List<WenlaiStatisticsItem>();
-
-            // 按难度名称分组（空难度名称归为"未分类"）
-            var grouped = records
-                .GroupBy(r => string.IsNullOrWhiteSpace(r.DifficultyName) ? "未分类" : r.DifficultyName)
-                .Select(g =>
-                {
-                    int totalWords = g.Sum(r => r.TotalWords);
-
-                    return new WenlaiStatisticsItem
-                    {
-                        DifficultyName = g.Key,
-                        Count = g.Count(),
-                        AvgSpeed = g.Sum(r => r.Speed * r.TotalWords) / totalWords,
-                        AvgHitRate = g.Sum(r => r.HitRate * r.TotalWords) / totalWords,
-                        AvgAccuracy = g.Sum(r => r.Accuracy * r.TotalWords) / totalWords,
-                        AvgKPW = g.Sum(r => r.KPW * r.TotalWords) / totalWords,
-                        AvgCorrection = g.Sum(r => r.Correction),
-                        TotalBacks = g.Sum(r => r.Backs),
-                        AvgCiRatio = g.Sum(r => r.CiRatio * r.TotalWords) / totalWords,
-                        MaxSpeed = g.Max(r => r.Speed),
-                        MinSpeed = g.Min(r => r.Speed),
-                        TotalWords = totalWords
-                    };
-                })
-                .OrderBy(s => s.DifficultyName)
-                .ToList();
-
-            return grouped;
-        }
-
         private void WenlaiRadioButton_CheckedChanged(object sender, RoutedEventArgs e)
         {
             // 显示/隐藏自定义日期选择
@@ -590,7 +542,7 @@ namespace TypeSunny
             if (rbWenlaiCustom == null || rbWenlaiCustom.IsChecked != true)
             {
                 StatsRange range = GetSelectedWenlaiRange();
-                LoadWenlaiStatistics(range);
+                _ = LoadWenlaiStatistics(range);
             }
         }
 
@@ -603,44 +555,26 @@ namespace TypeSunny
             return StatsRange.Today;
         }
 
-        private void BtnWenlaiQuery_Click(object sender, RoutedEventArgs e)
+        private async void BtnWenlaiQuery_Click(object sender, RoutedEventArgs e)
         {
-            if (dpWenlaiStart.SelectedDate.HasValue && dpWenlaiEnd.SelectedDate.HasValue)
-            {
-                LoadWenlaiStatistics(StatsRange.Custom, dpWenlaiStart.SelectedDate.Value, dpWenlaiEnd.SelectedDate.Value);
-            }
+            // 新的统计方式使用预计算的全部累计数据，不再支持自定义日期范围
+            // 直接加载所有统计数据
+            await LoadWenlaiStatistics(StatsRange.Today);
         }
 
         #endregion
 
         #region 本地文章统计
 
-        private async void LoadLocalStatistics(StatsRange range)
+        private async System.Threading.Tasks.Task LoadLocalStatistics(StatsRange range)
         {
             try
             {
                 if (txtStatus != null)
                     txtStatus.Text = "加载中...";
 
-                DateTime startDate, endDate;
-                GetDateRange(range, out startDate, out endDate);
-
-                // 读取日期范围内的所有记录
-                var records = await Task.Run(() => ArticleLog.ReadRecordsInRange(startDate, endDate));
-
-                // 筛选本地文章（无 ArticleMark 且不是特殊来源）
-                var localRecords = records.Where(r =>
-                    string.IsNullOrWhiteSpace(r.ArticleMark) &&
-                    !r.ArticleName.Contains("文来") &&
-                    !r.ArticleName.Contains("剪切板载文") &&
-                    !r.ArticleName.Contains("QQ群载文") &&
-                    !r.ArticleName.Contains("长生载文") &&
-                    !r.ArticleName.Contains("锦标赛") &&
-                    !r.ArticleName.Contains("极速杯") &&
-                    !r.ArticleName.Contains("赛文API")).ToList();
-
-                // 计算统计数据
-                var stats = CalculateLocalStats(localRecords);
+                // 直接读取预计算的统计数据（无需时间范围筛选，显示全部累计数据）
+                var stats = await Task.Run(() => ArticleLog.ReadStatistics());
 
                 // 绑定到 DataGrid - 只有在有数据时才绑定
                 if (dgLocalStats != null)
@@ -666,37 +600,6 @@ namespace TypeSunny
             }
         }
 
-        private List<LocalArticleStatisticsItem> CalculateLocalStats(List<ArticleLog.ArticleRecord> records)
-        {
-            if (records.Count == 0)
-                return new List<LocalArticleStatisticsItem>();
-
-            var grouped = records
-                .GroupBy(r => !string.IsNullOrWhiteSpace(r.ArticleName) ? r.ArticleName : "未命名文章")
-                .Select(g =>
-                {
-                    int totalWords = g.Sum(r => r.TotalWords);
-
-                    return new LocalArticleStatisticsItem
-                    {
-                        BookName = g.Key,
-                        Count = g.Count(),
-                        AvgSpeed = g.Sum(r => r.Speed * r.TotalWords) / totalWords,
-                        AvgHitRate = g.Sum(r => r.HitRate * r.TotalWords) / totalWords,
-                        AvgAccuracy = g.Sum(r => r.Accuracy * r.TotalWords) / totalWords,
-                        AvgKPW = g.Sum(r => r.KPW * r.TotalWords) / totalWords,
-                        AvgCorrection = g.Sum(r => r.Correction),
-                        TotalBacks = g.Sum(r => r.Backs),
-                        AvgCiRatio = g.Sum(r => r.CiRatio * r.TotalWords) / totalWords,
-                        TotalWords = totalWords
-                    };
-                })
-                .OrderByDescending(s => s.Count)
-                .ToList();
-
-            return grouped;
-        }
-
         private void LocalRadioButton_CheckedChanged(object sender, RoutedEventArgs e)
         {
             // 防止初始化时触发
@@ -713,7 +616,7 @@ namespace TypeSunny
             if (rbLocalCustom == null || rbLocalCustom.IsChecked != true)
             {
                 StatsRange range = GetSelectedLocalRange();
-                LoadLocalStatistics(range);
+                _ = LoadLocalStatistics(range);
             }
         }
 
@@ -726,72 +629,43 @@ namespace TypeSunny
             return StatsRange.Today;
         }
 
-        private void BtnLocalQuery_Click(object sender, RoutedEventArgs e)
+        private async void BtnLocalQuery_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                if (dpLocalStart.SelectedDate.HasValue && dpLocalEnd.SelectedDate.HasValue)
-                {
-                    DateTime startDate = dpLocalStart.SelectedDate.Value.Date;
-                    DateTime endDate = dpLocalEnd.SelectedDate.Value.Date.AddDays(1).AddTicks(-1);
-
-                    var records = Task.Run(() => ArticleLog.ReadRecordsInRange(startDate, endDate)).Result;
-
-                    // 筛选本地文章
-                    var localRecords = records.Where(r =>
-                        string.IsNullOrWhiteSpace(r.ArticleMark) &&
-                        !r.ArticleName.Contains("剪切板载文") &&
-                        !r.ArticleName.Contains("QQ群载文") &&
-                        !r.ArticleName.Contains("长生载文") &&
-                        !r.ArticleName.Contains("锦标赛") &&
-                        !r.ArticleName.Contains("极速杯") &&
-                        !r.ArticleName.Contains("赛文API")).ToList();
-
-                    var stats = CalculateLocalStats(localRecords);
-
-                    // 绑定到 DataGrid - 只有在有数据时才绑定
-                    if (dgLocalStats != null)
-                    {
-                        if (stats != null && stats.Count > 0)
-                        {
-                            dgLocalStats.ItemsSource = stats;
-                        }
-                        else
-                        {
-                            dgLocalStats.ItemsSource = null;
-                        }
-                    }
-
-                    if (txtStatus != null)
-                        txtStatus.Text = stats != null && stats.Count > 0 ? $"共 {stats.Count} 本书，{stats.Sum(s => s.Count)} 条记录" : "暂无数据";
-                }
-            }
-            catch (Exception ex)
-            {
-                if (txtStatus != null)
-                    txtStatus.Text = "查询失败";
-            }
+            // 新的统计方式使用预计算的全部累计数据，不再支持自定义日期范围
+            // 直接加载所有统计数据
+            await LoadLocalStatistics(StatsRange.Today);
         }
 
         #endregion
 
         #region 打单器统计
 
-        private async void LoadTrainerStatistics(StatsRange range)
+        private async System.Threading.Tasks.Task LoadTrainerStatistics(StatsRange range)
         {
             try
             {
                 if (txtStatus != null)
                     txtStatus.Text = "加载中...";
 
-                DateTime startDate, endDate;
-                GetDateRange(range, out startDate, out endDate);
+                // 直接读取预计算的统计数据（无需时间范围筛选，显示全部累计数据）
+                var localStats = await Task.Run(() => TrainerLog.ReadStatistics());
 
-                // 读取练单日志
-                var records = await Task.Run(() => TrainerLog.ReadRecordsInRange(startDate, endDate));
-
-                // 计算统计数据
-                var stats = CalculateTrainerStats(records);
+                // 转换为 TrainerStatisticsItem 格式
+                var stats = localStats.Select(s => new TrainerStatisticsItem
+                {
+                    Title = s.BookName,
+                    GroupCount = s.Count,
+                    AvgSpeed = s.AvgSpeed,
+                    AvgHitRate = s.AvgHitRate,
+                    AvgAccuracy = s.AvgAccuracy,
+                    AvgKPW = s.AvgKPW,
+                    AvgCorrection = s.AvgCorrection,
+                    TotalBacks = s.TotalBacks,
+                    AvgCiRatio = s.AvgCiRatio,
+                    BestSpeed = s.MaxSpeed,
+                    TotalWords = s.TotalWords,
+                    TotalInputWords = s.TotalWords  // 简化处理
+                }).OrderByDescending(s => s.GroupCount).ToList();
 
                 // 绑定到 DataGrid - 只有在有数据时才绑定
                 if (dgTrainerStats != null)
@@ -817,40 +691,6 @@ namespace TypeSunny
             }
         }
 
-        private List<TrainerStatisticsItem> CalculateTrainerStats(List<ArticleLog.ArticleRecord> records)
-        {
-            if (records.Count == 0)
-                return new List<TrainerStatisticsItem>();
-
-            var grouped = records
-                .GroupBy(r => r.ArticleName)
-                .Select(g =>
-                {
-                    int totalWords = g.Sum(r => r.TotalWords);
-                    int totalInputWords = g.Sum(r => r.InputWords);
-
-                    return new TrainerStatisticsItem
-                    {
-                        Title = g.Key,
-                        GroupCount = g.Count(),
-                        AvgSpeed = g.Sum(r => r.Speed * r.TotalWords) / totalWords,
-                        AvgHitRate = g.Sum(r => r.HitRate * r.TotalWords) / totalWords,
-                        AvgAccuracy = g.Sum(r => r.Accuracy * r.TotalWords) / totalWords,
-                        AvgKPW = g.Sum(r => r.KPW * r.TotalWords) / totalWords,
-                        AvgCorrection = g.Sum(r => r.Correction),
-                        TotalBacks = g.Sum(r => r.Backs),
-                        AvgCiRatio = g.Sum(r => r.CiRatio * r.TotalWords) / totalWords,
-                        BestSpeed = g.Max(r => r.Speed),
-                        TotalWords = totalWords,
-                        TotalInputWords = totalInputWords
-                    };
-                })
-                .OrderByDescending(s => s.GroupCount)
-                .ToList();
-
-            return grouped;
-        }
-
         private void TrainerRadioButton_CheckedChanged(object sender, RoutedEventArgs e)
         {
             // 防止初始化时触发
@@ -867,7 +707,7 @@ namespace TypeSunny
             if (rbTrainerCustom == null || rbTrainerCustom.IsChecked != true)
             {
                 StatsRange range = GetSelectedTrainerRange();
-                LoadTrainerStatistics(range);
+                _ = LoadTrainerStatistics(range);
             }
         }
 
@@ -880,33 +720,11 @@ namespace TypeSunny
             return StatsRange.Today;
         }
 
-        private void BtnTrainerQuery_Click(object sender, RoutedEventArgs e)
+        private async void BtnTrainerQuery_Click(object sender, RoutedEventArgs e)
         {
-            if (dpTrainerStart.SelectedDate.HasValue && dpTrainerEnd.SelectedDate.HasValue)
-            {
-                DateTime startDate = dpTrainerStart.SelectedDate.Value.Date;
-                DateTime endDate = dpTrainerEnd.SelectedDate.Value.Date.AddDays(1).AddTicks(-1);
-
-                var records = Task.Run(() => TrainerLog.ReadRecordsInRange(startDate, endDate)).Result;
-
-                var stats = CalculateTrainerStats(records);
-
-                // 绑定到 DataGrid - 只有在有数据时才绑定
-                if (dgTrainerStats != null)
-                {
-                    if (stats != null && stats.Count > 0)
-                    {
-                        dgTrainerStats.ItemsSource = stats;
-                    }
-                    else
-                    {
-                        dgTrainerStats.ItemsSource = null;
-                    }
-                }
-
-                if (txtStatus != null)
-                    txtStatus.Text = stats != null && stats.Count > 0 ? $"共 {stats.Count} 个练习项" : "暂无数据";
-            }
+            // 新的统计方式使用预计算的全部累计数据，不再支持自定义日期范围
+            // 直接加载所有统计数据
+            await LoadTrainerStatistics(StatsRange.Today);
         }
 
         #endregion
@@ -954,41 +772,7 @@ namespace TypeSunny
 
     #region 统计数据类
 
-    /// <summary>
-    /// 文来统计项
-    /// </summary>
-    public class WenlaiStatisticsItem
-    {
-        public string DifficultyName { get; set; }  // 难度名称（从文来API接口获取）
-        public int Count { get; set; }              // 次数
-        public double AvgSpeed { get; set; }        // 均速（字/分）
-        public double AvgHitRate { get; set; }      // 均击（键/秒）
-        public double AvgAccuracy { get; set; }     // 键准（%）
-        public double AvgKPW { get; set; }          // 码长
-        public double AvgCorrection { get; set; }   // 回改
-        public int TotalBacks { get; set; }         // 总退格
-        public double AvgCiRatio { get; set; }      // 打词率（%）
-        public double MaxSpeed { get; set; }        // 最高速
-        public double MinSpeed { get; set; }        // 最低速
-        public int TotalWords { get; set; }         // 总字数
-    }
-
-    /// <summary>
-    /// 本地文章统计项
-    /// </summary>
-    public class LocalArticleStatisticsItem
-    {
-        public string BookName { get; set; }        // 书名
-        public int Count { get; set; }              // 次数
-        public double AvgSpeed { get; set; }        // 均速（字/分）
-        public double AvgHitRate { get; set; }      // 均击（键/秒）
-        public double AvgAccuracy { get; set; }     // 键准（%）
-        public double AvgKPW { get; set; }          // 码长
-        public double AvgCorrection { get; set; }   // 回改
-        public int TotalBacks { get; set; }         // 总退格
-        public double AvgCiRatio { get; set; }      // 打词率（%）
-        public int TotalWords { get; set; }         // 总字数
-    }
+    // WenlaiStatisticsItem 和 LocalArticleStatisticsItem 已移至 ArticleLog.cs 中定义
 
     /// <summary>
     /// 打单器统计项

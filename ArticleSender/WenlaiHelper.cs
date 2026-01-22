@@ -17,6 +17,7 @@ namespace TypeSunny.ArticleSender
         private RaceAPI raceAPI;
         private AccountSystemManager accountManager;
         private const string SERVICE_NAME = "文来";
+        private int currentUserId = -1;
 
         /// <summary>
         /// 比较两个URL的域名是否相同（协议+主机+端口）
@@ -38,9 +39,19 @@ namespace TypeSunny.ArticleSender
             }
         }
 
+        private Action<bool> loginStatusChangedCallback;
+
         public WenlaiHelper()
         {
             accountManager = new AccountSystemManager();
+        }
+
+        /// <summary>
+        /// 设置登录状态变化回调
+        /// </summary>
+        public void SetLoginStatusChangedCallback(Action<bool> callback)
+        {
+            loginStatusChangedCallback = callback;
         }
 
         /// <summary>
@@ -77,6 +88,24 @@ namespace TypeSunny.ArticleSender
             {
                 raceAPI = new RaceAPI(serverUrl, account.ClientKeyXml);
 
+                // 设置密钥不匹配时的自动重新登录回调
+                raceAPI.OnKeyMismatchCallback = async () =>
+                {
+                    System.Diagnostics.Debug.WriteLine($"[文来] 密钥不匹配，触发自动重新登录");
+                    var (success, cookies, keyXml) = await accountManager.ReloginAsync(SERVICE_NAME, serverUrl);
+                    if (success)
+                    {
+                        // 更新本地状态
+                        currentUserId = accountManager.GetAccount(SERVICE_NAME)?.UserId ?? currentUserId;
+                        // 触发UI更新
+                        System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            loginStatusChangedCallback?.Invoke(true);
+                        }));
+                    }
+                    return (cookies, keyXml);
+                };
+
                 // 加载Cookie
                 if (!string.IsNullOrWhiteSpace(account.Cookies))
                 {
@@ -94,6 +123,18 @@ namespace TypeSunny.ArticleSender
                     {
                         raceAPI.LoadCookiesFromString(latestAccount.Cookies);
                         System.Diagnostics.Debug.WriteLine($"✓ 文来重新加载Cookie（域名匹配，可能是赛文登录后同步的）");
+
+                        // ✅ 如果账号信息有更新（比如用户ID变了），触发回调通知UI更新
+                        if (latestAccount.UserId != currentUserId && latestAccount.UserId > 0)
+                        {
+                            currentUserId = latestAccount.UserId;
+                            // 在UI线程更新登录状态显示
+                            System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                loginStatusChangedCallback?.Invoke(true);
+                                System.Diagnostics.Debug.WriteLine($"✓ 文来登录状态已更新: {latestAccount.DisplayName}");
+                            }));
+                        }
                     }
                     else
                     {
@@ -112,7 +153,17 @@ namespace TypeSunny.ArticleSender
         /// </summary>
         public bool IsLoggedIn()
         {
+            // ✅ 重新加载配置以获取最新的登录状态（支持多窗口同步）
+            accountManager.Reload();
             var account = accountManager.GetAccount(SERVICE_NAME);
+
+            // ✅ 同步更新 currentUserId（如果账号信息有变化）
+            if (account != null && account.UserId > 0 && account.UserId != currentUserId)
+            {
+                currentUserId = account.UserId;
+                System.Diagnostics.Debug.WriteLine($"✓ WenlaiHelper.IsLoggedIn() 同步更新 currentUserId: {currentUserId}");
+            }
+
             bool result = account != null && !string.IsNullOrWhiteSpace(account.Username);
             System.Diagnostics.Debug.WriteLine($"WenlaiHelper.IsLoggedIn(): account={account != null}, Username={account?.Username}, Result={result}");
             return result;
@@ -124,7 +175,18 @@ namespace TypeSunny.ArticleSender
         public string GetCurrentUsername()
         {
             System.Diagnostics.Debug.WriteLine($"WenlaiHelper.GetCurrentUsername() 被调用");
+
+            // ✅ 重新加载配置以获取最新的登录状态（支持多窗口同步）
+            accountManager.Reload();
             var account = accountManager.GetAccount(SERVICE_NAME);
+
+            // ✅ 同步更新 currentUserId（如果账号信息有变化）
+            if (account != null && account.UserId > 0 && account.UserId != currentUserId)
+            {
+                currentUserId = account.UserId;
+                System.Diagnostics.Debug.WriteLine($"✓ WenlaiHelper.GetCurrentUsername() 同步更新 currentUserId: {currentUserId}");
+            }
+
             System.Diagnostics.Debug.WriteLine($"  GetAccount 返回: account={(account != null ? "不为null" : "null")}");
             if (account != null)
             {

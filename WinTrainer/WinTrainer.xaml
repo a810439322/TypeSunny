@@ -12,7 +12,9 @@
         Icon="/Resources/ico/sunny.ico"
         xml:lang="zh-CN"
         Width="500" Height="450"
-        SizeToContent="Manual">
+        SizeToContent="Manual"
+        Closing="Window_Closing"
+        IsVisibleChanged="Window_IsVisibleChanged">
 
     <Window.Resources>
         <RoutedUICommand x:Key="Chongda" Text="Retype"/>
@@ -209,7 +211,7 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Orientation="Horizontal">
                             <ComboBox x:Name="FileSelector" Width="110" Height="26" SelectionChanged="FileSelector_SelectionChanged"/>
-                            <Button Content="全体乱序" Margin="8,0,0,0" Click="RandAllClick" Style="{StaticResource ModernButtonStyle}"/>
+                            <Button x:Name="BtnRandAll" Content="全体乱序" Margin="8,0,0,0" Click="RandAllClick" Style="{StaticResource ModernButtonStyle}"/>
                             <Button Content="恢复顺序" Margin="5,0,0,0" Click="norm_Click" Style="{StaticResource ModernButtonStyle}"/>
                             <Button Content="发文" Margin="5,0,0,0" Click="BtnSend_Click" Style="{StaticResource ModernButtonStyle}"/>
                         </StackPanel>
@@ -232,6 +234,7 @@
                     <TextBlock x:Name="stattxt" Grid.Column="0" Text="status" Foreground="{DynamicResource TextForeground}" VerticalAlignment="Center" Margin="0,0,8,0" FontSize="11"/>
                     <TextBlock x:Name="stattxt2" Grid.Column="1" Text="" Foreground="{DynamicResource AccentColor}" VerticalAlignment="Center" Margin="0,0,8,0" FontSize="11"/>
                     <Slider x:Name="sld" Grid.Column="2" HorizontalAlignment="Stretch" VerticalAlignment="Center" ValueChanged="Slider_ValueChanged" IsSnapToTickEnabled="True" Opacity="0.6"/>
+                    <Button x:Name="BtnReset" Grid.Column="2" Content="重置统计" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="15,4" Click="BtnReset_Click" Style="{StaticResource ModernButtonStyle}" Visibility="Collapsed"/>
                 </Grid>
 
                 <!-- 设置面板 -->
