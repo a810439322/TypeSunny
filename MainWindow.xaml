@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:TypeSunny"
         xmlns:sys="clr-namespace:System;assembly=mscorlib"
         mc:Ignorable="d"
-      Title="晴跟打" Name="MainWin" xml:lang="zh-CN" Loaded="Window_Loaded" Closing="Window_Closing" Deactivated="MainWin_Deactivated" WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResize" BorderThickness="0" Background="Transparent" Padding="0" PreviewMouseWheel="Window_PreviewMouseWheel">
+      Title="晴跟打" Name="MainWin" Icon="/Resources/ico/sunny.ico" xml:lang="zh-CN" Loaded="Window_Loaded" Closing="Window_Closing" Deactivated="MainWin_Deactivated" WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResize" BorderThickness="0" Background="Transparent" Padding="0" PreviewMouseWheel="Window_PreviewMouseWheel">
 
     <Window.Resources>
 
@@ -110,7 +110,7 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
                 <Image x:Name="TitleBarIcon" Source="/Resources/ico/sunny.ico" Width="20" Height="20" Margin="0,0,8,0"/>
                 <TextBlock x:Name="TbkTitle" Text="晴跟打" VerticalAlignment="Center" FontSize="14" Foreground="{Binding ElementName=MainWin, Path=Foreground}"/>
-                <TextBlock x:Name="TbkTitleDifficulty" Text="" VerticalAlignment="Center" FontSize="12" Foreground="{Binding ElementName=MainWin, Path=Foreground}" Margin="8,0,0,0" Opacity="0.7"/>
+                <TextBlock x:Name="TbkTitleDifficulty" Text="" Visibility="Collapsed"/>
                 <Button x:Name="BtnUpdateReminder"
                         Content=""
                         VerticalAlignment="Center"

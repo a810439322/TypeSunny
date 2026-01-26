@@ -27,6 +27,8 @@ namespace TypeSunny.ArticleSender
         private static HttpClient httpClient;
         private static CookieContainer cookieContainer;
         private static List<DifficultyInfo> cachedDifficulties = null;
+        private static DateTime cacheTime = DateTime.MinValue;
+        private static readonly TimeSpan CACHE_EXPIRATION = TimeSpan.FromMinutes(5);  // 缓存5分钟过期
 
         static ArticleFetcher()
         {
@@ -149,6 +151,14 @@ namespace TypeSunny.ArticleSender
         /// <returns>难度列表</returns>
         public static List<DifficultyInfo> GetDifficulties()
         {
+            // 检查缓存是否过期（5分钟）
+            if (cachedDifficulties != null && DateTime.Now - cacheTime > CACHE_EXPIRATION)
+            {
+                System.Diagnostics.Debug.WriteLine($"[难度] 缓存已过期（{(DateTime.Now - cacheTime).TotalMinutes:F1}分钟），清除缓存");
+                cachedDifficulties = null;
+                cacheTime = DateTime.MinValue;
+            }
+
             // 只返回缓存，避免同步阻塞
             if (cachedDifficulties != null)
             {
@@ -238,8 +248,10 @@ namespace TypeSunny.ArticleSender
                 // 按ID排序
                 difficulties.Sort((a, b) => a.Id.CompareTo(b.Id));
 
-                // 缓存结果
+                // 缓存结果并记录时间
                 cachedDifficulties = difficulties;
+                cacheTime = DateTime.Now;
+                System.Diagnostics.Debug.WriteLine($"[难度] 已更新难度缓存，共{difficulties.Count}个难度");
                 return difficulties;
             }
             catch (Exception)
@@ -254,6 +266,7 @@ namespace TypeSunny.ArticleSender
         public static void ClearDifficultyCache()
         {
             cachedDifficulties = null;
+            cacheTime = DateTime.MinValue;
         }
 
         /// <summary>
@@ -745,6 +758,50 @@ namespace TypeSunny.ArticleSender
         {
             // 同步版本直接调用异步版本（阻塞等待）
             return FetchArticleAsync(difficulty, maxLength).GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// 从接口计算文本难度
+        /// </summary>
+        /// <param name="content">待计算难度的文本内容</param>
+        /// <returns>格式化的难度文本，如 "普(1.23)"，失败返回空字符串</returns>
+        public static async Task<string> CalcDifficultyFromApiAsync(string content)
+        {
+            try
+            {
+                string apiUrl = Config.GetString("文来接口地址");
+                if (string.IsNullOrWhiteSpace(apiUrl))
+                    return "";
+
+                apiUrl = apiUrl.TrimEnd('/');
+                string url = apiUrl + "/api/calc_difficulty";
+
+                var payload = new { content = content };
+                string jsonPayload = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+
+                var httpContent = new StringContent(jsonPayload, System.Text.Encoding.UTF8, "application/json");
+
+                // 2秒超时
+                using (var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(2)))
+                {
+                    var response = await httpClient.PostAsync(url, httpContent, cts.Token);
+                    string responseBody = await response.Content.ReadAsStringAsync();
+
+                    var result = JObject.Parse(responseBody);
+                    if (result["success"]?.ToObject<bool>() == true)
+                    {
+                        var data = result["data"];
+                        double score = data["score"]?.ToObject<double>() ?? 0;
+                        string level = data["level"]?.ToString() ?? "";
+                        return $"{level}({score:F2})";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[难度] 接口调用失败: {ex.Message}");
+            }
+            return "";
         }
     }
 

@@ -1134,9 +1134,9 @@ namespace TypeSunny
         }
 
 
-        private void InternalHotkeyF2(object sender, ExecutedRoutedEventArgs e)
+        private async void InternalHotkeyF2(object sender, ExecutedRoutedEventArgs e)
         {
-            SendArticle();
+            await SendArticle();
         }
 
 
@@ -2226,11 +2226,9 @@ namespace TypeSunny
         }
 
 
-        void DelayStop(object obj)
+        async void DelayStop(object obj)
         {
-
-            Dispatcher.Invoke(StopHelper);
-
+            await StopHelper();
         }
 
 
@@ -2341,7 +2339,7 @@ namespace TypeSunny
             }
         }
 
-        void StopHelper()
+        async Task StopHelper()
         {
             // 保存文章日志数据（在 Score 被重置之前）
             TxtSource savedTxtSource = StateManager.txtSource;  // 保存文本来源
@@ -2655,7 +2653,7 @@ namespace TypeSunny
 
                 if (!Config.GetBool("错字重打")) //没有错字，或没有错字重打
                 {
-                    NextAndSendArticle(result);
+                    await NextAndSendArticle(result);
                 }
                 else //(Config.GetBool("错字重打"))
                 {
@@ -2663,7 +2661,7 @@ namespace TypeSunny
                     {
                         if ( TextInfo.WrongRec.Count == 0) //错字重打后无错字
                         {
-                            NextAndSendArticle();
+                            await NextAndSendArticle();
                         }
                        else
                         { }
@@ -2672,7 +2670,7 @@ namespace TypeSunny
                     {
                         if (TextInfo.WrongRec.Count == 0) //一次打对无错字
                         {
-                            NextAndSendArticle(result);
+                            await NextAndSendArticle(result);
                         }
                         else //有错字，只发成绩
                         {
@@ -3088,16 +3086,16 @@ namespace TypeSunny
 
         const int KEY_DELAY = 25;
 
-        public void NextAndSendArticle( string lastResult)
+        public async Task NextAndSendArticle(string lastResult)
         {
             NextArticle();
 
 
             if (winArticle != null)
             {
-                winArticle.UpdateDisplay();
+                await winArticle.UpdateDisplay();
             }
-            string content2 = ArticleManager.GetFormattedCurrentSection();
+            string content2 = await ArticleManager.GetFormattedCurrentSection();
             LoadText(content2, RetypeType.first, TxtSource.book, false, true);
 
             // 发送成绩和下一段内容
@@ -3126,16 +3124,16 @@ namespace TypeSunny
             }
         }
 
-        public void NextAndSendArticle()
+        public async Task NextAndSendArticle()
         {
             NextArticle();
 
 
             if (winArticle != null)
             {
-                winArticle.UpdateDisplay();
+                await winArticle.UpdateDisplay();
             }
-            string content2 = ArticleManager.GetFormattedCurrentSection();
+            string content2 = await ArticleManager.GetFormattedCurrentSection();
             LoadText(content2, RetypeType.first, TxtSource.book, false, true);
 
             SendContentToClipboardOrQQ(content2);
@@ -3299,13 +3297,13 @@ namespace TypeSunny
 
 
 
-        public void SendArticle()
+        public async Task SendArticle()
         {
-            string content = ArticleManager.GetFormattedCurrentSection();
+            string content = await ArticleManager.GetFormattedCurrentSection();
 
             if (winArticle != null)
             {
-                winArticle.UpdateDisplay();
+                await winArticle.UpdateDisplay();
             }
 
             if (content == null || content.Length == 0)
@@ -4034,7 +4032,7 @@ namespace TypeSunny
 
         /// <summary>
         /// 更新窗口标题，显示字数进度和难度
-        /// 注意：难度单独显示在 TbkTitleDifficulty 控件中，不在标题文本中重复显示
+        /// 难度显示在标题后面，格式：晴跟打 普(1.84) 0/200 三国演义[15/2974段]
         /// </summary>
         private void UpdateWindowTitle(int typedWords, int totalWords)
         {
@@ -4045,22 +4043,37 @@ namespace TypeSunny
                 return;
             }
 
+            // 从 currentDifficultyText 中提取难度部分（去掉"难度："前缀）
+            string difficulty = "";
+            if (!string.IsNullOrEmpty(currentDifficultyText))
+            {
+                // 尝试去掉"难度："或"难度:"前缀
+                if (currentDifficultyText.StartsWith("难度："))
+                {
+                    difficulty = " " + currentDifficultyText.Substring(3); // " 水(0.23)"
+                }
+                else if (currentDifficultyText.StartsWith("难度:"))
+                {
+                    difficulty = " " + currentDifficultyText.Substring(3); // " 水(0.23)"
+                }
+            }
+
             if (StateManager.txtSource == TxtSource.articlesender && articleCache.HasArticle())
             {
                 string progress = articleCache.GetProgress();
                 string title = articleCache.GetCurrentTitle();
-                TbkTitle.Text = $"晴跟打 - {title} [{progress}]     {typedWords}/{totalWords}";
+                TbkTitle.Text = $"晴跟打{difficulty} {typedWords}/{totalWords} {title}[{progress}]";
             }
             else if (StateManager.txtSource == TxtSource.book && ArticleManager.Title != "")
             {
                 // 文章管理模式，显示书名和段落进度
                 string bookTitle = ArticleManager.Title.Replace(".txt", "").Replace(".Txt", "").Replace(".TXT", "").Replace(".epub", "").Replace(".Epub", "").Replace(".EPUB", "");
                 string progress = $"{ArticleManager.Index}/{ArticleManager.MaxIndex}段";
-                TbkTitle.Text = $"晴跟打 - {bookTitle} [{progress}]     {typedWords}/{totalWords}";
+                TbkTitle.Text = $"晴跟打{difficulty} {typedWords}/{totalWords} {bookTitle}[{progress}]";
             }
             else
             {
-                TbkTitle.Text = $"晴跟打     {typedWords}/{totalWords}";
+                TbkTitle.Text = $"晴跟打{difficulty} {typedWords}/{totalWords}";
             }
         }
 
@@ -4236,24 +4249,44 @@ namespace TypeSunny
                     if (!string.IsNullOrEmpty(wenlaiDifficulty))
                     {
                         // 使用文来返回的难度
-                        currentDifficultyText = "难度:" + wenlaiDifficulty;
+                        currentDifficultyText = "难度：" + wenlaiDifficulty;
+                        UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
                     }
                     else
                     {
-                        // 文来没有返回难度，本地计算
+                        // 文来没有返回难度，调用接口获取（异步）
                         string currentText = String.Join("", TextInfo.Words);
-                        double difficulty = difficultyDict.Calc(currentText);
-                        currentDifficultyText = "难度:" + difficultyDict.DiffText(difficulty);
+                        Task.Run(async () =>
+                        {
+                            string difficulty = await ArticleFetcher.CalcDifficultyFromApiAsync(currentText);
+                            Dispatcher.Invoke(() =>
+                            {
+                                if (!string.IsNullOrEmpty(difficulty))
+                                {
+                                    currentDifficultyText = "难度：" + difficulty;
+                                    UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
+                                }
+                            });
+                        });
                     }
                 }
                 else
                 {
-                    // 其他模式，本地计算难度
+                    // 其他模式，调用接口获取难度（异步）
                     string currentText = String.Join("", TextInfo.Words);
-                    double difficulty = difficultyDict.Calc(currentText);
-                    currentDifficultyText = "难度:" + difficultyDict.DiffText(difficulty);
+                    Task.Run(async () =>
+                    {
+                        string difficulty = await ArticleFetcher.CalcDifficultyFromApiAsync(currentText);
+                        Dispatcher.Invoke(() =>
+                        {
+                            if (!string.IsNullOrEmpty(difficulty))
+                            {
+                                currentDifficultyText = "难度：" + difficulty;
+                                UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
+                            }
+                        });
+                    });
                 }
-                TbkTitleDifficulty.Text = currentDifficultyText;
 
                 // 更新字提显示
                 UpdateZiTi();
@@ -5149,7 +5182,7 @@ namespace TypeSunny
             LoadRandomArticle(true);
         }
 
-        private void InternalHotkeyCtrlP(object sender, ExecutedRoutedEventArgs e)
+        private async void InternalHotkeyCtrlP(object sender, ExecutedRoutedEventArgs e)
         {
             // 判断当前是文来模式还是本地文章模式
             if (StateManager.txtSource == TxtSource.articlesender && articleCache.HasArticle())
@@ -5161,11 +5194,11 @@ namespace TypeSunny
             {
                 // 本地文章模式：翻到下一页
                 ArticleManager.NextSection();
-                SendArticle();
+                await SendArticle();
             }
         }
 
-        private void InternalHotkeyCtrlO(object sender, ExecutedRoutedEventArgs e)
+        private async void InternalHotkeyCtrlO(object sender, ExecutedRoutedEventArgs e)
         {
             // 判断当前是文来模式还是本地文章模式
             if (StateManager.txtSource == TxtSource.articlesender && articleCache.HasArticle())
@@ -5177,7 +5210,7 @@ namespace TypeSunny
             {
                 // 本地文章模式：翻到上一页
                 ArticleManager.PrevSection();
-                SendArticle();
+                await SendArticle();
             }
         }
 
@@ -6235,81 +6268,114 @@ namespace TypeSunny
 
                 if (isLoggedIn && !string.IsNullOrWhiteSpace(username))
                 {
-                    // 异步加载难度列表
-                    System.Threading.Tasks.Task.Run(async () =>
+                    // 同步加载难度列表（使用缓存，没有缓存则返回空列表）
+                    var difficulties = ArticleFetcher.GetDifficulties();
+
+                    // 获取当前选中的难度
+                    string currentDifficulty = Config.GetString("文来难度") ?? "";
+                    int currentDifficultyId = 0;
+                    if (!string.IsNullOrEmpty(currentDifficulty))
                     {
-                        var difficulties = await ArticleFetcher.GetDifficultiesAsync();
-                        if (difficulties != null && difficulties.Count > 0)
+                        int.TryParse(currentDifficulty, out currentDifficultyId);
+                    }
+
+                    // 查找当前难度名称
+                    string currentDifficultyName = "随机";
+                    if (currentDifficultyId > 0 && difficulties.Count > 0)
+                    {
+                        var currentDiff = difficulties.FirstOrDefault(d => d.Id == currentDifficultyId);
+                        if (currentDiff != null)
                         {
-                            // 回到UI线程更新菜单
-                            this.Dispatcher.BeginInvoke(new Action(() =>
-                            {
-                                // 获取当前选中的难度
-                                string currentDifficulty = Config.GetString("文来难度") ?? "";
-                                int currentDifficultyId = 0;
-                                if (!string.IsNullOrEmpty(currentDifficulty))
-                                {
-                                    int.TryParse(currentDifficulty, out currentDifficultyId);
-                                }
-
-                                // 查找当前难度名称
-                                string currentDifficultyName = "随机";
-                                if (currentDifficultyId > 0)
-                                {
-                                    var currentDiff = difficulties.FirstOrDefault(d => d.Id == currentDifficultyId);
-                                    if (currentDiff != null)
-                                    {
-                                        currentDifficultyName = currentDiff.Name;
-                                    }
-                                }
-
-                                // 更新主菜单项，显示当前选择的难度
-                                difficultyItem.Header = $"🎯 选择难度 [{currentDifficultyName}]";
-
-                                // 计算总段数
-                                int totalCount = difficulties.Sum(d => d.Count);
-
-                                // 添加"随机"选项
-                                MenuItem randomItem = new MenuItem
-                                {
-                                    Header = $"随机 ({totalCount}段){(currentDifficultyId == 0 ? " ✓" : "")}",
-                                    Background = menuBg,
-                                    Foreground = menuFg,
-                                    Style = menuItemStyle,
-                                    Tag = 0
-                                };
-                                randomItem.Click += (s, args) =>
-                                {
-                                    Config.Set("文来难度", "");
-                                    InitializeWenlaiMenu();  // 刷新菜单以更新标记
-                                };
-                                difficultyItem.Items.Add(randomItem);
-
-                                // 按难度ID排序并添加
-                                foreach (var diff in difficulties.OrderBy(d => d.Id))
-                                {
-                                    // 跳过文章数为0的难度
-                                    if (diff.Count == 0)
-                                        continue;
-
-                                    MenuItem diffMenuItem = new MenuItem
-                                    {
-                                        Header = $"{diff.Name} ({diff.Count}段){(diff.Id == currentDifficultyId ? " ✓" : "")}",
-                                        Background = menuBg,
-                                        Foreground = menuFg,
-                                        Style = menuItemStyle,
-                                        Tag = diff.Id
-                                    };
-                                    diffMenuItem.Click += (s, args) =>
-                                    {
-                                        Config.Set("文来难度", diff.Id.ToString());
-                                        InitializeWenlaiMenu();  // 刷新菜单以更新标记
-                                    };
-                                    difficultyItem.Items.Add(diffMenuItem);
-                                }
-                            }));
+                            currentDifficultyName = currentDiff.Name;
                         }
-                    });
+                    }
+
+                    // 更新主菜单项，显示当前选择的难度
+                    difficultyItem.Header = $"🎯 选择难度 [{currentDifficultyName}]";
+
+                    // 如果有难度列表，添加子菜单
+                    if (difficulties.Count > 0)
+                    {
+                        // 添加"刷新"选项（最顶部）
+                        MenuItem refreshItem = new MenuItem
+                        {
+                            Header = "🔄 刷新难度列表",
+                            Background = menuBg,
+                            Foreground = menuFg,
+                            Style = menuItemStyle
+                        };
+                        refreshItem.Click += async (s, args) =>
+                        {
+                            ArticleFetcher.ClearDifficultyCache();
+                            // 异步加载最新数据
+                            var newDifficulties = await ArticleFetcher.GetDifficultiesAsync();
+                            if (newDifficulties != null && newDifficulties.Count > 0)
+                            {
+                                InitializeWenlaiMenu();  // 重新加载菜单
+                            }
+                        };
+                        difficultyItem.Items.Add(refreshItem);
+
+                        // 添加分隔线
+                        difficultyItem.Items.Add(CreateStyledSeparator(menuBg));
+
+                        // 计算总段数
+                        int totalCount = difficulties.Sum(d => d.Count);
+
+                        // 添加"随机"选项
+                        MenuItem randomItem = new MenuItem
+                        {
+                            Header = $"随机 ({totalCount}段){(currentDifficultyId == 0 ? " ✓" : "")}",
+                            Background = menuBg,
+                            Foreground = menuFg,
+                            Style = menuItemStyle,
+                            Tag = 0
+                        };
+                        randomItem.Click += (s, args) =>
+                        {
+                            Config.Set("文来难度", "");
+                            InitializeWenlaiMenu();
+                        };
+                        difficultyItem.Items.Add(randomItem);
+
+                        // 按难度ID排序并添加
+                        foreach (var diff in difficulties.OrderBy(d => d.Id))
+                        {
+                            // 跳过文章数为0的难度
+                            if (diff.Count == 0)
+                                continue;
+
+                            MenuItem diffMenuItem = new MenuItem
+                            {
+                                Header = $"{diff.Name} ({diff.Count}段){(diff.Id == currentDifficultyId ? " ✓" : "")}",
+                                Background = menuBg,
+                                Foreground = menuFg,
+                                Style = menuItemStyle,
+                                Tag = diff.Id
+                            };
+                            diffMenuItem.Click += (s, args) =>
+                            {
+                                Config.Set("文来难度", diff.Id.ToString());
+                                InitializeWenlaiMenu();
+                            };
+                            difficultyItem.Items.Add(diffMenuItem);
+                        }
+                    }
+                    else
+                    {
+                        // 没有缓存数据，后台异步加载
+                        System.Threading.Tasks.Task.Run(async () =>
+                        {
+                            var loadedDifficulties = await ArticleFetcher.GetDifficultiesAsync();
+                            if (loadedDifficulties != null && loadedDifficulties.Count > 0)
+                            {
+                                this.Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    InitializeWenlaiMenu();  // 重新加载菜单
+                                }));
+                            }
+                        });
+                    }
                 }
                 MenuWenlai.Items.Add(difficultyItem);
 
@@ -7110,9 +7176,9 @@ namespace TypeSunny
             winArticle.Show();
         }
 
-        private void BtnSendArticle_Click(object sender, RoutedEventArgs e)
+        private async void BtnSendArticle_Click(object sender, RoutedEventArgs e)
         {
-            SendArticle();
+            await SendArticle();
         }
 
         private async void BtnRandomArticle_Click(object sender, RoutedEventArgs e)
@@ -7148,8 +7214,7 @@ namespace TypeSunny
 
                 if (difficulty <= 0)
                     difficulty = 2; // 默认普通难度
-                if (maxLength <= 0)
-                    maxLength = 500; // 默认500字
+                // 字数未填写时不传参数（保持0或负数）
 
                 // 异步获取文章
                 ArticleData article = await ArticleFetcher.FetchArticleAsync(difficulty, maxLength);
@@ -7495,22 +7560,22 @@ namespace TypeSunny
         }
         */
 
-        private void BtnPrev_Click(object sender, RoutedEventArgs e)
+        private async void BtnPrev_Click(object sender, RoutedEventArgs e)
         {
             ArticleManager.PrevSection();
-            LoadText(ArticleManager.GetFormattedCurrentSection(), RetypeType.first, TxtSource.book, false);
+            LoadText(await ArticleManager.GetFormattedCurrentSection(), RetypeType.first, TxtSource.book, false);
             TbxInput.Focus();
 
         }
 
-        private void BtnNext_Click(object sender, RoutedEventArgs e)
+        private async void BtnNext_Click(object sender, RoutedEventArgs e)
         {
 
             ArticleManager.NextSection();
 
 
 
-            LoadText(ArticleManager.GetFormattedCurrentSection(), RetypeType.first, TxtSource.book, false);
+            LoadText(await ArticleManager.GetFormattedCurrentSection(), RetypeType.first, TxtSource.book, false);
             TbxInput.Focus();
 
         }

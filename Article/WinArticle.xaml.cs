@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -47,9 +48,9 @@ namespace TypeSunny
 
         }
 
-        public void UpdateDisplay()
+        public async Task UpdateDisplay()
         {
-            
+
             SldProgress.Maximum = ArticleManager.MaxIndex;
 
             if (SldProgress.Maximum != ArticleManager.MaxIndex)
@@ -59,27 +60,27 @@ namespace TypeSunny
                 SldProgress.Value = ArticleManager.Index;
 
 
-            TbTest.Text = ArticleManager.GetFormattedCurrentSection();
+            TbTest.Text = await ArticleManager.GetFormattedCurrentSection();
         }
 
-        private void Window_Loaded(object sender, RoutedEventArgs e)
+        private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
             InitTxtFiles();
             InitControls();
-            UpdateDisplay();
+            await UpdateDisplay();
             AllLoaded = true;
 
 
         }
 
-       
-        private void Reload()
+
+        private async void Reload()
         {
             ArticleManager.ReadFiles();
             AllLoaded = false;
             InitTxtFiles();
             InitControls();
-            UpdateDisplay();
+            await UpdateDisplay();
             AllLoaded = true;
 
         }

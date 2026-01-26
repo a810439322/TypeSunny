@@ -139,6 +139,23 @@ namespace TypeSunny.ArticleSender
             if (segments.Count == 0)
                 return "0/0";
 
+            // 如果是文来文章（有 mark 字段），使用 mark 中的段数信息
+            if (!string.IsNullOrEmpty(articleMark))
+            {
+                // mark 格式："1-34112" 表示第1段/共34112段
+                // 直接返回 sortNum/总段数
+                if (articleMark.Contains("-"))
+                {
+                    string[] parts = articleMark.Split('-');
+                    if (parts.Length == 2)
+                    {
+                        // parts[0] 是当前段号，parts[1] 是总段数
+                        return $"{sortNum}/{parts[1]}";
+                    }
+                }
+            }
+
+            // 非文来文章，使用本地分段
             return $"{currentSegmentIndex + 1}/{segments.Count}";
         }
 

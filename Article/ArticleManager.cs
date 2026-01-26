@@ -4,9 +4,11 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows.Data;
 using System.Text.RegularExpressions;
 using TypeSunny.Difficulty;
+using TypeSunny.ArticleSender;
 
 // EPUB支持（需要VersOne.Epub包）
 // 如果编译错误，请在Visual Studio中还原NuGet包
@@ -242,23 +244,25 @@ namespace TypeSunny
             UpdateWindows();
         }
 
-        public static string GetFormattedCurrentSection()
+        public static async Task<string> GetFormattedCurrentSection()
         {
             if (!Articles.ContainsKey(Title))
                 return "";
 
             string txt = GetCurrentSection();
 
-            // 计算难度
-            double difficulty = difficultyDict.Calc(txt);
-            string difficultyText = difficultyDict.DiffText(difficulty);
+            // 调用接口计算难度
+            string difficultyText = await ArticleFetcher.CalcDifficultyFromApiAsync(txt);
 
             StringBuilder sb = new StringBuilder();
 
             // 第一行：[难度xx]标题 [字数xx]
-            sb.Append("[难度");
-            sb.Append(difficultyText);
-            sb.Append("]");
+            if (!string.IsNullOrEmpty(difficultyText))
+            {
+                sb.Append("[难度");
+                sb.Append(difficultyText);
+                sb.Append("]");
+            }
             sb.Append(Title.Replace(".txt","").Replace(".Txt", "").Replace(".TXT", "").Replace(".epub","").Replace(".Epub", "").Replace(".EPUB", ""));
             sb.Append(" [字数");
             sb.Append(new StringInfo(txt).LengthInTextElements);
@@ -296,7 +300,7 @@ namespace TypeSunny
 
         }
 
-        public static string GetFormattedNextSection()
+        public static async Task<string> GetFormattedNextSection()
         {
 
             string rt;
@@ -304,10 +308,10 @@ namespace TypeSunny
                 return "";
             else
             {
-                rt = GetFormattedCurrentSection();
+                rt = await GetFormattedCurrentSection();
                 NextSection();
             }
-            return rt; 
+            return rt;
         }
 
         public static int Index
