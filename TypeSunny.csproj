@@ -296,17 +296,25 @@
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Import Project="packages\Interop.UIAutomationClient.10.19041.0\build\Interop.UIAutomationClient.targets" Condition="Exists('packages\Interop.UIAutomationClient.10.19041.0\build\Interop.UIAutomationClient.targets')" />
 
-  <!-- 编译前自动从 version.txt 读取版本号并更新 GeneratedVersion.cs -->
+  <!-- 编译前自动更新 version.txt 为今天日期，然后读取并更新 GeneratedVersion.cs -->
   <Target Name="UpdateVersionFromTxt" BeforeTargets="CoreCompile">
+    <!-- 自动生成今天的日期作为版本号 (YYMMDD 格式) -->
+    <PropertyGroup>
+      <TodayVersion>$([System.DateTime]::Now.ToString('yyMMdd'))</TodayVersion>
+    </PropertyGroup>
+    <!-- 写入 version.txt -->
+    <WriteLinesToFile File="Version\version.txt" Lines="$(TodayVersion)" Overwrite="true" />
+    <!-- 从 version.txt 读取版本号 -->
     <ReadLinesFromFile File="Version\version.txt">
       <Output TaskParameter="Lines" ItemName="VersionLines" />
     </ReadLinesFromFile>
     <PropertyGroup>
       <VersionNumber>@(VersionLines->'%(Identity)')</VersionNumber>
     </PropertyGroup>
+    <!-- 生成 GeneratedVersion.cs -->
     <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="true" Lines="// &lt;auto-generated/&gt;" />
     <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="// 此文件由 MSBuild 在编译时自动生成，请勿手动修改" />
-    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="// 来源：Version/version.txt" />
+    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="// 来源：编译时自动生成的日期 (YYMMDD)" />
     <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="" />
     <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="namespace TypeSunny" />
     <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="{" />

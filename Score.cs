@@ -35,6 +35,7 @@ static internal class Score
         public static TimeSpan Time;
         private static Random RND = new Random();
         public static int Paragraph = 0;
+        public static string ParagraphString = "";  // 原始段号字符串（如 "tdu"）
         public static string ArticleMark = "";  // 文来接口的mark字段（如 "1-34112"）
         public static int Correction = 0;
         public static double LRRatio = 0;
@@ -255,10 +256,16 @@ static internal class Score
             bool isBime =  BimeHit > 0;
             bool notBime = !isBime;
 
-            // 如果有ArticleMark，直接显示 "段2-12743" 格式；否则使用 "第X段"
+            // 如果有ArticleMark，直接显示 "段2-12743" 格式
+            // 否则如果有ParagraphString，显示 "第tdu段"
+            // 最后才使用数字 Paragraph 显示 "第0段"
             if (!string.IsNullOrEmpty(ArticleMark))
             {
                 report.Add("段" + ArticleMark);
+            }
+            else if (!string.IsNullOrEmpty(ParagraphString))
+            {
+                report.Add("第" + ParagraphString + "段");
             }
             else
             {

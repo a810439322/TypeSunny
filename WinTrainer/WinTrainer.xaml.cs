@@ -30,6 +30,12 @@ namespace TypeSunny
 
     public partial class WinTrainer : Window
     {
+        // 调试日志 - 写入文件
+        private static void WriteDebugLog(string message)
+        {
+            // 日志已禁用
+        }
+
         // 自定义最大化状态
         private bool _isCustomMaximized = false;
         private Rect _restoreBounds = new Rect();
@@ -517,57 +523,202 @@ namespace TypeSunny
 
         public void GetNextRound(double accuracy, double hitrate, int wrong, string result)
         {
-            // 每次打完都累加实际字数（包括重打）
+            WriteDebugLog("[GetNextRound] 方法开始");
+
+            // 累加统计数据（在主线程）
             roundActualWords += Score.InputWordCount;
-            // 每次打完都累加正确字数和用时（不管是否通过，包括打到一半就重打的情况）
             roundCorrectWords += (int)(Score.InputWordCount * accuracy);
             roundTotalTime += Score.Time.TotalSeconds;
 
+            WriteDebugLog($"[GetNextRound] 条件判断 accuracy={accuracy:F4}, hitRate={hitrate:F2}, TargetHit={TargetHit:F2}, wrong={wrong}");
+
             if (accuracy >= 0.9999 && hitrate >= TargetHit && wrong == 0)
             {
-                // 累加本组统计数据
+                WriteDebugLog("[GetNextRound] 进入 if 分支");
+
+                // 通过条件：累加本组统计
                 roundTotalWords += Score.TotalWordCount;
                 roundCompletedGroups++;
                 roundHitRates.Add(hitrate);
                 roundSpeeds.Add(Score.Speed);
+                WriteDebugLog("[GetNextRound] 累加统计完成");
+
                 bool wasNotStarted = !hasStartedPractice;
-                hasStartedPractice = true;  // 标记已开始练习
+                hasStartedPractice = true;
+                WriteDebugLog($"[GetNextRound] wasNotStarted={wasNotStarted}");
 
-                string t =  "击键 " + hitrate.ToString("F2") + "/" + TargetHit.ToString("0.00");
-                AutoNextGroup();  // 这里会保存统计数据（段号已更新）
-                string matchText = GetMatchText();
-                MainWindow.Current.LoadText(matchText, RetypeType.first, TxtSource.trainer, false, true);
+                // 直接在主线程执行（参考 F3 模式）
+                string fileName = "未知";
+                WriteDebugLog("[GetNextRound] 准备获取 fileName");
 
-                MainWindow.Current.UpdateTopStatusText(t);
-
-                QQHelper.SendQQMessageD(MainWindow.Current.QQGroupName, result, matchText, 150, MainWindow.Current);
-
-                // 更新本轮统计显示
-                UpdateRoundStatus();
-
-                // 更新UI状态
-                if (wasNotStarted)
+                try
                 {
-                    UpdateUIState();
+                    // 使用 WinTrainer 自己的 Dispatcher（不是 MainWindow 的）
+                    var dispatcher = this.Dispatcher;
+                    if (dispatcher.CheckAccess())
+                    {
+                        // 已经在 UI 线程，直接访问
+                        WriteDebugLog("[GetNextRound] 已在 UI 线程，直接访问 FileSelector");
+                        int selectedIndex = FileSelector.SelectedIndex;
+                        WriteDebugLog($"[GetNextRound] selectedIndex={selectedIndex}");
+                        if (selectedIndex >= 0 && selectedIndex < FileSelector.Items.Count)
+                        {
+                            var item = FileSelector.Items[selectedIndex];
+                            if (item != null)
+                            {
+                                fileName = item.ToString();
+                                WriteDebugLog($"[GetNextRound] fileName from Items={fileName}");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 不在 UI 线程，使用 Dispatcher.Invoke
+                        WriteDebugLog("[GetNextRound] 不在 UI 线程，使用 Dispatcher.Invoke");
+                        dispatcher.Invoke(new Action(() =>
+                        {
+                            WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部");
+                            int selectedIndex = FileSelector.SelectedIndex;
+                            WriteDebugLog($"[GetNextRound] selectedIndex={selectedIndex}");
+                            if (selectedIndex >= 0 && selectedIndex < FileSelector.Items.Count)
+                            {
+                                var item = FileSelector.Items[selectedIndex];
+                                if (item != null)
+                                {
+                                    fileName = item.ToString();
+                                    WriteDebugLog($"[GetNextRound] fileName from Items={fileName}");
+                                }
+                            }
+                        }));
+                    }
                 }
+                catch (Exception ex)
+                {
+                    WriteDebugLog($"[GetNextRound] 获取 fileName 异常: {ex.Message}");
+                }
+
+                WriteDebugLog($"[GetNextRound] 最终 fileName={fileName}");
+
+                string t = "击键 " + hitrate.ToString("F2") + "/" + TargetHit.ToString("0.00");
+
+                // 将所有 UI 操作放到 Dispatcher.Invoke 中在 UI 线程执行
+                WriteDebugLog("[GetNextRound] 调用 Dispatcher.Invoke 执行 UI 操作");
+                this.Dispatcher.Invoke(new Action(() =>
+                {
+                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 AutoNextGroup");
+                    AutoNextGroup();
+                    WriteDebugLog("[GetNextRound] AutoNextGroup 完成");
+
+                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 GetMatchText");
+                    string matchText = GetMatchText(fileName);
+                    WriteDebugLog($"[GetNextRound] GetMatchText 完成，长度={matchText?.Length ?? 0}");
+
+                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 LoadText");
+                    MainWindow.Current.LoadText(matchText, RetypeType.first, TxtSource.trainer, false, true);
+                    WriteDebugLog("[GetNextRound] LoadText 完成");
+
+                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 UpdateTopStatusText");
+                    MainWindow.Current.UpdateTopStatusText(t);
+
+                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 SendQQMessageD");
+                    QQHelper.SendQQMessageD(MainWindow.Current.QQGroupName, result, matchText, 150, MainWindow.Current);
+                    WriteDebugLog("[GetNextRound] SendQQMessageD 完成");
+
+                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 UpdateRoundStatus");
+                    UpdateRoundStatus();
+
+                    if (wasNotStarted)
+                    {
+                        WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 UpdateUIState");
+                        UpdateUIState();
+                    }
+
+                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 所有操作完成");
+                }));
+                WriteDebugLog("[GetNextRound] Dispatcher.Invoke 调用完成");
+
+                WriteDebugLog("[GetNextRound] if 分支完成");
             }
             else
             {
-                string t = "击键 " + hitrate.ToString("F2") + "/" + TargetHit.ToString("0.00");
-                RetypeGroup(true,true);
-                MainWindow.Current.LoadText(GetMatchText(), RetypeType.retype, TxtSource.trainer, false, true);
-                MainWindow.Current.UpdateTopStatusText(t);
-                if (hitrate >= MaxHitRate && accuracy >= 0.9999 && wrong == 0)
+                WriteDebugLog("[GetNextRound] 进入 else 分支");
+
+                // 未通过条件：重打
+                string fileName = "未知";
+
+                try
                 {
-                    QQHelper.SendQQMessage(MainWindow.Current.QQGroupName, result, 150, MainWindow.Current);
-                    MaxHitRate = hitrate;
-
+                    // 使用 WinTrainer 自己的 Dispatcher
+                    var dispatcher = this.Dispatcher;
+                    if (dispatcher.CheckAccess())
+                    {
+                        // 已经在 UI 线程，直接访问
+                        int selectedIndex = FileSelector.SelectedIndex;
+                        if (selectedIndex >= 0 && selectedIndex < FileSelector.Items.Count)
+                        {
+                            var item = FileSelector.Items[selectedIndex];
+                            if (item != null)
+                                fileName = item.ToString();
+                        }
+                    }
+                    else
+                    {
+                        // 不在 UI 线程，使用 Dispatcher.Invoke
+                        dispatcher.Invoke(new Action(() =>
+                        {
+                            int selectedIndex = FileSelector.SelectedIndex;
+                            if (selectedIndex >= 0 && selectedIndex < FileSelector.Items.Count)
+                            {
+                                var item = FileSelector.Items[selectedIndex];
+                                if (item != null)
+                                    fileName = item.ToString();
+                            }
+                        }));
+                    }
                 }
-         //       if (RetypeCount + 1 >= 5 && (RetypeCount + 1) % 5 == 0) //重打5次发一下成绩
+                catch (Exception ex)
+                {
+                    WriteDebugLog($"[GetNextRound] else 分支异常: {ex.Message}");
+                }
 
-                // 练习失败后也要保存统计数据（但段号不变）
-                SaveCurrentArticleStatistics();
+                WriteDebugLog($"[GetNextRound] fileName={fileName}");
+
+                string t = "击键 " + hitrate.ToString("F2") + "/" + TargetHit.ToString("0.00");
+
+                // 将所有 UI 操作放到 Dispatcher.Invoke 中在 UI 线程执行
+                WriteDebugLog("[GetNextRound] else 分支，调用 Dispatcher.Invoke 执行 UI 操作");
+                this.Dispatcher.Invoke(new Action(() =>
+                {
+                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 RetypeGroup");
+                    RetypeGroup(true, true);
+                    WriteDebugLog("[GetNextRound] RetypeGroup 完成");
+
+                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 GetMatchText");
+                    string retypeText = GetMatchText(fileName);
+                    WriteDebugLog($"[GetNextRound] GetMatchText 完成，长度={retypeText?.Length ?? 0}");
+
+                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 LoadText");
+                    MainWindow.Current.LoadText(retypeText, RetypeType.retype, TxtSource.trainer, false, true);
+                    WriteDebugLog("[GetNextRound] LoadText 完成");
+
+                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 UpdateTopStatusText");
+                    MainWindow.Current.UpdateTopStatusText(t);
+
+                    if (hitrate >= MaxHitRate && accuracy >= 0.9999 && wrong == 0)
+                    {
+                        WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，发送QQ消息");
+                        QQHelper.SendQQMessage(MainWindow.Current.QQGroupName, result, 150, MainWindow.Current);
+                        MaxHitRate = hitrate;
+                    }
+
+                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke else 分支操作完成");
+                }));
+                WriteDebugLog("[GetNextRound] else 分支 Dispatcher.Invoke 调用完成");
+
+                WriteDebugLog("[GetNextRound] else 分支完成");
             }
+
+            WriteDebugLog("[GetNextRound] 方法结束");
         }
 
         /// <summary>
@@ -707,7 +858,7 @@ namespace TypeSunny
             InGroupRand();
             ShowWords();
             LoadText();
-  
+
             WriteCfg();
 
             TargetHit = Convert.ToDouble(cfg["换段击键"]) - Convert.ToDouble(cfg["每轮降击"]) * (RetypeCount);
@@ -736,15 +887,20 @@ namespace TypeSunny
 
         public void AutoNextGroup()
         {
+            WriteDebugLog("[AutoNextGroup] 方法开始");
 
             cfg["上次的段数"] = (Convert.ToInt32(cfg["上次的段数"]) + 1).ToString();
+            WriteDebugLog("[AutoNextGroup] 段号更新完成");
 
             // 段号更新后保存统计数据（确保保存的是最新的段号）
+            WriteDebugLog("[AutoNextGroup] 调用 SaveCurrentArticleStatistics 前");
             SaveCurrentArticleStatistics();
+            WriteDebugLog("[AutoNextGroup] SaveCurrentArticleStatistics 完成");
 
             // 检查是否完成一整轮
             if (Convert.ToInt32(cfg["上次的段数"]) == TotalGroup)
             {
+                WriteDebugLog("[AutoNextGroup] 完成一轮");
                 // 完成一轮，显示统计并记录日志
                 ShowRoundStatistics();
                 RecordRoundLog();
@@ -755,16 +911,19 @@ namespace TypeSunny
                 ResetRoundStatistics();
                 // 清空统计显示
                 UpdateRoundStatus();
+                WriteDebugLog("[AutoNextGroup] 一轮处理完成");
             }
 
+            WriteDebugLog("[AutoNextGroup] 设置 sld.Value 前");
             sld.Value = Convert.ToInt32(cfg["上次的段数"]) + 1;
+            WriteDebugLog("[AutoNextGroup] sld.Value 设置完成");
 
 
+            WriteDebugLog("[AutoNextGroup] 调用 InitGroup 前");
             InitGroup();
+            WriteDebugLog("[AutoNextGroup] InitGroup 完成");
 
-
-
-
+            WriteDebugLog("[AutoNextGroup] 方法结束");
         }
 
         /// <summary>
@@ -878,13 +1037,16 @@ namespace TypeSunny
         }
 
         /// <summary>
-        /// 保存统计数据到文件
+        /// 保存统计数据到文件（异步执行，避免阻塞）
         /// </summary>
         private void SaveStatisticsToFile()
         {
-            try
+            // 使用 Task.Run 在后台线程保存，避免阻塞主线程
+            System.Threading.Tasks.Task.Run(() =>
             {
-                using (StreamWriter writer = new StreamWriter(StatisticsFileName))
+                try
+                {
+                    using (StreamWriter writer = new StreamWriter(StatisticsFileName))
                 {
                     foreach (var kvp in articleStatisticsDict)
                     {
@@ -906,11 +1068,12 @@ namespace TypeSunny
                         writer.WriteLine();
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"保存统计数据失败: {ex.Message}");
-            }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"保存统计数据失败: {ex.Message}");
+                }
+            });
         }
 
         /// <summary>
@@ -1114,10 +1277,17 @@ namespace TypeSunny
             TrainerLog.WriteRecord(record);
         }
         
-        string GetMatchText ()
+        string GetMatchText()
         {
+            // 默认方法：从 UI 控件获取文件名
+            return GetMatchText(FileSelector.SelectedItem.ToString());
+        }
+
+        string GetMatchText(string fileName)
+        {
+            // 重载方法：使用传入的文件名（用于后台线程调用）
             StringBuilder sb = new StringBuilder();
-            string name = FileSelector.SelectedItem.ToString() + " " + "目标" + Convert.ToDouble(cfg["换段击键"]).ToString("F2");
+            string name = fileName + " " + "目标" + Convert.ToDouble(cfg["换段击键"]).ToString("F2");
 
             if (Convert.ToDouble(cfg["每轮降击"]) > 0.000001)
                 name += "-" + Convert.ToDouble(cfg["每轮降击"]).ToString("F2");

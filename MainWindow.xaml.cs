@@ -58,6 +58,17 @@ namespace TypeSunny
         /// </summary>
         private static double DisplayFontSize => Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
 
+        // 线程安全的调试日志锁对象
+        private static readonly object _debugLogLock = new object();
+
+        /// <summary>
+        /// 写入调试日志到文件（线程安全）
+        /// </summary>
+        private static void WriteDebugLog(string message)
+        {
+            // 日志已禁用
+        }
+
 
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -71,6 +82,7 @@ namespace TypeSunny
             public int Right; //最右坐标
             public int Bottom; //最下坐标
         }
+
         enum MouseEventFlag : uint
         {
             Move = 0x0001,
@@ -89,8 +101,10 @@ namespace TypeSunny
 
         [DllImport("User32")]
         public extern static bool GetCursorPos(ref System.Drawing.Point cPoint);
+
         [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")]
         public static extern IntPtr fGetForegroundWindow();
+
         [DllImport("user32.dll")]
         static extern void mouse_event(MouseEventFlag flags, int dx, int dy, uint data, IntPtr extraInfo);
 
@@ -116,6 +130,7 @@ namespace TypeSunny
         // 移除 Windows 11 窗口圆角
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
         private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
         private const int DWMWCP_DONOTROUND = 1;
 
@@ -165,8 +180,8 @@ namespace TypeSunny
             "&",
             "*",
             "”",
-           "’",
-           "'",
+            "’",
+            "'",
             "+",
 
             "—",
@@ -186,7 +201,7 @@ namespace TypeSunny
             "\\",
             "]",
             "/",
-            ";" ,
+            ";",
             "\'",
             ")",
             "!",
@@ -207,7 +222,7 @@ namespace TypeSunny
             "|",
             "",
             "?",
-            ":" ,
+            ":",
             "\"",
             " "
         };
@@ -222,12 +237,17 @@ namespace TypeSunny
             "<",
             "{",
             "“",
-           "‘",
-          
+            "‘",
+
         };
 
 
-        static List<string> AZ = new List<string> { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "'" };
+        static List<string> AZ = new List<string>
+        {
+            "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U",
+            "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p",
+            "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "'"
+        };
 
         private void UpdateDisplay(UpdateLevel updateLevel)
         {
@@ -250,7 +270,8 @@ namespace TypeSunny
             void PageReArrange()
             {
                 // 如果从贪吃蛇模式切换到普通模式，需要触发页面重新渲染（赛文API除外，它强制使用贪吃蛇）
-                if (!Config.GetBool("贪吃蛇模式") && StateManager.txtSource != TxtSource.trainer && StateManager.txtSource != TxtSource.articlesender && StateManager.txtSource != TxtSource.raceApi)
+                if (!Config.GetBool("贪吃蛇模式") && StateManager.txtSource != TxtSource.trainer &&
+                    StateManager.txtSource != TxtSource.articlesender && StateManager.txtSource != TxtSource.raceApi)
                 {
                     // 检测之前是否是贪吃蛇模式（Blocks.Count == Words.Count）
                     if (TextInfo.Blocks.Count == TextInfo.Words.Count && TextInfo.Blocks.Count > 0)
@@ -264,7 +285,8 @@ namespace TypeSunny
                 }
 
                 // 贪吃蛇模式（除打单器外）或 赛文API强制使用贪吃蛇
-                if ((Config.GetBool("贪吃蛇模式") && StateManager.txtSource != TxtSource.trainer) || StateManager.txtSource == TxtSource.raceApi)
+                if ((Config.GetBool("贪吃蛇模式") && StateManager.txtSource != TxtSource.trainer) ||
+                    StateManager.txtSource == TxtSource.raceApi)
                 {
                     TextInfo.PageNum = -1;
                     return;
@@ -291,6 +313,7 @@ namespace TypeSunny
                     if (resultsArea != null)
                         availableHeight -= 5 + resultsArea.ActualHeight;
                 }
+
                 double y = availableHeight * 0.75;
                 double x = (this.ActualWidth - 52);
                 Paginator.ArrangePage(x, y, 40.0, TextInfo.Words.Count);
@@ -320,7 +343,8 @@ namespace TypeSunny
                 UpdateWindowTitle(typedWords, totalWords);
 
                 // 贪吃蛇模式（除打单器外）或 赛文API强制使用贪吃蛇
-                if ((Config.GetBool("贪吃蛇模式") && StateManager.txtSource != TxtSource.trainer) || StateManager.txtSource == TxtSource.raceApi)
+                if ((Config.GetBool("贪吃蛇模式") && StateManager.txtSource != TxtSource.trainer) ||
+                    StateManager.txtSource == TxtSource.raceApi)
                 {
                     SnakeModeUpdate(nextToType);
                     return;
@@ -338,7 +362,8 @@ namespace TypeSunny
                 //     return;
 
                 //  if (newPageNum != TextInfo.PageNum)
-                if (TextInfo.PageNum == -1 || nextToType >= Paginator.Pages[TextInfo.PageNum].BodyEnd || nextToType < Paginator.Pages[TextInfo.PageNum].BodyStart)
+                if (TextInfo.PageNum == -1 || nextToType >= Paginator.Pages[TextInfo.PageNum].BodyEnd ||
+                    nextToType < Paginator.Pages[TextInfo.PageNum].BodyStart)
                 {
 
                     //清空显示
@@ -357,7 +382,7 @@ namespace TypeSunny
 
 
 
-                    var fm = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体"));
+                    var fm = GetCurrentFontFamily(); // new FontFamily(Config.GetString("字体"));
 
 
                     double fs = DisplayFontSize;
@@ -366,7 +391,8 @@ namespace TypeSunny
 
                     ScDisplay.FontFamily = fm;
                     ScDisplay.Foreground = Colors.DisplayForeground;
-                    ScDisplay.FontSize = fs; TbAcc.FontSize = fs / 2.3;
+                    ScDisplay.FontSize = fs;
+                    TbAcc.FontSize = fs / 2.3;
                     TbxInput.FontFamily = fm;
                     if (p.HeadEnd >= 0)
                         TextInfo.PageStartIndex = p.HeadStart;
@@ -421,6 +447,7 @@ namespace TypeSunny
                                 tb.MinWidth = MinWidth;
                                 tb.TextAlignment = TextAlignment.Left;
                             }
+
                             TextInfo.Blocks.Add(tb);
 
                         }
@@ -444,6 +471,7 @@ namespace TypeSunny
                                 tb.MinWidth = MinWidth;
                                 tb.TextAlignment = TextAlignment.Left;
                             }
+
                             tb.TextDecorations = TextDecorations.Underline;
                             TextInfo.Blocks.Add(tb);
 
@@ -468,7 +496,7 @@ namespace TypeSunny
                         for (int i = 1; i < TextInfo.Blocks.Count - 1; i++)
                         {
                             string c2 = TextInfo.Blocks[i].Text;
-                            string c1 = TextInfo.Blocks[i-1].Text;
+                            string c1 = TextInfo.Blocks[i - 1].Text;
                             string c3 = TextInfo.Blocks[i + 1].Text;
 
                             if (AZ.Contains(c2))
@@ -585,6 +613,7 @@ namespace TypeSunny
                                     break;
 
                             }
+
                             TextInfo.BlocksStates[i] = TextInfo.wordStates[TextInfo.PageStartIndex + i];
 
                         }
@@ -605,8 +634,9 @@ namespace TypeSunny
                         TextInfo.Blocks[0].UpdateLayout();
 
                         // 计算当前字符的Y坐标（相对于第一个Block）
-                        double currentPosY = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
-                            + TextInfo.Blocks[NextBlockIndex].ActualHeight / 2;
+                        double currentPosY = TextInfo.Blocks[NextBlockIndex]
+                                                 .TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
+                                             + TextInfo.Blocks[NextBlockIndex].ActualHeight / 2;
 
                         // 使用统一方法计算目标滚动位置（始终居中显示）
                         double targetOffset = CalculateScrollOffset(currentPosY);
@@ -632,8 +662,9 @@ namespace TypeSunny
                             TextInfo.Blocks[0].UpdateLayout();
 
                             // 计算当前字符的Y坐标（相对于第一个Block）
-                            double currentPosY = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
-                                + TextInfo.Blocks[NextBlockIndex].ActualHeight / 2;
+                            double currentPosY = TextInfo.Blocks[NextBlockIndex]
+                                                     .TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
+                                                 + TextInfo.Blocks[NextBlockIndex].ActualHeight / 2;
 
                             // 使用统一方法计算目标滚动位置（始终居中显示）
                             double targetOffset = CalculateScrollOffset(currentPosY);
@@ -642,7 +673,8 @@ namespace TypeSunny
                             SmoothScrollTo(targetOffset, forceScroll: (nextToType == 0));
 
                             // 跟随显示速度
-                            bool showSpeed = Config.GetBool("速度跟随提示") && !Config.GetBool("盲打模式") && !double.IsNaN(Score.GetValidSpeed()) && Score.GetValidSpeed() > 0;
+                            bool showSpeed = Config.GetBool("速度跟随提示") && !Config.GetBool("盲打模式") &&
+                                             !double.IsNaN(Score.GetValidSpeed()) && Score.GetValidSpeed() > 0;
 
                             if (!showSpeed)
                             {
@@ -654,8 +686,12 @@ namespace TypeSunny
                                 if (TbAcc.Visibility == Visibility.Hidden)
                                     TbAcc.Visibility = Visibility.Visible;
 
-                                double AccLeft = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).X + TextInfo.Blocks[NextBlockIndex].ActualWidth / 3;
-                                double AccTop = TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y + TextInfo.Blocks[NextBlockIndex].ActualHeight - ScDisplay.VerticalOffset;
+                                double AccLeft =
+                                    TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0])
+                                        .X + TextInfo.Blocks[NextBlockIndex].ActualWidth / 3;
+                                double AccTop =
+                                    TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0])
+                                        .Y + TextInfo.Blocks[NextBlockIndex].ActualHeight - ScDisplay.VerticalOffset;
                                 Canvas.SetTop(TbAcc, AccTop);
                                 Canvas.SetLeft(TbAcc, AccLeft);
 
@@ -691,7 +727,7 @@ namespace TypeSunny
                 TextInfo.Blocks.Clear(); // 修复BUG：确保Blocks和显示区域同步清空
                 TextBlock tb = new TextBlock();
                 tb.FontSize = DisplayFontSize;
-                tb.FontFamily = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体"));
+                tb.FontFamily = GetCurrentFontFamily(); // new FontFamily(Config.GetString("字体"));
                 tb.Background = BdDisplay.Background;
                 tb.TextWrapping = TextWrapping.Wrap;
                 tb.HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -703,7 +739,8 @@ namespace TypeSunny
 
 
 
-                string t1 = currentMatchText.Replace('”', '\"').Replace('“', '\"').Replace('‘', '\'').Replace('’', '\'');
+                string t1 = currentMatchText.Replace('”', '\"').Replace('“', '\"').Replace('‘', '\'')
+                    .Replace('’', '\'');
                 string t2 = TbxInput.Text.Replace('”', '\"').Replace('“', '\"').Replace('‘', '\'').Replace('’', '\'');
                 List<DiffRes> diffs = DiffTool.Diff(t1, t2);
                 int counter = 0;
@@ -721,7 +758,7 @@ namespace TypeSunny
 
                             r.Text = currentMatchText.Substring(df.OrigIndex - 1, 1);
                             counter--;
-                         //   r.Background = Colors.CorrectBackground;
+                            //   r.Background = Colors.CorrectBackground;
                             break;
                         case DiffType.Add:
 
@@ -904,12 +941,12 @@ namespace TypeSunny
                     tb.Height = height;
 
                     // 引号的特殊处理（保持原逻辑）
-                    if (tb.Text == "\u201c" || tb.Text == "\u2018")  // " 和 '
+                    if (tb.Text == "\u201c" || tb.Text == "\u2018") // " 和 '
                     {
                         tb.MinWidth = MinWidth;
                         tb.TextAlignment = TextAlignment.Right;
                     }
-                    else if (tb.Text == "\u201d" || tb.Text == "\u2019")  // " 和 '
+                    else if (tb.Text == "\u201d" || tb.Text == "\u2019") // " 和 '
                     {
                         tb.MinWidth = MinWidth;
                         tb.TextAlignment = TextAlignment.Left;
@@ -1015,7 +1052,8 @@ namespace TypeSunny
                     try
                     {
                         // 计算当前字符的Y坐标（相对于第一个Block）
-                        double currentPosY = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
+                        double currentPosY =
+                            TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
                             + TextInfo.Blocks[nextToType].ActualHeight / 2;
 
                         // 使用统一方法计算目标滚动位置（始终居中显示）
@@ -1040,7 +1078,8 @@ namespace TypeSunny
         /// </summary>
         private void UpdateSpeedFollowHint(int nextToType)
         {
-            bool showSpeed = Config.GetBool("速度跟随提示") && !double.IsNaN(Score.GetValidSpeed()) && Score.GetValidSpeed() > 0;
+            bool showSpeed = Config.GetBool("速度跟随提示") && !double.IsNaN(Score.GetValidSpeed()) &&
+                             Score.GetValidSpeed() > 0;
 
             if (!showSpeed)
             {
@@ -1052,8 +1091,10 @@ namespace TypeSunny
                 if (TbAcc.Visibility == Visibility.Hidden)
                     TbAcc.Visibility = Visibility.Visible;
 
-                double AccLeft = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).X + TextInfo.Blocks[nextToType].ActualWidth / 3;
-                double AccTop = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y + TextInfo.Blocks[nextToType].ActualHeight - ScDisplay.VerticalOffset;
+                double AccLeft = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).X +
+                                 TextInfo.Blocks[nextToType].ActualWidth / 3;
+                double AccTop = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y +
+                    TextInfo.Blocks[nextToType].ActualHeight - ScDisplay.VerticalOffset;
                 Canvas.SetTop(TbAcc, AccTop);
                 Canvas.SetLeft(TbAcc, AccLeft);
 
@@ -1115,17 +1156,19 @@ namespace TypeSunny
 
             UpdateTypingStat();
 
-            if (StateManager.txtSource == TxtSource.changeSheng ||  StateManager.txtSource == TxtSource.jbs || StateManager.txtSource == TxtSource.jisucup || StateManager.txtSource == TxtSource.raceApi || Config.GetBool("禁止F3重打"))
+            if (StateManager.txtSource == TxtSource.changeSheng || StateManager.txtSource == TxtSource.jbs ||
+                StateManager.txtSource == TxtSource.jisucup || StateManager.txtSource == TxtSource.raceApi ||
+                Config.GetBool("禁止F3重打"))
                 return;
 
 
 
 
- 
+
             LoadText(TextInfo.MatchText, RetypeType.retype, TxtSource.unchange);
-   //         TbkStatusTop.Text = "重打";
+            //         TbkStatusTop.Text = "重打";
             return;
-    
+
 
 
 
@@ -1169,6 +1212,7 @@ namespace TypeSunny
                             if (TextInfo.wordStates[i] == WordStates.RIGHT)
                                 correctCount++;
                         }
+
                         accuracy = (double)correctCount / inputWordCount;
                     }
 
@@ -1249,7 +1293,9 @@ namespace TypeSunny
                     {
                         jiSuCupHelper.SetMenuItems(
                             raceMenuItems.ContainsKey("jisucup_login") ? raceMenuItems["jisucup_login"] : null,
-                            raceMenuItems.ContainsKey("jisucup_loadArticle") ? raceMenuItems["jisucup_loadArticle"] : null
+                            raceMenuItems.ContainsKey("jisucup_loadArticle")
+                                ? raceMenuItems["jisucup_loadArticle"]
+                                : null
                         );
                     }
 
@@ -1628,7 +1674,7 @@ namespace TypeSunny
                 }
             }
 
-            TbxInput.FontFamily = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体")); ;
+            TbxInput.FontFamily = GetCurrentFontFamily(); // new FontFamily(Config.GetString("字体")); ;
             SldZoom.Value = 40; // 默认字体大小
 
             // 设置字提控件字体
@@ -1690,7 +1736,7 @@ namespace TypeSunny
             }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
-        private void ReadBlindType ()
+        private void ReadBlindType()
         {
             // 打字模式控件已移到设置窗口
             /*
@@ -1716,6 +1762,7 @@ namespace TypeSunny
 
             //      ChkLookType.IsChecked = Config.GetBool("看打模式") && !Config.GetBool("盲打模式");
         }
+
         private void ReloadCfg()
         {
             // 重新加载字提数据（方案可能已更改）
@@ -1827,7 +1874,7 @@ namespace TypeSunny
                 }
             }
 
-            TbxInput.FontFamily = GetCurrentFontFamily();// new FontFamily(Config.GetString("字体")); ;
+            TbxInput.FontFamily = GetCurrentFontFamily(); // new FontFamily(Config.GetString("字体")); ;
 
             // 设置字提控件字体
             TbkZiTi.FontFamily = GetZiTiFontFamily();
@@ -2099,18 +2146,23 @@ namespace TypeSunny
                 Rect inputRect = new Rect(inputPos.X, inputPos.Y, TbxInput.ActualWidth, TbxInput.ActualHeight);
                 inInputArea = inputRect.Contains(mousePos);
             }
-            catch { }
+            catch
+            {
+            }
 
             try
             {
                 if (TbxResults.IsVisible)
                 {
                     Point resultsPos = TbxResults.TransformToAncestor(this).Transform(new Point(0, 0));
-                    Rect resultsRect = new Rect(resultsPos.X, resultsPos.Y, TbxResults.ActualWidth, TbxResults.ActualHeight);
+                    Rect resultsRect = new Rect(resultsPos.X, resultsPos.Y, TbxResults.ActualWidth,
+                        TbxResults.ActualHeight);
                     inResultsArea = resultsRect.Contains(mousePos);
                 }
             }
-            catch { }
+            catch
+            {
+            }
 
             if (inInputArea)
             {
@@ -2221,8 +2273,17 @@ namespace TypeSunny
 
         private void NextArticle()
         {
-            ArticleManager.NextSection();
-
+            try
+            {
+                WriteDebugLog($"[NextArticle] 开始调用 NextSection");
+                ArticleManager.NextSection();
+                WriteDebugLog($"[NextArticle] NextSection 完成");
+            }
+            catch (Exception ex)
+            {
+                WriteDebugLog($"[NextArticle] 异常: {ex.Message}");
+                throw;
+            }
         }
 
 
@@ -2233,7 +2294,7 @@ namespace TypeSunny
 
 
         private string TxtResult = "";
-        private string trainerStatText = "";  // 练单器统计文本
+        private string trainerStatText = ""; // 练单器统计文本
 
         /// <summary>
         /// 更新练单器统计显示（由WinTrainer调用）
@@ -2314,6 +2375,7 @@ namespace TypeSunny
                 // 保存当日成绩记录
                 CounterLog.AddDailyResult(newReport);
             }
+
             sb.Append(TxtResult);
 
 
@@ -2324,635 +2386,697 @@ namespace TypeSunny
 
         public bool IsLookingType
         {
-            get
-            {
-                return Config.GetBool("看打模式") && StateManager.retypeType != RetypeType.wrongRetype;
-            }
+            get { return Config.GetBool("看打模式") && StateManager.retypeType != RetypeType.wrongRetype; }
         }
 
 
         public bool IsBlindType
         {
-            get
-            {
-                return Config.GetBool("盲打模式") && StateManager.retypeType != RetypeType.wrongRetype;
-            }
+            get { return Config.GetBool("盲打模式") && StateManager.retypeType != RetypeType.wrongRetype; }
         }
 
         async Task StopHelper()
         {
+            // 在非UI线程中，提前获取QQGroupName等UI相关属性
+            string qqGroupName = "";
+            Dispatcher.Invoke(() =>
+            {
+                qqGroupName = QQGroupName;
+            });
+
             // 保存文章日志数据（在 Score 被重置之前）
-            TxtSource savedTxtSource = StateManager.txtSource;  // 保存文本来源
-            RetypeType savedRetypeType = StateManager.retypeType;  // 保存重打类型
+            TxtSource savedTxtSource = StateManager.txtSource; // 保存文本来源
+            RetypeType savedRetypeType = StateManager.retypeType; // 保存重打类型
 
             // 调试：输出当前状态
-            System.Diagnostics.Debug.WriteLine($"[StopHelper] 开始 - txtSource={savedTxtSource}, retypeType={savedRetypeType}, TotalWords={Score.TotalWordCount}");
-            // 同时写入日志文件
+            WriteDebugLog($"[StopHelper] 开始 - txtSource={savedTxtSource}, retypeType={savedRetypeType}, TotalWords={Score.TotalWordCount}");
+            System.Diagnostics.Debug.WriteLine(
+                $"[StopHelper] 开始 - txtSource={savedTxtSource}, retypeType={savedRetypeType}, TotalWords={Score.TotalWordCount}");
 
             try
             {
-            int savedTotalWords = Score.TotalWordCount;
-            int savedInputWords = Score.InputWordCount;
-            double savedSpeed = Score.Speed;
-            double savedHitRate = Score.HitRate;
-            double savedAccuracy = Score.GetAccuracy() * 100;  // 键准（转换为百分制）
-            int savedWrong = Score.Wrong;
-            int savedBacks = (int)Score.GetBacks();
-            double savedCorrection = Score.GetCorrection();
-            double savedKPW = Score.KPW;
-            double savedLRRatio = Score.LRRatio;
-            int savedTotalHit = (int)Score.GetHit();
-            double savedTotalSeconds = Score.Time.TotalSeconds;
-            int savedWasteCodes = Score.WasteCodes;
-            double savedCiRatio = Score.GetCiRatio() * 100;  // 打词率（转换为百分制）
-            int savedChoose = Score.GetChoose();
-            int savedBiaoDing = Score.GetBiaoDing();
-            string savedArticleName = "";
-            string savedArticleMark = "";
-            string savedDifficultyName = "";
+                int savedTotalWords = Score.TotalWordCount;
+                int savedInputWords = Score.InputWordCount;
+                double savedSpeed = Score.Speed;
+                double savedHitRate = Score.HitRate;
+                double savedAccuracy = Score.GetAccuracy() * 100; // 键准（转换为百分制）
+                int savedWrong = Score.Wrong;
+                int savedBacks = (int)Score.GetBacks();
+                double savedCorrection = Score.GetCorrection();
+                double savedKPW = Score.KPW;
+                double savedLRRatio = Score.LRRatio;
+                int savedTotalHit = (int)Score.GetHit();
+                double savedTotalSeconds = Score.Time.TotalSeconds;
+                int savedWasteCodes = Score.WasteCodes;
+                double savedCiRatio = Score.GetCiRatio() * 100; // 打词率（转换为百分制）
+                int savedChoose = Score.GetChoose();
+                int savedBiaoDing = Score.GetBiaoDing();
+                string savedArticleName = "";
+                string savedArticleMark = "";
+                string savedDifficultyName = "";
 
-            // 根据来源保存文章名和 mark
-            if (savedTxtSource == TxtSource.book)
-            {
-                savedArticleName = ArticleManager.Title ?? "未知文章";
-                savedArticleMark = "";  // 本地文章没有 mark
-                savedDifficultyName = "";  // 本地文章没有难度名称
-            }
-            else if (savedTxtSource == TxtSource.articlesender)
-            {
-                savedArticleName = articleCache.GetCurrentTitle() ?? "文来文章";
-                savedArticleMark = articleCache.GetCurrentMark() ?? "";
-                savedDifficultyName = articleCache.GetCurrentDifficultyName();
-            }
-            else
-            {
-                savedArticleName = "其他来源";
-                savedArticleMark = "";
-                savedDifficultyName = "";
-            }
-
-            TbxInput.IsReadOnly = true;
-            StateManager.typingState = TypingState.end;
-            sw.Stop();
-            // 停止字提定时器
-            StopZiTiTimer();
-         
-
-            Score.HitRate = Score.GetHit() / Score.Time.TotalSeconds;
-            Score.KPW = Score.GetHit() / (double)Score.TotalWordCount;
-            Score.Speed = (double)Score.TotalWordCount / Score.Time.TotalMinutes;
-
-
-
-
-            Score.InputWordCount = new StringInfo(TbxInput.Text).LengthInTextElements;
-            savedInputWords = Score.InputWordCount;  // 更新保存的输入字数
-
-
-            //计算错字
-
-            if (IsLookingType)
-            {
-                string currentMatchText = string.Concat(TextInfo.Words);
-                Score.Less = 0;
-                Score.More = 0;
-
-                string t1 = currentMatchText.Replace('”', '\"').Replace('“', '\"').Replace('‘', '\'').Replace('’', '\'');
-
-                string t2 = TbxInput.Text.Replace('”', '\"').Replace('“', '\"').Replace('‘', '\'').Replace('’', '\'');
-                List<DiffRes> diffs = DiffTool.Diff(t1, t2);
-
-
-                int counter = 0;
-                foreach (var df in diffs)
+                // 根据来源保存文章名和 mark
+                if (savedTxtSource == TxtSource.book)
                 {
-
-
-                    switch (df.Type)
-                    {
-                        case DiffType.None:
-
-
-                            break;
-                        case DiffType.Delete:
-                            Score.Less++;
-                            string w = currentMatchText.Substring(df.OrigIndex - 1, 1);
-
-
-                            LogWrong(df.OrigIndex - 1, w);
-
-
-                            counter--;
-
-                            break;
-                        case DiffType.Add:
-
-
-                            counter++;
-                            Score.More++;
-                            break;
-
-                    }
-
-
-                }
-
-
-
-            }
-            else
-            {
-                Score.Wrong = 0;
-
-
-                for (int i = 0; i < TextInfo.wordStates.Count; i++)
-                {
-                    if (TextInfo.wordStates[i] == WordStates.WRONG)
-                    {
-                        Score.Wrong++;
-                        string w = TextInfo.Words[i];
-                        LogWrong(i, w);
-                    }
-                }
-            }
-
-
-            TbkStatusTop.Text = Score.Progress();
-            if (StateManager.retypeType != RetypeType.wrongRetype)
-                UpdateTypingStat(Score.Report());// + " " + ;
-            else
-                UpdateTypingStat();
-            string result = Score.Report();// + " " + Config.GetString("成绩签名");
-
-
-
-
-
-
-            //自动发送成绩&&加载下一段
-
-
-
-
-            if (StateManager.txtSource == TxtSource.jbs) //锦标赛
-            {
-                string inputMethod = Config.GetString("赛文输入法");
-                System.Diagnostics.Debug.WriteLine($"[锦标赛] 读取到的输入法: [{inputMethod}], 是否为空: {string.IsNullOrWhiteSpace(inputMethod)}");
-                if (string.IsNullOrWhiteSpace(inputMethod))
-                {
-                    MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-                string sendResult = jbsHelper.SubmitScore(
-                    Score.GetValidSpeed(),
-                    Score.HitRate,
-                    Score.KPW,
-                    Score.Time,
-                    (int)Score.GetCorrection(),
-                    0,
-                    (int)Score.GetHit(),
-                    Score.GetAccuracy(),
-                    Score.GetCiRatio(),
-                    Score.Wrong,
-                    inputMethod);
-
-                // 显示提交结果
-                if (!string.IsNullOrWhiteSpace(sendResult))
-                {
-                    MessageBox.Show(sendResult, "锦标赛成绩提交", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-            }
-
-            if (StateManager.txtSource == TxtSource.jisucup) //极速杯
-            {
-                string inputMethod = Config.GetString("赛文输入法");
-                System.Diagnostics.Debug.WriteLine($"[极速杯] 读取到的输入法: [{inputMethod}], 是否为空: {string.IsNullOrWhiteSpace(inputMethod)}");
-                if (string.IsNullOrWhiteSpace(inputMethod))
-                {
-                    MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-                string sendResult = jiSuCupHelper.SubmitScore(
-                    Score.GetValidSpeed(),
-                    Score.HitRate,
-                    Score.KPW,
-                    Score.Time,
-                    (int)Score.GetCorrection(),
-                    0,
-                    (int)Score.GetHit(),
-                    Score.GetAccuracy(),
-                    Score.GetCiRatio(),
-                    Score.Wrong,
-                    inputMethod);
-
-                // 显示提交结果
-                if (!string.IsNullOrWhiteSpace(sendResult))
-                {
-                    MessageBox.Show(sendResult, "极速杯成绩提交", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-            }
-
-            if (StateManager.txtSource == TxtSource.raceApi) //赛文API
-            {
-                // 从配置读取输入法名称
-                string inputMethod = Config.GetString("赛文输入法");
-                System.Diagnostics.Debug.WriteLine($"[赛文API] 读取到的输入法: [{inputMethod}], 是否为空: {string.IsNullOrWhiteSpace(inputMethod)}");
-                if (string.IsNullOrWhiteSpace(inputMethod))
-                {
-                    MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
-                // 检查是否有保存的服务器和赛文ID
-                if (string.IsNullOrEmpty(StateManager.CurrentRaceServerId) || StateManager.CurrentRaceId <= 0)
-                {
-                    MessageBox.Show("无法提交成绩：赛文信息丢失", "赛文API成绩提交", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
-                // ========== DEBUG: 打印Score所有字段 ==========
-                System.Diagnostics.Debug.WriteLine("=== Score所有字段 ===");
-                System.Diagnostics.Debug.WriteLine($"Score.Hit = {Score.Hit}");
-                System.Diagnostics.Debug.WriteLine($"Score.HitRate = {Score.HitRate}");
-                System.Diagnostics.Debug.WriteLine($"Score.TotalWordCount = {Score.TotalWordCount}");
-                System.Diagnostics.Debug.WriteLine($"Score.InputWordCount = {Score.InputWordCount}");
-                System.Diagnostics.Debug.WriteLine($"Score.Speed = {Score.Speed}");
-                System.Diagnostics.Debug.WriteLine($"Score.Backs = {Score.Backs}");
-                System.Diagnostics.Debug.WriteLine($"Score.KPW = {Score.KPW}");
-                System.Diagnostics.Debug.WriteLine($"Score.Wrong = {Score.Wrong}");
-                System.Diagnostics.Debug.WriteLine($"Score.Time = {Score.Time}");
-                System.Diagnostics.Debug.WriteLine($"Score.Correction = {Score.Correction}");
-                System.Diagnostics.Debug.WriteLine($"Score.BimeHit = {Score.BimeHit}");
-                System.Diagnostics.Debug.WriteLine($"Score.BimeBacks = {Score.BimeBacks}");
-                System.Diagnostics.Debug.WriteLine($"Score.BimeCorrection = {Score.BimeCorrection}");
-                System.Diagnostics.Debug.WriteLine($"Score.LeftCount = {Score.LeftCount}");
-                System.Diagnostics.Debug.WriteLine($"Score.RightCount = {Score.RightCount}");
-                System.Diagnostics.Debug.WriteLine($"Score.SpaceCount = {Score.SpaceCount}");
-                System.Diagnostics.Debug.WriteLine($"Score.LRRatio = {Score.LRRatio}");
-                System.Diagnostics.Debug.WriteLine($"Score.WasteCodes = {Score.WasteCodes}");
-                System.Diagnostics.Debug.WriteLine("=== Score方法返回值 ===");
-                System.Diagnostics.Debug.WriteLine($"Score.GetValidSpeed() = {Score.GetValidSpeed()}");
-                System.Diagnostics.Debug.WriteLine($"Score.GetHit() = {Score.GetHit()}");
-                System.Diagnostics.Debug.WriteLine($"Score.GetBacks() = {Score.GetBacks()}");
-                System.Diagnostics.Debug.WriteLine($"Score.GetCorrection() = {Score.GetCorrection()}");
-                System.Diagnostics.Debug.WriteLine($"Score.GetAccuracy() = {Score.GetAccuracy()}");
-                System.Diagnostics.Debug.WriteLine($"Score.GetCiRatio() = {Score.GetCiRatio()}");
-                System.Diagnostics.Debug.WriteLine("========================");
-
-                // 提交前先保存成绩数据，避免异步任务中Score被重置
-                // 按照正确的字段映射
-                double speed = Score.GetValidSpeed();        // 速度
-                double hitRate = Score.HitRate;              // 击键
-                double codeLength = Score.KPW;               // 码长
-                TimeSpan timeCost = Score.Time;              // 时间
-                int correction = (int)Score.GetCorrection(); // 回改
-                int backspaceCount = (int)Score.GetBacks();  // 退格
-                int keyCount = (int)Score.GetHit();          // 键数
-                double keyAccuracy = Score.GetAccuracy() * 100;  // 键准（转换为百分制0-100）
-                double wordRate = Score.GetCiRatio() * 100;      // 打词率（转换为百分制0-100）
-                int charCount = Score.TotalWordCount;        // 字数
-
-                // 异步提交成绩
-                Task.Run(async () =>
-                {
-                    string sendResult = await raceHelperV2.SubmitScore(
-                        StateManager.CurrentRaceServerId,
-                        StateManager.CurrentRaceId,
-                        speed,
-                        timeCost,
-                        charCount,
-                        hitRate,           // 击键
-                        codeLength,        // 码长
-                        backspaceCount,    // 退格
-                        keyCount,          // 键数
-                        keyAccuracy,       // 键准（百分制）
-                        wordRate,          // 打词率（百分制）
-                        inputMethod
-                    );
-
-                    // 在UI线程显示结果
-                    Dispatcher.Invoke(() =>
-                    {
-                        if (sendResult == "提交成功")
-                        {
-                            // 显示提交成功信息，按照用户指定的顺序和字段
-                            string successMsg = $"提交成功！\n\n速度: {speed:F2}\n击键: {hitRate:F2}\n码长: {codeLength:F2}\n键准: {keyAccuracy:F2}%\n打词率: {wordRate:F2}%";
-                            MessageBox.Show(successMsg, "赛文API成绩提交", MessageBoxButton.OK, MessageBoxImage.Information);
-                        }
-                        else
-                        {
-                            MessageBox.Show(sendResult, "赛文API成绩提交", MessageBoxButton.OK, MessageBoxImage.Error);
-                        }
-                    });
-                });
-            }
-
-
-            if (StateManager.txtSource == TxtSource.book) //书籍
-            {
-
-                if (!Config.GetBool("错字重打")) //没有错字，或没有错字重打
-                {
-                    await NextAndSendArticle(result);
-                }
-                else //(Config.GetBool("错字重打"))
-                {
-                    if (StateManager.retypeType == RetypeType.wrongRetype ) //错字重打
-                    {
-                        if ( TextInfo.WrongRec.Count == 0) //错字重打后无错字
-                        {
-                            await NextAndSendArticle();
-                        }
-                       else
-                        { }
-                    }
-                    else// (StateManager.retypeType != RetypeType.wrongRetype)//非错字重打，正文或普通重打
-                    {
-                        if (TextInfo.WrongRec.Count == 0) //一次打对无错字
-                        {
-                            await NextAndSendArticle(result);
-                        }
-                        else //有错字，只发成绩
-                        {
-                            if (Config.GetBool("自动发送成绩"))
-                            {
-                                QQHelper.SendQQMessage(QQGroupName, result, 250, this);
-                            }
-                        }
-                    }
-
-
-
-                }
-            }
-            else if (StateManager.txtSource == TxtSource.articlesender) //文来
-            {
-                // 错字重打逻辑
-                if (Config.GetBool("错字重打") && StateManager.retypeType != RetypeType.slowRetype)
-                {
-                    if (StateManager.retypeType != RetypeType.wrongRetype) // 正文
-                    {
-                        if (TextInfo.WrongRec.Count > 0) // 有错字，根据"自动发送成绩"开关决定是否发送成绩
-                        {
-                            if (Config.GetBool("自动发送成绩"))
-                            {
-                                SendContentToClipboardOrQQ(result);
-                            }
-                        }
-                    }
-                    // 如果是错字重打或正文有错字，后续会在3088-3134行统一处理
-                }
-                else if (!Config.GetBool("慢字重打")) // 关闭了错字重打和慢字重打
-                {
-                    // 检查是否是手动换段模式
-                    bool manualMode = Config.GetString("文来换段模式") == "手动";
-
-                    if (manualMode)
-                    {
-                        // 手动模式：只发送成绩，不自动发下一段
-                        if (Config.GetBool("自动发送成绩"))
-                        {
-                            if (QQGroupName != "")
-                            {
-                                QQHelper.SendQQMessage(QQGroupName, result, 0, this);
-                            }
-                            else
-                            {
-                                Win32SetText(result);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // 自动模式：直接发送成绩+下一段
-                        NextAndSendArticleSender(result);
-                    }
-                    return;
-                }
-                // 其他情况（开启了慢字重打），继续执行后续慢字检测逻辑
-            }
-            else if (StateManager.txtSource == TxtSource.trainer) //练单器
-            {
-
-                if (winTrainer != null)
-                    winTrainer.GetNextRound(Score.GetAccuracy(), Score.HitRate, Score.Wrong, result);
-
-
-
-
-
-            }
-            else  // 其他模式（群载文等）
-            {
-                // 群载文模式：只有开启"自动发送成绩"且不是重打模式时才发送成绩
-                if (StateManager.retypeType != RetypeType.wrongRetype && Config.GetBool("自动发送成绩"))
-                {
-                    QQHelper.SendQQMessage(QQGroupName, result, 0, this);
-                }
-            }
-
-
-
-
-
-
-
-
-
-
-            // 慢字检测逻辑（排除打单器和慢字重打本身）
-            if (Config.GetBool("慢字重打") && StateManager.txtSource != TxtSource.trainer && StateManager.retypeType != RetypeType.slowRetype)
-            {
-                TextInfo.SlowRec.Clear();
-                double slowThreshold = Config.GetDouble("慢字标准(单位:秒)") * 1000; // 转换为毫秒
-
-                // === 新的检测逻辑 ===
-                int textPos = 0; // 当前在 TextInfo.Words 中的位置
-
-                for (int i = 0; i < Score.CommitTime.Count; i++)
-                {
-                    if (i >= Score.CommitCharCount.Count || i >= Score.CommitText.Count)
-                        break;
-
-                    long timeDiff = i > 0 ? (Score.CommitTime[i] - Score.CommitTime[i - 1]) : Score.CommitTime[i];
-                    int charCount = Score.CommitCharCount[i];
-                    string groupText = Score.CommitText[i];
-
-                    // 计算有效字符数（排除符号）
-                    int validCharCount = 0;
-                    StringInfo groupSi = new StringInfo(groupText);
-                    for (int j = 0; j < groupSi.LengthInTextElements; j++)
-                    {
-                        string ch = groupSi.SubstringByTextElements(j, 1);
-                        if (!Score.ExcludePuncts.Contains(ch))
-                        {
-                            validCharCount++;
-                        }
-                    }
-
-                    // 用有效字符数计算平均速度
-                    double avgTimePerChar = validCharCount > 0 ? (double)timeDiff / validCharCount : 0;
-
-                    if (avgTimePerChar > slowThreshold && validCharCount > 0)
-                    {
-                        // 把这一组的所有字（包括符号）加入慢字队列
-                        for (int j = 0; j < groupSi.LengthInTextElements; j++)
-                        {
-                            if (textPos < TextInfo.Words.Count)
-                            {
-                                string word = TextInfo.Words[textPos];
-                                if (!TextInfo.WrongExclude.Contains(word))
-                                {
-                                    TextInfo.SlowRec[textPos] = word;
-                                }
-                                textPos++;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // 不慢，跳过这一组
-                        textPos += charCount;
-                    }
-                }
-            }
-
-            // 合并错字和慢字重打逻辑
-            if (StateManager.txtSource != TxtSource.trainer)
-            {
-                bool hasWrong = Config.GetBool("错字重打") && TextInfo.WrongRec.Count > 0;
-                bool hasSlow = Config.GetBool("慢字重打") && TextInfo.SlowRec.Count > 0;
-
-
-                if (hasWrong || hasSlow)
-                {
-                    StringBuilder sb = new StringBuilder();
-
-                    // 添加错字（如果有）
-                    if (hasWrong)
-                    {
-                        for (int i = 0; i < Config.GetInt("错字重复次数"); i++)
-                        {
-                            foreach (var s in TextInfo.WrongRec.Values)
-                                sb.Append(s);
-                        }
-                    }
-
-                    // 添加慢字（如果有）
-                    if (hasSlow)
-                    {
-                        for (int i = 0; i < Config.GetInt("慢字重复次数"); i++)
-                        {
-                            foreach (var s in TextInfo.SlowRec.Values)
-                                sb.Append(s);
-                        }
-                    }
-
-                    // 确定重打类型（优先错字重打）
-                    RetypeType retypeType = hasWrong ? RetypeType.wrongRetype : RetypeType.slowRetype;
-                    LoadText(sb.ToString(), retypeType, TxtSource.unchange, true, true);
+                    savedArticleName = ArticleManager.Title ?? "未知文章";
+                    savedArticleMark = ""; // 本地文章没有 mark
+                    savedDifficultyName = ""; // 本地文章没有难度名称
                 }
                 else if (savedTxtSource == TxtSource.articlesender)
                 {
-                    // 文来模式：无错字且无慢字，进入下一段
+                    savedArticleName = articleCache.GetCurrentTitle() ?? "文来文章";
+                    savedArticleMark = articleCache.GetCurrentMark() ?? "";
+                    savedDifficultyName = articleCache.GetCurrentDifficultyName();
+                }
+                else
+                {
+                    savedArticleName = "其他来源";
+                    savedArticleMark = "";
+                    savedDifficultyName = "";
+                }
 
-                    // 检查是否是手动换段模式
-                    bool manualMode = Config.GetString("文来换段模式") == "手动";
+                Dispatcher.Invoke(() => { TbxInput.IsReadOnly = true; });
+                StateManager.typingState = TypingState.end;
+                sw.Stop();
+                // 停止字提定时器
+                StopZiTiTimer();
 
-                    if (manualMode)
+                Score.HitRate = Score.GetHit() / Score.Time.TotalSeconds;
+                Score.KPW = Score.GetHit() / (double)Score.TotalWordCount;
+                Score.Speed = (double)Score.TotalWordCount / Score.Time.TotalMinutes;
+
+                string tbxInputText = "";
+                Dispatcher.Invoke(() => { tbxInputText = TbxInput.Text; });
+                Score.InputWordCount = new StringInfo(tbxInputText).LengthInTextElements;
+                savedInputWords = Score.InputWordCount; // 更新保存的输入字数
+
+                //计算错字
+
+                if (IsLookingType)
+                {
+                    string currentMatchText = string.Concat(TextInfo.Words);
+                    Score.Less = 0;
+                    Score.More = 0;
+
+                    string t1 = currentMatchText.Replace('”', '\"').Replace('“', '\"').Replace('‘', '\'')
+                        .Replace('’', '\'');
+
+                    string t2 = "";
+                    Dispatcher.Invoke(() =>
                     {
-                        // 手动模式：只发送成绩，不自动发下一段
-                        if (StateManager.retypeType != RetypeType.wrongRetype && StateManager.retypeType != RetypeType.slowRetype && Config.GetBool("自动发送成绩"))
+                        t2 = TbxInput.Text.Replace('”', '\"').Replace('“', '\"').Replace('‘', '\'')
+                            .Replace('’', '\'');
+                    });
+                    List<DiffRes> diffs = DiffTool.Diff(t1, t2);
+
+
+                    int counter = 0;
+                    foreach (var df in diffs)
+                    {
+
+
+                        switch (df.Type)
                         {
-                            if (QQGroupName != "")
+                            case DiffType.None:
+
+
+                                break;
+                            case DiffType.Delete:
+                                Score.Less++;
+                                string w = currentMatchText.Substring(df.OrigIndex - 1, 1);
+
+
+                                LogWrong(df.OrigIndex - 1, w);
+
+
+                                counter--;
+
+                                break;
+                            case DiffType.Add:
+
+
+                                counter++;
+                                Score.More++;
+                                break;
+
+                        }
+
+
+                    }
+
+
+
+                }
+                else
+                {
+                    Score.Wrong = 0;
+
+
+                    for (int i = 0; i < TextInfo.wordStates.Count; i++)
+                    {
+                        if (TextInfo.wordStates[i] == WordStates.WRONG)
+                        {
+                            Score.Wrong++;
+                            string w = TextInfo.Words[i];
+                            LogWrong(i, w);
+                        }
+                    }
+                }
+
+                Dispatcher.Invoke(() => { TbkStatusTop.Text = Score.Progress(); });
+
+                string typingStatReport = Score.Report(); // 提前计算，避免异步竞争
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (savedRetypeType != RetypeType.wrongRetype)
+                        UpdateTypingStat(typingStatReport);
+                    else
+                        UpdateTypingStat();
+                }));
+
+                string result = Score.Report(); // + " " + Config.GetString("成绩签名");
+
+
+
+
+
+
+                //自动发送成绩&&加载下一段
+
+
+
+
+                if (StateManager.txtSource == TxtSource.jbs) //锦标赛
+                {
+                    string inputMethod = Config.GetString("赛文输入法");
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[锦标赛] 读取到的输入法: [{inputMethod}], 是否为空: {string.IsNullOrWhiteSpace(inputMethod)}");
+                    if (string.IsNullOrWhiteSpace(inputMethod))
+                    {
+                        MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        return;
+                    }
+
+                    string sendResult = jbsHelper.SubmitScore(
+                        Score.GetValidSpeed(),
+                        Score.HitRate,
+                        Score.KPW,
+                        Score.Time,
+                        (int)Score.GetCorrection(),
+                        0,
+                        (int)Score.GetHit(),
+                        Score.GetAccuracy(),
+                        Score.GetCiRatio(),
+                        Score.Wrong,
+                        inputMethod);
+
+                    // 显示提交结果
+                    if (!string.IsNullOrWhiteSpace(sendResult))
+                    {
+                        MessageBox.Show(sendResult, "锦标赛成绩提交", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                }
+
+                if (StateManager.txtSource == TxtSource.jisucup) //极速杯
+                {
+                    string inputMethod = Config.GetString("赛文输入法");
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[极速杯] 读取到的输入法: [{inputMethod}], 是否为空: {string.IsNullOrWhiteSpace(inputMethod)}");
+                    if (string.IsNullOrWhiteSpace(inputMethod))
+                    {
+                        MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        return;
+                    }
+
+                    string sendResult = jiSuCupHelper.SubmitScore(
+                        Score.GetValidSpeed(),
+                        Score.HitRate,
+                        Score.KPW,
+                        Score.Time,
+                        (int)Score.GetCorrection(),
+                        0,
+                        (int)Score.GetHit(),
+                        Score.GetAccuracy(),
+                        Score.GetCiRatio(),
+                        Score.Wrong,
+                        inputMethod);
+
+                    // 显示提交结果
+                    if (!string.IsNullOrWhiteSpace(sendResult))
+                    {
+                        MessageBox.Show(sendResult, "极速杯成绩提交", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                }
+
+                if (StateManager.txtSource == TxtSource.raceApi) //赛文API
+                {
+                    // 从配置读取输入法名称
+                    string inputMethod = Config.GetString("赛文输入法");
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[赛文API] 读取到的输入法: [{inputMethod}], 是否为空: {string.IsNullOrWhiteSpace(inputMethod)}");
+                    if (string.IsNullOrWhiteSpace(inputMethod))
+                    {
+                        MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        return;
+                    }
+
+                    // 检查是否有保存的服务器和赛文ID
+                    if (string.IsNullOrEmpty(StateManager.CurrentRaceServerId) || StateManager.CurrentRaceId <= 0)
+                    {
+                        MessageBox.Show("无法提交成绩：赛文信息丢失", "赛文API成绩提交", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+
+                    // ========== DEBUG: 打印Score所有字段 ==========
+                    System.Diagnostics.Debug.WriteLine("=== Score所有字段 ===");
+                    System.Diagnostics.Debug.WriteLine($"Score.Hit = {Score.Hit}");
+                    System.Diagnostics.Debug.WriteLine($"Score.HitRate = {Score.HitRate}");
+                    System.Diagnostics.Debug.WriteLine($"Score.TotalWordCount = {Score.TotalWordCount}");
+                    System.Diagnostics.Debug.WriteLine($"Score.InputWordCount = {Score.InputWordCount}");
+                    System.Diagnostics.Debug.WriteLine($"Score.Speed = {Score.Speed}");
+                    System.Diagnostics.Debug.WriteLine($"Score.Backs = {Score.Backs}");
+                    System.Diagnostics.Debug.WriteLine($"Score.KPW = {Score.KPW}");
+                    System.Diagnostics.Debug.WriteLine($"Score.Wrong = {Score.Wrong}");
+                    System.Diagnostics.Debug.WriteLine($"Score.Time = {Score.Time}");
+                    System.Diagnostics.Debug.WriteLine($"Score.Correction = {Score.Correction}");
+                    System.Diagnostics.Debug.WriteLine($"Score.BimeHit = {Score.BimeHit}");
+                    System.Diagnostics.Debug.WriteLine($"Score.BimeBacks = {Score.BimeBacks}");
+                    System.Diagnostics.Debug.WriteLine($"Score.BimeCorrection = {Score.BimeCorrection}");
+                    System.Diagnostics.Debug.WriteLine($"Score.LeftCount = {Score.LeftCount}");
+                    System.Diagnostics.Debug.WriteLine($"Score.RightCount = {Score.RightCount}");
+                    System.Diagnostics.Debug.WriteLine($"Score.SpaceCount = {Score.SpaceCount}");
+                    System.Diagnostics.Debug.WriteLine($"Score.LRRatio = {Score.LRRatio}");
+                    System.Diagnostics.Debug.WriteLine($"Score.WasteCodes = {Score.WasteCodes}");
+                    System.Diagnostics.Debug.WriteLine("=== Score方法返回值 ===");
+                    System.Diagnostics.Debug.WriteLine($"Score.GetValidSpeed() = {Score.GetValidSpeed()}");
+                    System.Diagnostics.Debug.WriteLine($"Score.GetHit() = {Score.GetHit()}");
+                    System.Diagnostics.Debug.WriteLine($"Score.GetBacks() = {Score.GetBacks()}");
+                    System.Diagnostics.Debug.WriteLine($"Score.GetCorrection() = {Score.GetCorrection()}");
+                    System.Diagnostics.Debug.WriteLine($"Score.GetAccuracy() = {Score.GetAccuracy()}");
+                    System.Diagnostics.Debug.WriteLine($"Score.GetCiRatio() = {Score.GetCiRatio()}");
+                    System.Diagnostics.Debug.WriteLine("========================");
+
+                    // 提交前先保存成绩数据，避免异步任务中Score被重置
+                    // 按照正确的字段映射
+                    double speed = Score.GetValidSpeed(); // 速度
+                    double hitRate = Score.HitRate; // 击键
+                    double codeLength = Score.KPW; // 码长
+                    TimeSpan timeCost = Score.Time; // 时间
+                    int correction = (int)Score.GetCorrection(); // 回改
+                    int backspaceCount = (int)Score.GetBacks(); // 退格
+                    int keyCount = (int)Score.GetHit(); // 键数
+                    double keyAccuracy = Score.GetAccuracy() * 100; // 键准（转换为百分制0-100）
+                    double wordRate = Score.GetCiRatio() * 100; // 打词率（转换为百分制0-100）
+                    int charCount = Score.TotalWordCount; // 字数
+
+                    // 异步提交成绩
+                    Task.Run(async () =>
+                    {
+                        string sendResult = await raceHelperV2.SubmitScore(
+                            StateManager.CurrentRaceServerId,
+                            StateManager.CurrentRaceId,
+                            speed,
+                            timeCost,
+                            charCount,
+                            hitRate, // 击键
+                            codeLength, // 码长
+                            backspaceCount, // 退格
+                            keyCount, // 键数
+                            keyAccuracy, // 键准（百分制）
+                            wordRate, // 打词率（百分制）
+                            inputMethod
+                        );
+
+                        // 在UI线程显示结果
+                        Dispatcher.Invoke(() =>
+                        {
+                            if (sendResult == "提交成功")
                             {
-                                QQHelper.SendQQMessage(QQGroupName, result, 0, this);
+                                // 显示提交成功信息，按照用户指定的顺序和字段
+                                string successMsg =
+                                    $"提交成功！\n\n速度: {speed:F2}\n击键: {hitRate:F2}\n码长: {codeLength:F2}\n键准: {keyAccuracy:F2}%\n打词率: {wordRate:F2}%";
+                                MessageBox.Show(successMsg, "赛文API成绩提交", MessageBoxButton.OK,
+                                    MessageBoxImage.Information);
+                            }
+                            else
+                            {
+                                MessageBox.Show(sendResult, "赛文API成绩提交", MessageBoxButton.OK, MessageBoxImage.Error);
+                            }
+                        });
+                    });
+                }
+
+
+                if (StateManager.txtSource == TxtSource.book) //书籍
+                {
+                    WriteDebugLog($"[本地文章] 进入分支，错字重打配置={Config.GetBool("错字重打")}, retypeType={StateManager.retypeType}, 错字数={TextInfo.WrongRec.Count}");
+
+                    if (!Config.GetBool("错字重打")) //没有错字，或没有错字重打
+                    {
+                        WriteDebugLog($"[本地文章] 执行: NextAndSendArticle(result)");
+                        await NextAndSendArticle(result);
+                        WriteDebugLog($"[本地文章] 完成: NextAndSendArticle(result)");
+                    }
+                    else //(Config.GetBool("错字重打"))
+                    {
+                        if (StateManager.retypeType == RetypeType.wrongRetype) //错字重打
+                        {
+                            if (TextInfo.WrongRec.Count == 0) //错字重打后无错字
+                            {
+                                WriteDebugLog($"[本地文章] 执行: NextAndSendArticle() (错字重打完成)");
+                                await NextAndSendArticle();
+                                WriteDebugLog($"[本地文章] 完成: NextAndSendArticle()");
+                            }
+                            else
+                            {
+                                WriteDebugLog($"[本地文章] 跳过: 错字重打中仍有错字");
+                            }
+                        }
+                        else // (StateManager.retypeType != RetypeType.wrongRetype)//非错字重打，正文或普通重打
+                        {
+                            if (TextInfo.WrongRec.Count == 0) //一次打对无错字
+                            {
+                                WriteDebugLog($"[本地文章] 执行: NextAndSendArticle(result) (无错字)");
+                                await NextAndSendArticle(result);
+                                WriteDebugLog($"[本地文章] 完成: NextAndSendArticle(result)");
+                            }
+                            else //有错字，发送成绩（后续通用逻辑会处理错字重打）
+                            {
+                                WriteDebugLog($"[本地文章] 有错字，发送成绩");
+                                if (Config.GetBool("自动发送成绩"))
+                                {
+                                    QQHelper.SendQQMessage(qqGroupName, result, 250, this);
+                                }
+                                // 不进入错字重打，让后续的通用错字重打逻辑（line 2940-2977）处理
+                                WriteDebugLog($"[本地文章] 让通用逻辑处理错字重打");
+                            }
+                        }
+                    }
+                }
+                else if (StateManager.txtSource == TxtSource.articlesender) //文来
+                {
+                    // 独立的 if：处理错字重打的成绩发送（正文且非慢字重打）
+                    if (Config.GetBool("错字重打") && StateManager.retypeType != RetypeType.slowRetype &&
+                        StateManager.retypeType != RetypeType.wrongRetype && TextInfo.WrongRec.Count > 0)
+                    {
+                        if (Config.GetBool("自动发送成绩"))
+                        {
+                            // 使用保存的 qqGroupName 避免跨线程访问UI
+                            if (qqGroupName != "")
+                            {
+                                QQHelper.SendQQMessage(qqGroupName, result, 250, this);
                             }
                             else
                             {
                                 Win32SetText(result);
                             }
                         }
+                        // 发送成绩后继续执行，让后续的错字重打逻辑处理
                     }
-                    else
+
+                    // 处理自动换段（需要关闭错字重打和慢字重打）
+                    if (!Config.GetBool("错字重打") && !Config.GetBool("慢字重打"))
                     {
-                        // 自动模式：继续发下一段
-                        // 如果是重打模式，不发送成绩；如果是正文，发送成绩
-                        if (StateManager.retypeType == RetypeType.wrongRetype || StateManager.retypeType == RetypeType.slowRetype)
+                        // 检查是否是手动换段模式
+                        bool manualMode = Config.GetString("文来换段模式") == "手动";
+
+                        if (manualMode)
                         {
-                            NextAndSendArticleSender();  // 重打完成，不发送成绩
+                            // 手动模式：只发送成绩，不自动发下一段
+                            if (Config.GetBool("自动发送成绩"))
+                            {
+                                // 使用保存的 qqGroupName 避免跨线程访问UI
+                                if (qqGroupName != "")
+                                {
+                                    QQHelper.SendQQMessage(qqGroupName, result, 0, this);
+                                }
+                                else
+                                {
+                                    Win32SetText(result);
+                                }
+                            }
                         }
                         else
                         {
-                            NextAndSendArticleSender(result);  // 正文完成，发送成绩
+                            // 自动模式：直接发送成绩+下一段
+                            await NextAndSendArticleSender(result);
+                            // 注意：这里 return 会导致后面的成绩记录代码不执行
+                            // 所以需要在这里先记录成绩
+                            goto RecordScore; // 跳转到成绩记录逻辑
+                        }
+                    }
+                    // 其他情况（开启了错字重打或慢字重打），继续执行后续慢字检测逻辑
+                }
+                else if (StateManager.txtSource == TxtSource.trainer) //练单器
+                {
+
+                    WriteDebugLog($"[练单器] 进入分支，accuracy={Score.GetAccuracy():F4}, hitRate={Score.HitRate:F2}, wrong={Score.Wrong}");
+
+                    WriteDebugLog($"[练单器] winTrainer 是否为null: {winTrainer == null}");
+                    if (winTrainer != null)
+                    {
+                        WriteDebugLog($"[练单器] 准备调用 GetNextRound");
+                        winTrainer.GetNextRound(Score.GetAccuracy(), Score.HitRate, Score.Wrong, result);
+                        WriteDebugLog($"[练单器] GetNextRound 返回");
+                    }
+
+                    WriteDebugLog($"[练单器] 完成 GetNextRound 调用");
+
+
+
+
+
+                }
+                else // 其他模式（群载文等）
+                {
+                    // 群载文模式：只有开启"自动发送成绩"且不是重打模式时才发送成绩
+                    if (StateManager.retypeType != RetypeType.wrongRetype && Config.GetBool("自动发送成绩"))
+                    {
+                        QQHelper.SendQQMessage(qqGroupName, result, 0, this);
+                    }
+                }
+
+
+
+
+
+
+
+
+
+
+                // 慢字检测逻辑（排除打单器和慢字重打本身）
+                if (Config.GetBool("慢字重打") && StateManager.txtSource != TxtSource.trainer &&
+                    StateManager.retypeType != RetypeType.slowRetype)
+                {
+                    TextInfo.SlowRec.Clear();
+                    double slowThreshold = Config.GetDouble("慢字标准(单位:秒)") * 1000; // 转换为毫秒
+
+                    // === 新的检测逻辑 ===
+                    int textPos = 0; // 当前在 TextInfo.Words 中的位置
+
+                    for (int i = 0; i < Score.CommitTime.Count; i++)
+                    {
+                        if (i >= Score.CommitCharCount.Count || i >= Score.CommitText.Count)
+                            break;
+
+                        long timeDiff = i > 0 ? (Score.CommitTime[i] - Score.CommitTime[i - 1]) : Score.CommitTime[i];
+                        int charCount = Score.CommitCharCount[i];
+                        string groupText = Score.CommitText[i];
+
+                        // 计算有效字符数（排除符号）
+                        int validCharCount = 0;
+                        StringInfo groupSi = new StringInfo(groupText);
+                        for (int j = 0; j < groupSi.LengthInTextElements; j++)
+                        {
+                            string ch = groupSi.SubstringByTextElements(j, 1);
+                            if (!Score.ExcludePuncts.Contains(ch))
+                            {
+                                validCharCount++;
+                            }
+                        }
+
+                        // 用有效字符数计算平均速度
+                        double avgTimePerChar = validCharCount > 0 ? (double)timeDiff / validCharCount : 0;
+
+                        if (avgTimePerChar > slowThreshold && validCharCount > 0)
+                        {
+                            // 把这一组的所有字（包括符号）加入慢字队列
+                            for (int j = 0; j < groupSi.LengthInTextElements; j++)
+                            {
+                                if (textPos < TextInfo.Words.Count)
+                                {
+                                    string word = TextInfo.Words[textPos];
+                                    if (!TextInfo.WrongExclude.Contains(word))
+                                    {
+                                        TextInfo.SlowRec[textPos] = word;
+                                    }
+
+                                    textPos++;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // 不慢，跳过这一组
+                            textPos += charCount;
+                        }
+                    }
+                }
+
+                // 合并错字和慢字重打逻辑
+                if (StateManager.txtSource != TxtSource.trainer)
+                {
+                    bool hasWrong = Config.GetBool("错字重打") && TextInfo.WrongRec.Count > 0;
+                    bool hasSlow = Config.GetBool("慢字重打") && TextInfo.SlowRec.Count > 0;
+
+                    if (hasWrong || hasSlow)
+                    {
+                        StringBuilder sb = new StringBuilder();
+
+                        // 添加错字（如果有）
+                        if (hasWrong)
+                        {
+                            for (int i = 0; i < Config.GetInt("错字重复次数"); i++)
+                            {
+                                foreach (var s in TextInfo.WrongRec.Values)
+                                    sb.Append(s);
+                            }
+                        }
+
+                        // 添加慢字（如果有）
+                        if (hasSlow)
+                        {
+                            for (int i = 0; i < Config.GetInt("慢字重复次数"); i++)
+                            {
+                                foreach (var s in TextInfo.SlowRec.Values)
+                                    sb.Append(s);
+                            }
+                        }
+
+                        // 确定重打类型（优先错字重打）
+                        RetypeType retypeType = hasWrong ? RetypeType.wrongRetype : RetypeType.slowRetype;
+                        try
+                        {
+                            LoadText(sb.ToString(), retypeType, TxtSource.unchange, true, true);
+                        }
+                        catch (Exception ex)
+                        {
+                            throw ex;
+                        }
+                    }
+                    else if (savedTxtSource == TxtSource.articlesender)
+                    {
+                        // 文来模式：无错字且无慢字，进入下一段
+                        // 检查是否是手动换段模式
+                        bool manualMode = Config.GetString("文来换段模式") == "手动";
+
+                        if (manualMode)
+                        {
+                            // 手动模式：只发送成绩，不自动发下一段
+                            if (StateManager.retypeType != RetypeType.wrongRetype &&
+                                StateManager.retypeType != RetypeType.slowRetype && Config.GetBool("自动发送成绩"))
+                            {
+                                if (qqGroupName != "")
+                                {
+                                    QQHelper.SendQQMessage(qqGroupName, result, 0, this);
+                                }
+                                else
+                                {
+                                    Win32SetText(result);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // 自动模式：继续发下一段
+                            // 如果是重打模式，不发送成绩；如果是正文，发送成绩
+                            if (StateManager.retypeType == RetypeType.wrongRetype ||
+                                StateManager.retypeType == RetypeType.slowRetype)
+                            {
+                                await NextAndSendArticleSender(); // 重打完成，不发送成绩
+                            }
+                            else
+                            {
+                                await NextAndSendArticleSender(result); // 正文完成，发送成绩
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                }
+
+
+                RecordScore:
+                // 记录文章日志（不包括打单器）
+                // 对于错字重打和慢字重打，只在开启了对应功能时才不记录
+                if (savedTxtSource != TxtSource.trainer)
+                {
+                    // 只在开启功能且是重打模式时才不记录
+                    bool shouldRecord = true;
+                    if (savedRetypeType == RetypeType.wrongRetype && Config.GetBool("错字重打"))
+                        shouldRecord = false;
+                    if (savedRetypeType == RetypeType.slowRetype && Config.GetBool("慢字重打"))
+                        shouldRecord = false;
+
+                    if (shouldRecord)
+                    {
+                        try
+                        {
+                            // 直接使用保存的值（已经在 StopHelper 开始时根据来源设置好了）
+                            string articleName = savedArticleName;
+                            string articleMark = savedArticleMark;
+
+                            var record = new ArticleLog.ArticleRecord
+                            {
+                                Time = DateTime.Now,
+                                ArticleName = articleName,
+                                TotalWords = savedTotalWords,
+                                InputWords = savedInputWords,
+                                Speed = savedSpeed,
+                                HitRate = savedHitRate,
+                                Accuracy = savedAccuracy,
+                                Wrong = savedWrong,
+                                Backs = savedBacks,
+                                Correction = savedCorrection,
+                                KPW = savedKPW,
+                                LRRatio = savedLRRatio,
+                                TotalHit = savedTotalHit,
+                                TotalSeconds = savedTotalSeconds,
+                                ArticleMark = savedArticleMark,
+                                WasteCodes = savedWasteCodes,
+                                CiRatio = savedCiRatio,
+                                Choose = savedChoose,
+                                BiaoDing = savedBiaoDing,
+                                DifficultyName = savedDifficultyName
+                            };
+
+                            // 根据来源记录到不同的日志（使用保存的 txtSource）
+                            if (savedTxtSource == TxtSource.articlesender)
+                            {
+                                // 文来文章记录到文来日志
+                                WenlaiLog.WriteRecord(record);
+                            }
+                            else
+                            {
+                                // 其他文章记录到文章日志
+                                ArticleLog.WriteRecord(record);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            // 记录文章日志失败
                         }
                     }
                 }
             }
-            else
-            {
-            }
-
-
-            // 记录文章日志（包括重打，但不包括打单器、错字重打、慢字重打）
-            System.Diagnostics.Debug.WriteLine($"[StopHelper] 记录日志判断 - savedTxtSource={savedTxtSource}, savedRetypeType={savedRetypeType}");
-            if (savedTxtSource != TxtSource.trainer &&
-                savedRetypeType != RetypeType.wrongRetype &&
-                savedRetypeType != RetypeType.slowRetype)
-            {
-                System.Diagnostics.Debug.WriteLine($"[StopHelper] 条件满足，准备记录 - articleName={savedArticleName}");
-                try
-                {
-                    // 直接使用保存的值（已经在 StopHelper 开始时根据来源设置好了）
-                    string articleName = savedArticleName;
-                    string articleMark = savedArticleMark;
-
-                    var record = new ArticleLog.ArticleRecord
-                    {
-                        Time = DateTime.Now,
-                        ArticleName = articleName,
-                        TotalWords = savedTotalWords,
-                        InputWords = savedInputWords,
-                        Speed = savedSpeed,
-                        HitRate = savedHitRate,
-                        Accuracy = savedAccuracy,
-                        Wrong = savedWrong,
-                        Backs = savedBacks,
-                        Correction = savedCorrection,
-                        KPW = savedKPW,
-                        LRRatio = savedLRRatio,
-                        TotalHit = savedTotalHit,
-                        TotalSeconds = savedTotalSeconds,
-                        ArticleMark = savedArticleMark,
-                        WasteCodes = savedWasteCodes,
-                        CiRatio = savedCiRatio,
-                        Choose = savedChoose,
-                        BiaoDing = savedBiaoDing,
-                        DifficultyName = savedDifficultyName
-                    };
-
-                    // 根据来源记录到不同的日志（使用保存的 txtSource）
-                    if (savedTxtSource == TxtSource.articlesender)
-                    {
-                        // 文来文章记录到文来日志
-                        System.Diagnostics.Debug.WriteLine($"[StopHelper] 调用 WenlaiLog.WriteRecord - TotalWords={savedTotalWords}, ArticleMark={savedArticleMark}");
-                        WenlaiLog.WriteRecord(record);
-                        System.Diagnostics.Debug.WriteLine($"[StopHelper] WenlaiLog.WriteRecord 调用完成");
-                    }
-                    else
-                    {
-                        // 其他文章记录到文章日志
-                        System.Diagnostics.Debug.WriteLine($"[StopHelper] 调用 ArticleLog.WriteRecord - TotalWords={savedTotalWords}");
-                        ArticleLog.WriteRecord(record);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"记录文章日志失败: {ex.Message}");
-                }
-            }}
             catch (Exception ex)
             {
+                // 异常已被上层处理
             }
 
 
@@ -2963,7 +3087,7 @@ namespace TypeSunny
 
 
         Timer tm1;
-        int lastInputLength = 0;  // 记录上次输入框长度，用于判断是否真正上屏
+        int lastInputLength = 0; // 记录上次输入框长度，用于判断是否真正上屏
 
         void ProcInput()
         {
@@ -2990,7 +3114,7 @@ namespace TypeSunny
             void Stop()
             {
                 Trace.WriteLine("stop");
-              
+
                 StateManager.LastType = true;
                 Score.TotalWordCount = TextInfo.Words.Count;
                 Score.Time = sw.Elapsed;
@@ -3015,7 +3139,8 @@ namespace TypeSunny
                     int lenA = TextInfo.Words.Count;
                     int lenB = sb.LengthInTextElements;
 
-                    return lenA <= lenB && lenA >= 1 && TextInfo.Words.Last() == sb.SubstringByTextElements(lenA - 1, 1);
+                    return lenA <= lenB && lenA >= 1 &&
+                           TextInfo.Words.Last() == sb.SubstringByTextElements(lenA - 1, 1);
 
                 }
                 else
@@ -3033,7 +3158,8 @@ namespace TypeSunny
                     for (int i = lenA - 3; i <= lenA - 1; i++)
                         la += TextInfo.Words[i];
 
-                    bool LastMatch = lenB > 3 && sb.SubstringByTextElements(lenB - 3, 3).Replace("”", "“") == la.Replace("”", "“");
+                    bool LastMatch = lenB > 3 && sb.SubstringByTextElements(lenB - 3, 3).Replace("”", "“") ==
+                        la.Replace("”", "“");
 
                     bool LengthMatch = Math.Abs(lenB - lenA) <= LengthError;
 
@@ -3088,55 +3214,163 @@ namespace TypeSunny
 
         public async Task NextAndSendArticle(string lastResult)
         {
-            NextArticle();
+            WriteDebugLog($"[NextAndSendArticle] 开始，lastResult长度={lastResult?.Length ?? 0}");
 
-
-            if (winArticle != null)
+            // 在非UI线程中，提前获取QQGroupName等UI相关属性
+            string qqGroupName = "";
+            bool autoSendScore = false;
+            Dispatcher.Invoke(() =>
             {
-                await winArticle.UpdateDisplay();
-            }
-            string content2 = await ArticleManager.GetFormattedCurrentSection();
-            LoadText(content2, RetypeType.first, TxtSource.book, false, true);
+                qqGroupName = QQGroupName;
+                autoSendScore = Config.GetBool("自动发送成绩");
+            });
 
-            // 发送成绩和下一段内容
-            if (QQGroupName != "")
+            try
             {
-                if (Config.GetBool("自动发送成绩"))
+                // 使用 Task.Run + Dispatcher.Invoke 模式（参考文来模式 line 7526-7535）
+                await Task.Run(() =>
                 {
-                    QQHelper.SendQQMessageD(QQGroupName, lastResult, content2, 150, this);
+                    Dispatcher.Invoke(() =>
+                    {
+                        WriteDebugLog($"[NextAndSendArticle] Task.Run内 调用 NextArticle");
+                        NextArticle();
+                        WriteDebugLog($"[NextAndSendArticle] Task.Run内 NextArticle完成");
+                    });
+                });
+
+                WriteDebugLog($"[NextAndSendArticle] 获取下一段内容");
+                string content2 = await ArticleManager.GetFormattedCurrentSection();
+                WriteDebugLog($"[NextAndSendArticle] 下一段内容长度={content2?.Length ?? 0}");
+
+                // 检查是否到达文章末尾
+                if (string.IsNullOrWhiteSpace(content2))
+                {
+                    WriteDebugLog($"[NextAndSendArticle] 已到达文章末尾，只发送成绩");
+                    // 只发送成绩，不加载下一段
+                    if (qqGroupName != "")
+                    {
+                        WriteDebugLog($"[NextAndSendArticle] 发送成绩到QQ群");
+                        QQHelper.SendQQMessage(qqGroupName, lastResult, 150, this);
+                    }
+                    else
+                    {
+                        WriteDebugLog($"[NextAndSendArticle] 复制成绩到剪切板");
+                        Win32SetText(lastResult);
+                        FocusInput();
+                    }
+                    return;
+                }
+
+                // 使用 Task.Run + Dispatcher.Invoke 模式，不等待（fire-and-forget）
+                Task.Run(() =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        WriteDebugLog($"[NextAndSendArticle] Task.Run内 调用 LoadText");
+                        LoadText(content2, RetypeType.first, TxtSource.book, false, true);
+                        WriteDebugLog($"[NextAndSendArticle] Task.Run内 LoadText完成");
+                    });
+                });
+
+                // 发送成绩和下一段内容
+                if (qqGroupName != "")
+                {
+                    WriteDebugLog($"[NextAndSendArticle] 发送到QQ群");
+                    // 本地文章模式：始终发送成绩和下一段
+                    QQHelper.SendQQMessageD(qqGroupName, lastResult, content2, 150, this);
                 }
                 else
                 {
-                    QQHelper.SendQQMessage(QQGroupName, content2, 150, this);
+                    WriteDebugLog($"[NextAndSendArticle] 复制到剪切板");
+                    // 复制成绩和下一段内容到剪切板
+                    string messageToSend = lastResult + "\n" + content2;
+                    Win32SetText(messageToSend);
+                    FocusInput();
                 }
             }
-            else
+            catch (Exception ex)
             {
-                // 复制下一段内容到剪切板
-                // 根据"自动发送成绩"开关决定是否复制成绩
-                string messageToSend = content2;
-                if (Config.GetBool("自动发送成绩"))
+                WriteDebugLog($"[NextAndSendArticle] 异常: {ex.Message}");
+                // 发生异常时，至少发送成绩
+                if (qqGroupName != "")
                 {
-                    messageToSend = lastResult + "\n" + content2;
+                    QQHelper.SendQQMessage(qqGroupName, lastResult, 150, this);
                 }
-                Win32SetText(messageToSend);
-                FocusInput();
+                else
+                {
+                    Win32SetText(lastResult);
+                    FocusInput();
+                }
+                throw;  // 重新抛出异常，让上层处理
             }
+            WriteDebugLog($"[NextAndSendArticle] 完成");
         }
 
         public async Task NextAndSendArticle()
         {
-            NextArticle();
+            WriteDebugLog($"[NextAndSendArticle无参] 开始");
 
-
-            if (winArticle != null)
+            // 在非UI线程中，提前获取QQGroupName等UI相关属性
+            string qqGroupName = "";
+            Dispatcher.Invoke(() =>
             {
-                await winArticle.UpdateDisplay();
-            }
-            string content2 = await ArticleManager.GetFormattedCurrentSection();
-            LoadText(content2, RetypeType.first, TxtSource.book, false, true);
+                qqGroupName = QQGroupName;
+            });
 
-            SendContentToClipboardOrQQ(content2);
+            try
+            {
+                // 使用 Task.Run + Dispatcher.Invoke 模式（参考文来模式 line 7526-7535）
+                await Task.Run(() =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        WriteDebugLog($"[NextAndSendArticle无参] Task.Run内 调用 NextArticle");
+                        NextArticle();
+                        WriteDebugLog($"[NextAndSendArticle无参] Task.Run内 NextArticle完成");
+                    });
+                });
+
+                WriteDebugLog($"[NextAndSendArticle无参] 获取下一段内容");
+                string content2 = await ArticleManager.GetFormattedCurrentSection();
+                WriteDebugLog($"[NextAndSendArticle无参] 下一段内容长度={content2?.Length ?? 0}");
+
+                // 检查是否到达文章末尾
+                if (string.IsNullOrWhiteSpace(content2))
+                {
+                    WriteDebugLog($"[NextAndSendArticle无参] 已到达文章末尾");
+                    return;
+                }
+
+                // 使用 Task.Run + Dispatcher.Invoke 模式，不等待（fire-and-forget）
+                Task.Run(() =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        WriteDebugLog($"[NextAndSendArticle无参] Task.Run内 调用 LoadText");
+                        LoadText(content2, RetypeType.first, TxtSource.book, false, true);
+                        WriteDebugLog($"[NextAndSendArticle无参] Task.Run内 LoadText完成");
+                    });
+                });
+
+                // 直接发送到QQ或剪切板
+                if (qqGroupName != "")
+                {
+                    WriteDebugLog($"[NextAndSendArticle无参] 发送到QQ群");
+                    QQHelper.SendQQMessage(qqGroupName, content2, 250, this);
+                    FocusInput(); // 发送QQ后确保窗口激活
+                }
+                else
+                {
+                    WriteDebugLog($"[NextAndSendArticle无参] 复制到剪切板");
+                    Win32SetText(content2);
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteDebugLog($"[NextAndSendArticle无参] 异常: {ex.Message}");
+                throw;
+            }
+            WriteDebugLog($"[NextAndSendArticle无参] 完成");
         }
 
         /// <summary>
@@ -3155,6 +3389,7 @@ namespace TypeSunny
                 {
                     sb.Append(hashBytes[i].ToString("x2"));
                 }
+
                 return sb.ToString();
             }
         }
@@ -3179,7 +3414,7 @@ namespace TypeSunny
             // 使用文来接口返回的mark（如"2-277101"）替代本地段号
             //string sha1 = CalculateSHA1(content);
             //sb.Append($"-----第{mark}段-sha1({sha1})-晴发文");
-            
+
             sb.Append($"-----第{mark}段-晴发文");
 
             return sb.ToString();
@@ -3193,7 +3428,7 @@ namespace TypeSunny
             if (QQGroupName != "")
             {
                 QQHelper.SendQQMessage(QQGroupName, content, 250, this);
-                FocusInput();  // 发送QQ后确保窗口激活
+                FocusInput(); // 发送QQ后确保窗口激活
             }
             else
             {
@@ -3204,100 +3439,20 @@ namespace TypeSunny
         }
 
         /// <summary>
-        /// 文来模式：加载下一段并发送
+        /// 文来模式：打完后自动加载新的随机文章并发送成绩
         /// </summary>
-        private void NextAndSendArticleSender(string lastResult = "")
+        private async Task NextAndSendArticleSender(string lastResult = "")
         {
-            // 检查换段模式
-            bool manualMode = Config.GetString("文来换段模式") == "手动";
-
-            string segment = articleCache.GetNextSegment();
-
-            if (string.IsNullOrEmpty(segment))
-            {
-                // 已经是最后一段，自动加载新文章并发送
-                LoadRandomArticle(true, lastResult);
-            }
-            else
-            {
-                // 手动模式：不自动发送下一段，只发送成绩（如果有）
-                if (manualMode)
-                {
-                    // 手动模式：只发送成绩，不发送下一段，不加载新文本
-                    if (!string.IsNullOrEmpty(lastResult) && Config.GetBool("自动发送成绩"))
-                    {
-                        if (QQGroupName != "")
-                        {
-                            QQHelper.SendQQMessage(QQGroupName, lastResult, 0, this);
-                        }
-                        else
-                        {
-                            Win32SetText(lastResult);
-                        }
-                    }
-                }
-                else
-                {
-                    // 自动模式：保持原有逻辑
-                    // 格式化发文内容
-                    string title = articleCache.GetCurrentTitle();
-                    string mark = articleCache.GetCurrentMark();  // 使用文来接口返回的mark
-                    string difficultyText = articleCache.GetCurrentDifficulty();  // 使用文来接口返回的难度
-                    string formattedContent = FormatArticleSenderContent(title, segment, mark, difficultyText);
-
-                    // 先发送QQ，再异步渲染（提升响应速度）
-                    if (QQGroupName != "")
-                    {
-                        if (!string.IsNullOrEmpty(lastResult))
-                        {
-                            // 有成绩：根据"自动发送成绩"开关决定
-                            if (Config.GetBool("自动发送成绩"))
-                            {
-                                // 开启自动发送成绩：先发成绩，再发下一段
-                                QQHelper.SendQQMessageD(QQGroupName, lastResult, formattedContent, 0, this);
-                            }
-                            else
-                            {
-                                // 未开启自动发送成绩：只发下一段文章
-                                QQHelper.SendQQMessage(QQGroupName, formattedContent, 0, this);
-                            }
-                        }
-                        else
-                        {
-                            // 无成绩：只发下一段
-                            QQHelper.SendQQMessage(QQGroupName, formattedContent, 0, this);
-                        }
-                    }
-                    else
-                    {
-                        // 没有选群：复制到剪切板
-                        // 根据"自动发送成绩"开关决定是否复制成绩
-                        string messageToSend = formattedContent;
-                        if (!string.IsNullOrEmpty(lastResult) && Config.GetBool("自动发送成绩"))
-                        {
-                            messageToSend = lastResult + "\n" + formattedContent;
-                        }
-                        Win32SetText(messageToSend);
-                    }
-
-                    // 异步渲染文本，不等待渲染完成（fire-and-forget）
-                    System.Threading.Tasks.Task.Run(() =>
-                    {
-                        Dispatcher.Invoke(() =>
-                        {
-                            LoadText(segment, RetypeType.first, TxtSource.articlesender, switchBack: false);
-                            // 重置进度条
-                            if (Config.GetBool("显示进度条"))
-                                TitleProgressBar.Width = 0;
-                        });
-                    });
-                }
-            }
+            // 直接加载新的随机文章并发送成绩
+            await LoadRandomArticleAsync(true, lastResult);
         }
+    
+    
 
 
 
-        public async Task SendArticle()
+
+public async Task SendArticle()
         {
             string content = await ArticleManager.GetFormattedCurrentSection();
 
@@ -3750,57 +3905,38 @@ namespace TypeSunny
         }
         private void GetQQText()
         {
-            System.Text.StringBuilder logBuilder = new System.Text.StringBuilder();
-            logBuilder.AppendLine($"========== GetQQText 开始 ==========");
-            logBuilder.AppendLine($"时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
+            // 禁用按钮，防止重复点击
+            BtnF4.IsEnabled = false;
 
             try
             {
                 string groupName = QQGroupName;
-                logBuilder.AppendLine($"目标群名: [{groupName}]");
 
                 if (groupName == "")
                 {
-                    DebugLog.AppendLine("无群");
                     return;
                 }
 
-                DebugLog.AppendLine("GetQQText");
-                logBuilder.AppendLine("步骤1: 查找QQ主窗口");
-
+                // 步骤1: 查找QQ主窗口
                 string MainTitle = "QQ";
                 var q = root.GetRootElement().FindFirst(TreeScope.TreeScope_Children, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, MainTitle));
                 if (q == null)
                 {
                     return;
                 }
-                logBuilder.AppendLine($"成功: 找到QQ主窗口, ClassName=[{q.CurrentClassName}]");
 
-                // 激活窗口（如果需要）
-                if (null == q.FindFirst(TreeScope.TreeScope_Children, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId)))
-                {
-                    var wp = q.GetCurrentPattern(UIA_PatternIds.UIA_WindowPatternId) as IUIAutomationWindowPattern;
-                    wp.SetWindowVisualState(WindowVisualState.WindowVisualState_Normal);
-                    q.SetFocus();
-                    Win32.Delay(50);
-                    logBuilder.AppendLine("窗口已激活");
-                }
-
-                logBuilder.AppendLine("步骤2: 查找会话列表");
+                // 步骤2: 查找会话列表
                 var grouplist = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "会话列表"));
                 if (grouplist == null)
                 {
                     return;
                 }
-                logBuilder.AppendLine("成功: 找到会话列表");
 
-                logBuilder.AppendLine("步骤3: 检查是否已在目标群");
+                // 步骤3: 检查是否已在目标群
                 IUIAutomationElement edits = null;
                 bool alreadyInTargetGroup = false;
 
-                // 检查是否有按钮Name等于目标群名
                 var allButtons = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_ButtonControlTypeId));
-                logBuilder.AppendLine($"找到 {allButtons?.Length ?? 0} 个按钮");
 
                 if (allButtons != null && allButtons.Length > 0)
                 {
@@ -3810,10 +3946,7 @@ namespace TypeSunny
                         string btnName = btn.CurrentName;
                         if (!string.IsNullOrWhiteSpace(btnName) && btnName == groupName)
                         {
-                            logBuilder.AppendLine($"已检测到在目标群 (按钮Name=\"{btnName}\")");
                             alreadyInTargetGroup = true;
-
-                            // 尝试查找输入框
                             edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, groupName));
                             if (edits == null)
                             {
@@ -3824,14 +3957,10 @@ namespace TypeSunny
                     }
                 }
 
-                // 如果不在目标群，去会话列表查找并点击群
+                // 步骤4: 如果不在目标群，点击目标群
                 if (edits == null && !alreadyInTargetGroup)
                 {
-                    logBuilder.AppendLine("步骤4: 不在目标群，去会话列表查找并点击群");
-
-                    // 使用更宽松的条件：查找所有子元素，而不是特定类型
                     var allChildren = grouplist.FindAll(TreeScope.TreeScope_Children, root.CreateTrueCondition());
-                    logBuilder.AppendLine($"会话列表子元素数量: {allChildren.Length}");
 
                     if (allChildren.Length > 0)
                     {
@@ -3840,7 +3969,6 @@ namespace TypeSunny
                             var elem = allChildren.GetElement(i);
                             string itemName = elem.CurrentName;
 
-                            // 快速匹配
                             bool quickMatch = false;
                             if (!string.IsNullOrWhiteSpace(itemName))
                             {
@@ -3854,11 +3982,9 @@ namespace TypeSunny
                                 if (quickName == groupName || quickName.StartsWith(groupName))
                                 {
                                     quickMatch = true;
-                                    logBuilder.AppendLine($"  群[{i}]: 快速匹配成功 Name=\"{itemName}\"");
                                 }
                             }
 
-                            // 如果顶层元素Name为空，查找子元素
                             string extractedName = "";
                             if (!quickMatch && string.IsNullOrWhiteSpace(itemName))
                             {
@@ -3875,7 +4001,6 @@ namespace TypeSunny
                                         if (string.IsNullOrWhiteSpace(descName))
                                             continue;
 
-                                        // 检查是否是时间标记
                                         if (QQHelper.IsTimeMarker(descName))
                                             break;
 
@@ -3911,21 +4036,17 @@ namespace TypeSunny
                             string targetName = quickMatch ? itemName : extractedName;
                             if (!string.IsNullOrWhiteSpace(targetName) && targetName == groupName)
                             {
-                                logBuilder.AppendLine($"  找到目标群: [{groupName}]");
                                 var sp = elem.GetCurrentPattern(UIA_PatternIds.UIA_InvokePatternId) as IUIAutomationInvokePattern;
                                 if (sp != null)
                                 {
-                                    logBuilder.AppendLine("  执行点击");
                                     sp.Invoke();
                                     Win32.Delay(200);
 
-                                    // 查找输入框
                                     edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, groupName));
                                     if (edits == null)
                                     {
                                         edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId));
                                     }
-                                    logBuilder.AppendLine($"  点击后编辑框: {(edits != null ? "找到" : "未找到")}");
                                 }
                                 break;
                             }
@@ -3933,59 +4054,38 @@ namespace TypeSunny
                     }
                 }
 
-                logBuilder.AppendLine("步骤5: 读取消息内容");
-                // 直接从QQ窗口读取所有Text控件
-                var allTexts = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_TextControlTypeId));
-                logBuilder.AppendLine($"找到 {allTexts?.Length ?? 0} 个Text控件");
-
-                string allTxt = "";
-                if (allTexts != null && allTexts.Length > 0)
+                // 步骤5: 从当前群的消息区域查找赛文格式消息
+                var messageArea = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId));
+                if (messageArea != null)
                 {
-                    // 从后往前查找，优先找包含-----第的消息（赛文格式）
-                    bool found = false;
-                    for (int i = allTexts.Length - 1; i >= 0; i--)
-                    {
-                        string text = allTexts.GetElement(i).CurrentName;
-                        if (!string.IsNullOrWhiteSpace(text) && !QQHelper.IsTimeMarker(text) && text.Length > 5)
-                        {
-                            logBuilder.AppendLine($"  检查: {text.Substring(0, Math.Min(50, text.Length))}...");
+                    // 从消息区域内倒着查找所有Text控件
+                    var allTexts = messageArea.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_TextControlTypeId));
 
-                            // 检查是否包含赛文格式标记
-                            if (text.Contains("-----第"))
-                            {
-                                logBuilder.AppendLine($"  -> 找到赛文格式消息！");
-                                allTxt = text;
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    // 如果没找到赛文格式，取最近一条消息
-                    if (!found)
+                    if (allTexts != null && allTexts.Length > 0)
                     {
-                        logBuilder.AppendLine("  未找到赛文格式，取最近一条消息");
+                        // 倒着查找赛文格式
                         for (int i = allTexts.Length - 1; i >= 0; i--)
                         {
                             string text = allTexts.GetElement(i).CurrentName;
-                            if (!string.IsNullOrWhiteSpace(text) && !QQHelper.IsTimeMarker(text) && text.Length > 5)
+
+                            // 检查：非空、长度>=5、包含赛文格式标记
+                            if (!string.IsNullOrWhiteSpace(text) && text.Length >= 5 && text.Contains("-----第"))
                             {
-                                allTxt = text;
-                                logBuilder.AppendLine($"  -> 取消息: {text.Substring(0, Math.Min(50, text.Length))}...");
+                                LoadText(text, RetypeType.first, TxtSource.qq);
                                 break;
                             }
                         }
                     }
                 }
-
-                logBuilder.AppendLine($"步骤6: 最终文本长度={allTxt.Length}");
-                LoadText(allTxt, RetypeType.first, TxtSource.qq);
-                logBuilder.AppendLine("LoadText调用完成");
-
-                logBuilder.AppendLine("========== GetQQText 结束 ==========");
             }
             catch (Exception ex)
             {
+                // 忽略异常
+            }
+            finally
+            {
+                // 恢复按钮
+                BtnF4.IsEnabled = true;
             }
         }
 
@@ -3993,12 +4093,7 @@ namespace TypeSunny
         {
             try
             {
-                string logDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
-                if (!System.IO.Directory.Exists(logDir))
-                    System.IO.Directory.CreateDirectory(logDir);
-
-                string logFile = System.IO.Path.Combine(logDir, $"QQ_Debug_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
-                System.IO.File.WriteAllText(logFile, log, Encoding.UTF8);
+                // 日志已禁用
             }
             catch
             {
@@ -4084,12 +4179,16 @@ namespace TypeSunny
         public void LoadText(string rawTxt, RetypeType retypeType, TxtSource source, bool switchBack = true, bool isAuto = false) //原文、来源、重打类型
         {
             if (Config.GetBool("禁止F3重打") && (retypeType == RetypeType.shuffle || retypeType == RetypeType.retype))
+            {
                 return;
+            }
 
             var rt = ExtractRawTxt(rawTxt);
 
             if (rt.Item1 == "")
+            {
                 return;
+            }
 
             if (isAuto && IsLookingType && StateManager.LastType) //看打模式的话，先缓存起来
             {
@@ -4116,22 +4215,25 @@ namespace TypeSunny
             {
 
                 Score.Paragraph = 0;
+                Score.ParagraphString = "";
                 Score.ArticleMark = "";  // 清空文来标记
             }
             else if (retypeType == RetypeType.shuffle || retypeType == RetypeType.retype)
             {
                 Score.Paragraph = TextInfo.Paragraph;
-                // 重打时保持原有的ArticleMark
+                // 重打时保持原有的ArticleMark和ParagraphString
             }
             else //(retypeType == RetypeType.first)
             {
                 Score.Paragraph = rt.Item2;
                 TextInfo.Paragraph = rt.Item2;
+                Score.ParagraphString = rt.Item3;
 
                 // 如果是文来模式，获取并设置ArticleMark
                 if (source == TxtSource.articlesender && articleCache.HasArticle())
                 {
                     Score.ArticleMark = articleCache.GetCurrentMark();
+                    Score.ParagraphString = "";  // 文来模式使用ArticleMark，清空ParagraphString
                 }
                 else
                 {
@@ -4183,7 +4285,7 @@ namespace TypeSunny
             // 文来模式：强制清空Blocks，确保重新渲染（修复显示不更新的bug）
             if (source == TxtSource.articlesender)
             {
-                TbDispay.Children.Clear();
+                Dispatcher.Invoke(() => TbDispay.Children.Clear());
                 TextInfo.Blocks.Clear();
             }
 
@@ -4201,24 +4303,27 @@ namespace TypeSunny
                 // 启动字提定时器
                 StartZiTiTimer();
 
-                switch (retypeType)
+                Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    case RetypeType.shuffle:
-                        TbkStatusTop.Text = "乱序";
-                        break;
-                    case RetypeType.retype:
-                        TbkStatusTop.Text = "重打";
-                        break;
-                    case RetypeType.wrongRetype:
-                        TbkStatusTop.Text = "错字重打";
-                        break;
-                    case RetypeType.slowRetype:
-                        TbkStatusTop.Text = "慢字重打";
-                        break;
-                    default:
-                        TbkStatusTop.Text = "准备";
-                        break;
-                }
+                    switch (retypeType)
+                    {
+                        case RetypeType.shuffle:
+                            TbkStatusTop.Text = "乱序";
+                            break;
+                        case RetypeType.retype:
+                            TbkStatusTop.Text = "重打";
+                            break;
+                        case RetypeType.wrongRetype:
+                            TbkStatusTop.Text = "错字重打";
+                            break;
+                        case RetypeType.slowRetype:
+                            TbkStatusTop.Text = "慢字重打";
+                            break;
+                        default:
+                            TbkStatusTop.Text = "准备";
+                            break;
+                    }
+                }));
        //         if (retypeType != RetypeType.first)
         //            TbkStatusTop.Text = "准备";
 
@@ -4228,12 +4333,13 @@ namespace TypeSunny
                 Score.Reset();
 
 
-
-                if (!(IsLookingType && StateManager.LastType))
-                    TbxInput.IsReadOnly = false;
-                TbxInput.Clear();
-
-                UpdateDisplay(UpdateLevel.PageArrange);
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (!(IsLookingType && StateManager.LastType))
+                        TbxInput.IsReadOnly = false;
+                    TbxInput.Clear();
+                    UpdateDisplay(UpdateLevel.PageArrange);
+                }));
 
                 // 重置滚动位置到顶部（避免乱序/重打时停留在中间位置）
                 // 使用BeginInvoke确保在UI布局完成后再设置
@@ -4243,18 +4349,39 @@ namespace TypeSunny
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
 
                 // 计算并显示难度（文来模式优先使用接口返回的难度）
-                if (source == TxtSource.articlesender && articleCache.HasArticle())
+                // 更新字提和标题（需要在UI线程中执行）
+                Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    string wenlaiDifficulty = articleCache.GetCurrentDifficulty();
-                    if (!string.IsNullOrEmpty(wenlaiDifficulty))
+                    if (source == TxtSource.articlesender && articleCache.HasArticle())
                     {
-                        // 使用文来返回的难度
-                        currentDifficultyText = "难度：" + wenlaiDifficulty;
-                        UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
+                        string wenlaiDifficulty = articleCache.GetCurrentDifficulty();
+                        if (!string.IsNullOrEmpty(wenlaiDifficulty))
+                        {
+                            // 使用文来返回的难度
+                            currentDifficultyText = "难度：" + wenlaiDifficulty;
+                            UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
+                        }
+                        else
+                        {
+                            // 文来没有返回难度，调用接口获取（异步）
+                            string currentText = String.Join("", TextInfo.Words);
+                            Task.Run(async () =>
+                            {
+                                string difficulty = await ArticleFetcher.CalcDifficultyFromApiAsync(currentText);
+                                Dispatcher.Invoke(() =>
+                                {
+                                    if (!string.IsNullOrEmpty(difficulty))
+                                    {
+                                        currentDifficultyText = "难度：" + difficulty;
+                                        UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
+                                    }
+                                });
+                            });
+                        }
                     }
                     else
                     {
-                        // 文来没有返回难度，调用接口获取（异步）
+                        // 其他模式，调用接口获取难度（异步）
                         string currentText = String.Join("", TextInfo.Words);
                         Task.Run(async () =>
                         {
@@ -4269,30 +4396,13 @@ namespace TypeSunny
                             });
                         });
                     }
-                }
-                else
-                {
-                    // 其他模式，调用接口获取难度（异步）
-                    string currentText = String.Join("", TextInfo.Words);
-                    Task.Run(async () =>
-                    {
-                        string difficulty = await ArticleFetcher.CalcDifficultyFromApiAsync(currentText);
-                        Dispatcher.Invoke(() =>
-                        {
-                            if (!string.IsNullOrEmpty(difficulty))
-                            {
-                                currentDifficultyText = "难度：" + difficulty;
-                                UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
-                            }
-                        });
-                    });
-                }
 
-                // 更新字提显示
-                UpdateZiTi();
+                    // 更新字提显示
+                    UpdateZiTi();
 
-                // 更新标题显示（所有模式，初始字数为0）
-                UpdateWindowTitle(0, TextInfo.Words.Count);
+                    // 更新标题显示（所有模式，初始字数为0）
+                    UpdateWindowTitle(0, TextInfo.Words.Count);
+                }));
 
 
                 if (switchBack)
@@ -4308,23 +4418,20 @@ namespace TypeSunny
 
         }
 
-        private Tuple<string, int> ExtractRawTxt(string rawTxt)
+        private Tuple<string, int, string> ExtractRawTxt(string rawTxt)
         {
-
-
-
             string[] lines = rawTxt.Split(new char[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
 
-            Regex r = new Regex("-----第[0-9]+段");
+            Regex r = new Regex("-----第\\w+段");
 
             int paragraph = 0;
+            string paragraphString = "";
             string head = "";
             string content = "";
             string tail = "";
 
             if (rawTxt == "")
-                return new Tuple<string, int>(content, paragraph);
-
+                return new Tuple<string, int, string>(content, paragraph, paragraphString);
 
             //开始检测
             int index = -1;
@@ -4340,26 +4447,26 @@ namespace TypeSunny
 
             if (index >= 2) //赛文格式
             {
-
                 head = lines[index - 2];
                 content = lines[index - 1];
                 tail = lines[index];
 
-                var m = Regex.Match(tail, "第[0-9]+段");
-
-                paragraph = Convert.ToInt32(m.Value.Substring(1, m.Value.Length - 2));
+                var m = Regex.Match(tail, "第(\\w+)段");
+                paragraphString = m.Groups[1].Value;
+                if (int.TryParse(paragraphString, out int para))
+                    paragraph = para;
+                else
+                    paragraph = 0;
 
                 if (head.Length >= 3 && head.Substring(0, 3) == "皇叔 ")
                     content = UnicodeBias(content);
-
-
             }
             else //非赛文格式
             {
                 content = rawTxt.Replace("\n", "").Replace("\r", "").Replace("\t", "");
             }
 
-            return new Tuple<string, int>(content, paragraph);
+            return new Tuple<string, int, string>(content, paragraph, paragraphString);
 
 
         }
@@ -4503,31 +4610,6 @@ namespace TypeSunny
 
         private void TbxInput_TextChanged(object sender, TextChangedEventArgs e)
         {
-            // 调试：打印所有可用数据（已禁用，避免文件写入错误）
-            /*
-            if (StateManager.typingState == TypingState.typing && e.Changes.Count > 0)
-            {
-                var change = e.Changes.First();
-                string currentWord = TextInfo.Words.Count > 0 && TbxInput.Text.Length > 0
-                    ? TextInfo.Words[Math.Min(TbxInput.Text.Length - 1, TextInfo.Words.Count - 1)]
-                    : "";
-
-                System.IO.File.AppendAllText(@"E:\debug_log.txt",
-                    $"=== TextChanged ===\n" +
-                    $"Time: {DateTime.Now:HH:mm:ss.fff}\n" +
-                    $"TbxInput.Text: '{TbxInput.Text}' (Length={TbxInput.Text.Length})\n" +
-                    $"Selection: Start={TbxInput.SelectionStart}, Length={TbxInput.SelectionLength}\n" +
-                    $"CaretIndex: {TbxInput.CaretIndex}\n" +
-                    $"Changes: Added={change.AddedLength}, Removed={change.RemovedLength}, Offset={change.Offset}\n" +
-                    $"IsComposing: {Score.IsComposing}\n" +
-                    $"TextInput flag: {StateManager.TextInput}\n" +
-                    $"BimeHit: {Score.BimeHit}\n" +
-                    $"typingState: {StateManager.typingState}\n" +
-                    $"Current expected word: '{currentWord}'\n" +
-                    $"==================\n");
-            }
-            */
-
             //启动 - TextChanged 事件中也需触发计时开始（兼容 TSF 输入法）
             if ((StateManager.typingState == TypingState.pause || StateManager.typingState == TypingState.ready)
                 && e.Changes.Count > 0 && e.Changes.First().AddedLength > 0)
@@ -6293,29 +6375,26 @@ namespace TypeSunny
                     // 更新主菜单项，显示当前选择的难度
                     difficultyItem.Header = $"🎯 选择难度 [{currentDifficultyName}]";
 
-                    // 如果有难度列表，添加子菜单
+                    // 始终添加"刷新"选项（最顶部，无论是否有缓存数据）
+                    MenuItem refreshItem = new MenuItem
+                    {
+                        Header = "🔄 刷新难度列表",
+                        Background = menuBg,
+                        Foreground = menuFg,
+                        Style = menuItemStyle
+                    };
+                    refreshItem.Click += async (s, args) =>
+                    {
+                        ArticleFetcher.ClearDifficultyCache();
+                        // 异步加载最新数据
+                        var newDifficulties = await ArticleFetcher.GetDifficultiesAsync();
+                        InitializeWenlaiMenu();  // 重新加载菜单
+                    };
+                    difficultyItem.Items.Add(refreshItem);
+
+                    // 如果有难度列表，添加难度选项
                     if (difficulties.Count > 0)
                     {
-                        // 添加"刷新"选项（最顶部）
-                        MenuItem refreshItem = new MenuItem
-                        {
-                            Header = "🔄 刷新难度列表",
-                            Background = menuBg,
-                            Foreground = menuFg,
-                            Style = menuItemStyle
-                        };
-                        refreshItem.Click += async (s, args) =>
-                        {
-                            ArticleFetcher.ClearDifficultyCache();
-                            // 异步加载最新数据
-                            var newDifficulties = await ArticleFetcher.GetDifficultiesAsync();
-                            if (newDifficulties != null && newDifficulties.Count > 0)
-                            {
-                                InitializeWenlaiMenu();  // 重新加载菜单
-                            }
-                        };
-                        difficultyItem.Items.Add(refreshItem);
-
                         // 添加分隔线
                         difficultyItem.Items.Add(CreateStyledSeparator(menuBg));
 
@@ -6363,7 +6442,19 @@ namespace TypeSunny
                     }
                     else
                     {
-                        // 没有缓存数据，后台异步加载
+                        // 没有缓存数据，显示加载提示
+                        difficultyItem.Items.Add(CreateStyledSeparator(menuBg));
+                        MenuItem loadingItem = new MenuItem
+                        {
+                            Header = "⏳ 加载难度数据...",
+                            Background = menuBg,
+                            Foreground = menuFg,
+                            Style = menuItemStyle,
+                            IsEnabled = false
+                        };
+                        difficultyItem.Items.Add(loadingItem);
+
+                        // 后台异步加载
                         System.Threading.Tasks.Task.Run(async () =>
                         {
                             var loadedDifficulties = await ArticleFetcher.GetDifficultiesAsync();
@@ -6439,7 +6530,14 @@ namespace TypeSunny
             System.Diagnostics.Debug.WriteLine("  检查是否已登录...");
             if (wenlaiHelper.IsLoggedIn())
             {
-                System.Diagnostics.Debug.WriteLine("  已登录，调用 InitializeRaceMenu...");
+                System.Diagnostics.Debug.WriteLine("  已登录，同步等待难度数据加载...");
+                // 登录成功后，同步等待难度数据加载完成
+                Task.Run(async () =>
+                {
+                    await ArticleFetcher.GetDifficultiesAsync();
+                }).GetAwaiter().GetResult();
+
+                System.Diagnostics.Debug.WriteLine("  调用 InitializeRaceMenu...");
                 InitializeRaceMenu();
                 System.Diagnostics.Debug.WriteLine("  InitializeRaceMenu 完成");
 
@@ -6505,6 +6603,12 @@ namespace TypeSunny
             // 需要刷新赛文菜单以显示最新状态
             if (wenlaiHelper.IsLoggedIn())
             {
+                // 注册成功后，同步等待难度数据加载完成
+                Task.Run(async () =>
+                {
+                    await ArticleFetcher.GetDifficultiesAsync();
+                }).GetAwaiter().GetResult();
+
                 InitializeRaceMenu();
 
                 // 通知所有打开的设置窗口刷新文来难度数据
@@ -6537,7 +6641,16 @@ namespace TypeSunny
         private void MenuItemWenlaiServerSettings_Click(object sender, RoutedEventArgs e)
         {
             wenlaiHelper.ShowServerSettingsDialog(this);
-            // 服务器地址改变后，重新初始化菜单
+            // 服务器地址改变后，清除旧缓存并重新加载
+            ArticleFetcher.ClearDifficultyCache();
+            if (wenlaiHelper.IsLoggedIn())
+            {
+                Task.Run(async () =>
+                {
+                    await ArticleFetcher.GetDifficultiesAsync();
+                });
+            }
+            // 重新初始化菜单
             InitializeWenlaiMenu();
         }
 
@@ -7188,9 +7301,19 @@ namespace TypeSunny
 
         private async Task LoadRandomArticleAsync(bool autoSend = false, string lastResult = "")
         {
+            // 在非UI线程中，提前获取QQGroupName等UI相关属性
+            string qqGroupName = "";
+            Dispatcher.Invoke(() =>
+            {
+                qqGroupName = QQGroupName;
+            });
+
             // 禁用按钮，防止重复点击
-            BtnRandomArticle.IsEnabled = false;
-            BtnRandomArticle.Content = "加载中...";
+            Dispatcher.Invoke(() =>
+            {
+                BtnRandomArticle.IsEnabled = false;
+                BtnRandomArticle.Content = "加载中...";
+            });
 
             try
             {
@@ -7209,11 +7332,13 @@ namespace TypeSunny
                     System.Diagnostics.Debug.WriteLine($"[载文] 警告：未找到文来登录Cookie，可能需要先登录");
                 }
 
+                // 在获取文章前先加载难度列表（确保难度名称缓存已加载）
+                await ArticleFetcher.GetDifficultiesAsync();
+
                 int difficulty = Config.GetInt("文来难度");
                 int maxLength = Config.GetInt("文来字数");
 
-                if (difficulty <= 0)
-                    difficulty = 2; // 默认普通难度
+                // difficulty=0 表示随机难度，不传递 difficulty 参数让服务端随机选择
                 // 字数未填写时不传参数（保持0或负数）
 
                 // 异步获取文章
@@ -7370,7 +7495,7 @@ namespace TypeSunny
                     string formattedContent = FormatArticleSenderContent(title, segment, mark, difficultyText);
 
                 // 先发送QQ，再异步渲染（提升响应速度）
-                if (QQGroupName != "")
+                if (qqGroupName != "")
                 {
                     if (!string.IsNullOrEmpty(lastResult))
                     {
@@ -7378,18 +7503,18 @@ namespace TypeSunny
                         if (Config.GetBool("自动发送成绩"))
                         {
                             // 开启自动发送成绩：先发成绩，再发下一段
-                            QQHelper.SendQQMessageD(QQGroupName, lastResult, formattedContent, 0, this);
+                            QQHelper.SendQQMessageD(qqGroupName, lastResult, formattedContent, 0, this);
                         }
                         else
                         {
                             // 未开启自动发送成绩：只发下一段文章
-                            QQHelper.SendQQMessage(QQGroupName, formattedContent, 0, this);
+                            QQHelper.SendQQMessage(qqGroupName, formattedContent, 0, this);
                         }
                     }
                     else
                     {
                         // 无成绩：只发下一段
-                        QQHelper.SendQQMessage(QQGroupName, formattedContent, 0, this);
+                        QQHelper.SendQQMessage(qqGroupName, formattedContent, 0, this);
                     }
                 }
                 else
@@ -7427,13 +7552,19 @@ namespace TypeSunny
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"加载文章时发生错误: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                Dispatcher.Invoke(() =>
+                {
+                    MessageBox.Show($"加载文章时发生错误: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                });
             }
             finally
             {
                 // 恢复按钮状态
-                BtnRandomArticle.IsEnabled = true;
-                BtnRandomArticle.Content = "文来Ctrl+R";
+                Dispatcher.Invoke(() =>
+                {
+                    BtnRandomArticle.IsEnabled = true;
+                    BtnRandomArticle.Content = "文来Ctrl+R";
+                });
             }
         }
 
@@ -8075,11 +8206,14 @@ namespace TypeSunny
 
         public void FocusInput()
         {
-            this.Activate();
-            this.Topmost = true;  // important
-            this.Topmost = false; // important
-            this.Focus();
-            TbxInput.Focus();
+            Dispatcher.Invoke(() =>
+            {
+                this.Activate();
+                this.Topmost = true;  // important
+                this.Topmost = false; // important
+                this.Focus();
+                TbxInput.Focus();
+            });
         }
 
 

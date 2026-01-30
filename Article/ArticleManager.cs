@@ -402,10 +402,11 @@ namespace TypeSunny
 
         private static void  UpdateWindows()
         {
-            ((MainWindow)App.Current.Windows[0]).UpdateButtonProgress();
-        
-            ((MainWindow)App.Current.Windows[0]).winArticle?.UpdateDisplay();
-
+            var mainWindow = (MainWindow)App.Current.Windows[0];
+            mainWindow.Dispatcher.BeginInvoke(new Action(() => {
+                mainWindow.UpdateButtonProgress();
+                mainWindow.winArticle?.UpdateDisplay();
+            }));
         }
         public static int Progress
         {

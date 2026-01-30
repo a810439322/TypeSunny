@@ -86,13 +86,21 @@ namespace TypeSunny.ArticleSender
         }
 
         /// <summary>
-        /// 获取下一段
+        /// 获取下一段（同步版本，用于兼容旧代码）
         /// </summary>
         public string GetNextSegment()
         {
             if (segments.Count == 0)
                 return "";
 
+            // 判断是否是文来文章（有 bookId）
+            if (bookId > 0)
+            {
+                // 文来文章：只有一段，返回空表示需要换新文章
+                return "";
+            }
+
+            // 本地文章：使用本地分段
             currentSegmentIndex++;
 
             if (currentSegmentIndex >= segments.Count)

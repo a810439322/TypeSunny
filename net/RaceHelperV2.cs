@@ -35,7 +35,54 @@ namespace TypeSunny.Net
         /// </summary>
         private async Task<RaceAPI> CreateRaceAPIAsync(RaceServer server)
         {
-            var api = new RaceAPI(server.Url, server.ClientKeyXml);
+            // 从 AccountSystemManager 查找账号（支持同域名自动登录）
+            AccountInfo account = accountManager.GetAccount(server.Id);
+            bool usedDomainMatch = false;
+
+            if (account == null || string.IsNullOrWhiteSpace(account.Cookies))
+            {
+                // 备选：通过域名匹配查找账号（支持从文来等同域名服务同步）
+                var allAccounts = accountManager.GetAllAccounts();
+                foreach (var acc in allAccounts)
+                {
+                    if (acc != null && acc.UserId > 0 && !string.IsNullOrWhiteSpace(acc.Cookies) && !string.IsNullOrWhiteSpace(acc.Domain))
+                    {
+                        try
+                        {
+                            Uri serverUri = new Uri(server.Url.TrimEnd('/'));
+                            Uri accUri = new Uri(acc.Domain.TrimEnd('/'));
+                            if (serverUri.Host.Equals(accUri.Host, StringComparison.OrdinalIgnoreCase))
+                            {
+                                account = acc;
+                                usedDomainMatch = true;
+                                System.Diagnostics.Debug.WriteLine($"[CreateRaceAPIAsync] 通过域名匹配找到账号: {acc.ServiceName}");
+                                break;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+
+            // 确定要使用的密钥：优先使用找到的账号的密钥，否则使用 server 的密钥
+            string keyXml = (account != null && !string.IsNullOrWhiteSpace(account.ClientKeyXml))
+                ? account.ClientKeyXml
+                : server.ClientKeyXml;
+
+            var api = new RaceAPI(server.Url, keyXml);
+
+            if (account != null && !string.IsNullOrWhiteSpace(account.Cookies))
+            {
+                api.LoadCookiesFromString(account.Cookies);
+                System.Diagnostics.Debug.WriteLine($"[CreateRaceAPIAsync] 已加载 Cookie: {account.ServiceName} (域名匹配: {usedDomainMatch})");
+
+                // 如果通过域名匹配找到账号，同步密钥到 server 对象
+                if (usedDomainMatch && !string.IsNullOrWhiteSpace(account.ClientKeyXml))
+                {
+                    server.ClientKeyXml = account.ClientKeyXml;
+                    System.Diagnostics.Debug.WriteLine($"[CreateRaceAPIAsync] 已同步 ClientKeyXml 到 server 对象");
+                }
+            }
 
             // 设置密钥不匹配时的自动重新登录回调
             api.OnKeyMismatchCallback = async () =>
@@ -187,8 +234,25 @@ namespace TypeSunny.Net
                             username,
                             userId,
                             api.GetCookiesAsString(),
-                            api.GetClientKeyXml()
+                            api.GetClientKeyXml(),
+                            server.Url  // 传入 serverUrl 以确保 Domain 正确设置
                         );
+
+                        // 同时保存一份以 server.Name 为 key（方便域名匹配时查找）
+                        if (!string.IsNullOrWhiteSpace(server.Name) && server.Name != serverId)
+                        {
+                            accountManager.UpdateLoginInfo(
+                                server.Name,
+                                txtUsername.Text,
+                                txtPassword.Password,
+                                username,
+                                userId,
+                                api.GetCookiesAsString(),
+                                api.GetClientKeyXml(),
+                                server.Url
+                            );
+                            System.Diagnostics.Debug.WriteLine($"✓ 赛文登录已同时保存到AccountSystemManager: {username} (server.Name={server.Name})");
+                        }
 
                         System.Diagnostics.Debug.WriteLine($"✓ 赛文登录已保存到AccountSystemManager: {username} (serverId={serverId})");
 
@@ -379,7 +443,6 @@ namespace TypeSunny.Net
             }
 
             // 从 AccountSystemManager 同步登录信息（支持同域名自动登录）
-            // 遍历所有账号，找到域名匹配的账号
 
             // 先强制重新加载配置（确保获取最新数据）
             accountManager.Reload();
@@ -387,22 +450,33 @@ namespace TypeSunny.Net
             var allAccounts = accountManager.GetAllAccounts();
             AccountInfo matchedAccount = null;
 
-            foreach (var account in allAccounts)
+            // 优先：直接通过 serverId 查找账号（最精确的匹配）
+            var directAccount = accountManager.GetAccount(serverId);
+            if (directAccount != null && directAccount.UserId > 0)
             {
-                if (account != null && account.UserId > 0 && !string.IsNullOrWhiteSpace(account.Domain))
+                matchedAccount = directAccount;
+            }
+            else
+            {
+                // 备选：遍历所有账号，找到域名匹配的账号
+                foreach (var account in allAccounts)
                 {
-                    // 检查域名是否匹配
-                    try
+                    if (account != null && account.UserId > 0 && !string.IsNullOrWhiteSpace(account.Domain))
                     {
-                        Uri serverUri = new Uri(server.Url.TrimEnd('/'));
-                        Uri accountUri = new Uri(account.Domain.TrimEnd('/'));
-                        if (serverUri.Host == accountUri.Host)
+                        // 检查域名是否匹配
+                        try
                         {
-                            matchedAccount = account;
-                            break;
+                            Uri serverUri = new Uri(server.Url.TrimEnd('/'));
+                            Uri accountUri = new Uri(account.Domain.TrimEnd('/'));
+                            // 比较时忽略大小写
+                            if (serverUri.Host.Equals(accountUri.Host, StringComparison.OrdinalIgnoreCase))
+                            {
+                                matchedAccount = account;
+                                break;
+                            }
                         }
+                        catch { }
                     }
-                    catch { }
                 }
             }
 

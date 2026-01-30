@@ -12,6 +12,8 @@ namespace TypeSunny
     {
         static public Dictionary<string, string> dicts = new Dictionary<string, string>();
         static public string Path = "ArticleConfig.txt";
+        static private readonly object _writeLock = new object();  // 写入锁
+        static private Timer _writeTimer = null;  // 单一延迟写入Timer（防抖）
 
         static public void SetDefault(params string[] args)
         {
@@ -19,73 +21,89 @@ namespace TypeSunny
             {
                 dicts[args[i]] = args[i + 1];
             }
-
         }
 
-
-        static private Timer WriteTimer = null;
-
-
+        /// <summary>
+        /// 实际执行写入的方法（Timer回调）
+        /// </summary>
         static private void WriteNow(object obj)
         {
+            // 写入完成后清空Timer引用
+            Interlocked.Exchange(ref _writeTimer, null);
 
             if (Path == "")
                 return;
 
-
-            StreamWriter sw = new StreamWriter(Path);
-
-            foreach (var c in dicts)
+            lock (_writeLock)
             {
-                sw.WriteLineAsync(c.Key + "\t" + c.Value);
+                try
+                {
+                    using (StreamWriter sw = new StreamWriter(Path))
+                    {
+                        foreach (var c in dicts)
+                        {
+                            sw.WriteLine(c.Key + "\t" + c.Value);
+                        }
+                    }
+                }
+                catch { }
             }
-
-
-            sw.Close();
-            if (WriteTimer != null)
-            {
-                WriteTimer.Dispose();
-                WriteTimer = null;
-            }
-
         }
 
+        /// <summary>
+        /// 写入配置文件
+        /// </summary>
+        /// <param name="Delay">延迟毫秒数，0表示立即写入，大于0使用防抖模式</param>
         static public void WriteConfig(int Delay = 0)
         {
-
             if (Path == "")
                 return;
 
             if (Delay == 0)
             {
-                if (WriteTimer != null)
+                // 立即写入：先停止可能存在的延迟Timer，然后同步写入
+                var oldTimer = Interlocked.Exchange(ref _writeTimer, null);
+                if (oldTimer != null)
                 {
-                    WriteTimer.Dispose();
-                    WriteTimer = null;
+                    try { oldTimer.Dispose(); }
+                    catch { }
                 }
 
-                StreamWriter sw = new StreamWriter(Path);
-
-                foreach (var c in dicts)
+                lock (_writeLock)
                 {
-                    sw.WriteLineAsync(c.Key + "\t" + c.Value);
+                    try
+                    {
+                        using (StreamWriter sw = new StreamWriter(Path))
+                        {
+                            foreach (var c in dicts)
+                            {
+                                sw.WriteLine(c.Key + "\t" + c.Value);
+                            }
+                        }
+                    }
+                    catch { }
                 }
-
-
-                sw.Close();
             }
-            else if (Delay > 0)
+            else
             {
-                if (WriteTimer == null)
+                // 延迟写入：防抖模式（拖动滑块时只在停止后500ms执行一次写入）
+                if (_writeTimer == null)
                 {
-                    WriteTimer = new Timer(WriteNow, null, Delay, Timeout.Infinite);
+                    // 首次创建Timer
+                    _writeTimer = new Timer(WriteNow, null, Delay, Timeout.Infinite);
                 }
                 else
                 {
-                    WriteTimer.Dispose();
-                    WriteTimer = new Timer(WriteNow, null, Delay, Timeout.Infinite);
-                    //    WriteTimer.Change(Delay, Timeout.Infinite);
-
+                    // 重置Timer触发时间（防抖关键：拖动时不断重置，只有停止后才触发）
+                    try
+                    {
+                        _writeTimer.Change(Delay, Timeout.Infinite);
+                    }
+                    catch
+                    {
+                        // Timer已释放，重新创建
+                        _writeTimer = new Timer(WriteNow, null, Delay, Timeout.Infinite);
+                    }
                 }
             }
         }
@@ -100,9 +118,12 @@ namespace TypeSunny
                 return;
             }
 
-            char[] sp1 = { '\n' };
-
-            string[] lines = File.ReadAllText(Path).Split(sp1, StringSplitOptions.RemoveEmptyEntries);
+            string[] lines;
+            lock (_writeLock)  // 加锁防止读写冲突
+            {
+                char[] sp1 = { '\n' };
+                lines = File.ReadAllText(Path).Split(sp1, StringSplitOptions.RemoveEmptyEntries);
+            }
 
 
             foreach (string line in lines)

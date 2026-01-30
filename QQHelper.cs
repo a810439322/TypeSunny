@@ -102,14 +102,7 @@ namespace TypeSunny
         // 保存调试信息到文件（追加模式）
         private static void SaveDebugInfo(string info, string prefix = "QQ发送")
         {
-            try
-            {
-                string appDir = AppDomain.CurrentDomain.BaseDirectory;
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string logFile = System.IO.Path.Combine(appDir, $"{prefix}_调试_{timestamp}.txt");
-                System.IO.File.AppendAllText(logFile, info + "\r\n", Encoding.UTF8);
-            }
-            catch { }
+            // 日志已禁用
         }
 
         // 辅助函数：将ControlType ID转换为可读名称
@@ -164,6 +157,10 @@ namespace TypeSunny
         public static bool IsTimeMarker(string text)
         {
             if (string.IsNullOrWhiteSpace(text))
+                return false;
+
+            // 如果包含赛文格式标记，不是时间标记
+            if (text.Contains("-----第"))
                 return false;
 
             // 时间关键词
@@ -913,7 +910,7 @@ namespace TypeSunny
         {
             Win32SetText(msgContent1);
 
-            if (msgContent1 == "" || msgContent1 == ""  || groupName == "")
+            if (msgContent1 == "" || msgContent2 == ""  || groupName == "")
                 return;
 
             // 保存当前鼠标位置

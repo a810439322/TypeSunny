@@ -136,96 +136,93 @@ namespace TypeSunny
 
         }
 
-
         static private Timer WriteTimer = null;
-
+        static private readonly object _writeLock = new object();  // 写入锁
 
         static private void WriteNow(object obj)
         {
+            // 写入完成后清空Timer引用
+            Interlocked.Exchange(ref WriteTimer, null);
 
             if (Path == "")
                 return;
 
-            try
+            lock (_writeLock)
             {
-                using (StreamWriter sw = new StreamWriter(Path))
+                try
                 {
-                    foreach (var c in dicts)
-                    {
-                        sw.WriteLine(c.Key + "\t" + c.Value);  // 改为同步方法
-                    }
-                    sw.Flush();  // 确保写入
-                }  // using会自动Close
-
-                if (WriteTimer != null)
-                {
-                    WriteTimer.Dispose();
-                    WriteTimer = null;
-                }
-            }
-            catch (Exception)
-            {
-
-
-            }
-            finally
-            {
-
-            }
-
-
-
-
-        }
-    
-        static public void WriteConfig (int Delay = 0)
-        {
-
-            if (Path == "")
-                return;
-
-            try
-            {
-                if (Delay == 0)
-                {
-                    if (WriteTimer != null)
-                    {
-                        WriteTimer.Dispose();
-                        WriteTimer = null;
-                    }
-
                     using (StreamWriter sw = new StreamWriter(Path))
                     {
                         foreach (var c in dicts)
                         {
-                            sw.WriteLine(c.Key + "\t" + c.Value);  // 改为同步方法
+                            sw.WriteLine(c.Key + "\t" + c.Value);
                         }
-                        sw.Flush();  // 确保写入
-                    }  // using会自动Close
+                        sw.Flush();
+                    }
                 }
-                else if (Delay > 0)
+                catch (Exception)
                 {
-                    if (WriteTimer == null)
-                    {
-                        WriteTimer = new Timer(WriteNow, null, Delay, Timeout.Infinite);
-                    }
-                    else
-                    {
-                        WriteTimer.Dispose();
-                        WriteTimer = new Timer(WriteNow, null, Delay, Timeout.Infinite);
-                        //    WriteTimer.Change(Delay, Timeout.Infinite);
+                    // 忽略写入错误
+                }
+            }
+        }
 
+        static public void WriteConfig(int Delay = 0)
+        {
+            if (Path == "")
+                return;
+
+            if (Delay == 0)
+            {
+                // 立即写入：先停止可能存在的延迟Timer，然后同步写入
+                var oldTimer = Interlocked.Exchange(ref WriteTimer, null);
+                if (oldTimer != null)
+                {
+                    try { oldTimer.Dispose(); }
+                    catch { }
+                }
+
+                lock (_writeLock)
+                {
+                    try
+                    {
+                        using (StreamWriter sw = new StreamWriter(Path))
+                        {
+                            foreach (var c in dicts)
+                            {
+                                sw.WriteLine(c.Key + "\t" + c.Value);
+                            }
+                            sw.Flush();
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // 忽略写入错误
                     }
                 }
             }
-            catch (Exception)
+            else
             {
-
-                
+                // 延迟写入：防抖模式（拖动滑块时只在停止后Delay毫秒执行一次写入）
+                if (WriteTimer == null)
+                {
+                    // 首次创建Timer
+                    WriteTimer = new Timer(WriteNow, null, Delay, Timeout.Infinite);
+                }
+                else
+                {
+                    // 重置Timer触发时间（防抖关键：拖动时不断重置，只有停止后才触发）
+                    try
+                    {
+                        WriteTimer.Change(Delay, Timeout.Infinite);
+                    }
+                    catch
+                    {
+                        // Timer已释放，重新创建
+                        WriteTimer = new Timer(WriteNow, null, Delay, Timeout.Infinite);
+                    }
+                }
             }
-            finally { }
-           
-
         }
 
         static public void ReadConfig ()
