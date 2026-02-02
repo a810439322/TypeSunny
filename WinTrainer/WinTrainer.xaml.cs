@@ -1,5 +1,4 @@
-﻿using LibB;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -16,6 +15,10 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Interop;
+using CoreTextInfo = TypeSunny.Core.TextInfo;
+using TypeSunny.Core;
+using TypeSunny.Logs;
+using TypeSunny.Utils;
 
 
 namespace TypeSunny
@@ -91,7 +94,13 @@ namespace TypeSunny
 
              {"上次打开的文件", "" },
              {"上次的段数", "0" },
-
+             // 新增配置项：字体大小和窗口状态
+             {"练单器字体大小", "24" },
+             {"练单器窗口宽度", "500" },
+             {"练单器窗口高度", "450" },
+             {"练单器窗口左边", "0" },
+             {"练单器窗口顶边", "0" },
+             {"练单器最大化状态", "False" },
 
         };
 
@@ -182,7 +191,7 @@ namespace TypeSunny
         double ftsize = 24;
         private void ShowWords()
         {
-            // var sList = DisplayInfo; 
+            // var sList = DisplayInfo;
 
 
             fld.FontSize = ftsize;
@@ -192,10 +201,25 @@ namespace TypeSunny
             fld.Foreground = Colors.DisplayForeground;
 
 
-    
 
 
 
+        }
+
+        /// <summary>
+        /// 字体大小调整功能（Ctrl+滚轮）
+        /// </summary>
+        private void Fld_MouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                ftsize += e.Delta > 0 ? 2 : -2;
+                ftsize = Math.Max(10, Math.Min(72, ftsize));  // 限制范围10-72
+                fld.FontSize = ftsize;
+                cfg["练单器字体大小"] = ftsize.ToString();
+                WriteCfg();
+                e.Handled = true;
+            }
         }
 
    
@@ -1662,8 +1686,40 @@ namespace TypeSunny
             numDisplay.Text = cfg["每组字数"];
             hitDecreaseDisplay.Text = cfg["每轮降击"];
 
-            this.Top = MainWindow.Current.Top;
-            this.Left = MainWindow.Current.Left - this.Width;
+            // 恢复字体大小
+            if (double.TryParse(cfg["练单器字体大小"], out double savedFtsize) && savedFtsize >= 10 && savedFtsize <= 72)
+            {
+                ftsize = savedFtsize;
+            }
+
+            // 恢复窗口大小和位置
+            if (double.TryParse(cfg["练单器窗口宽度"], out double width) && width >= 300)
+                this.Width = width;
+            if (double.TryParse(cfg["练单器窗口高度"], out double height) && height >= 200)
+                this.Height = height;
+            if (double.TryParse(cfg["练单器窗口左边"], out double left))
+                this.Left = left;
+            else
+                this.Left = MainWindow.Current.Left - this.Width;
+            if (double.TryParse(cfg["练单器窗口顶边"], out double top))
+                this.Top = top;
+            else
+                this.Top = MainWindow.Current.Top;
+
+            // 恢复最大化状态
+            if (bool.TryParse(cfg["练单器最大化状态"], out bool isMaximized) && isMaximized)
+            {
+                // 保存当前状态作为恢复边界
+                _restoreBounds = new Rect(this.Left, this.Top, this.Width, this.Height);
+                // 最大化窗口
+                var workArea = SystemParameters.WorkArea;
+                this.Left = workArea.Left;
+                this.Top = workArea.Top;
+                this.Width = workArea.Width;
+                this.Height = workArea.Height;
+                _isCustomMaximized = true;
+                BtnMaximize.Content = "◰";
+            }
 
             CfgInit = true;
 
@@ -1680,18 +1736,20 @@ namespace TypeSunny
 
             try
             {
-                StreamWriter sr = new StreamWriter("TrainerConfig.txt");
+                string configPath = "TrainerConfig.txt";
+                StreamWriter sr = new StreamWriter(configPath);
                 foreach (var item in cfg)
                 {
                     sr.WriteLine(item.Key + "\t" + item.Value);
                 }
                 sr.Flush();
                 sr.Close();
+                System.Diagnostics.Debug.WriteLine($"练单器配置已保存到: {Path.GetFullPath(configPath)}");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-
-                
+                System.Diagnostics.Debug.WriteLine($"保存练单器配置失败: {ex.Message}");
+                MessageBox.Show($"保存练单器配置失败: {ex.Message}\n\n请检查程序目录是否有写入权限。\n\n当前目录: {Environment.CurrentDirectory}", "配置保存错误", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
 
         }
@@ -1788,13 +1846,25 @@ namespace TypeSunny
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            // 保存窗口状态（包括最大化状态）
+            cfg["练单器窗口宽度"] = this.Width.ToString();
+            cfg["练单器窗口高度"] = this.Height.ToString();
+            cfg["练单器窗口左边"] = this.Left.ToString();
+            cfg["练单器窗口顶边"] = this.Top.ToString();
+            cfg["练单器最大化状态"] = _isCustomMaximized.ToString();
 
-            if (TextInfo.Exit)
+            if (CoreTextInfo.Exit)
+            {
+                // 退出程序时保存统计数据
+                SaveCurrentArticleStatistics();
+                WriteCfg();
                 e.Cancel = false;
+            }
             else
             {
                 // 窗口隐藏前保存统计数据
                 SaveCurrentArticleStatistics();
+                WriteCfg();
                 e.Cancel = true;//取消这次关闭事件
                 Hide();//隐藏窗口，以便下次调用show
             }
@@ -1859,6 +1929,9 @@ namespace TypeSunny
                 _isCustomMaximized = true;
                 BtnMaximize.Content = "◰";
             }
+            // 保存最大化状态
+            cfg["练单器最大化状态"] = _isCustomMaximized.ToString();
+            WriteCfg();
         }
 
         // 关闭

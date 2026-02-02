@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using TypeSunny.Utils;
 
 namespace TypeSunny.Net
 {
@@ -100,6 +102,14 @@ namespace TypeSunny.Net
                     if (loaded != null)
                     {
                         accounts = loaded;
+                        // 解密所有账号的密码
+                        foreach (var account in accounts.Values)
+                        {
+                            if (!string.IsNullOrWhiteSpace(account.Password))
+                            {
+                                account.Password = PasswordCrypto.Decrypt(account.Password);
+                            }
+                        }
                     }
                 }
             }
@@ -125,7 +135,26 @@ namespace TypeSunny.Net
         {
             try
             {
-                string json = JsonConvert.SerializeObject(accounts, Formatting.None);
+                // 加密所有账号的密码后再序列化
+                var accountsToSave = new Dictionary<string, AccountInfo>();
+                foreach (var kvp in accounts)
+                {
+                    var accountCopy = new AccountInfo
+                    {
+                        ServiceName = kvp.Value.ServiceName,
+                        Domain = kvp.Value.Domain,
+                        Username = kvp.Value.Username,
+                        Password = string.IsNullOrWhiteSpace(kvp.Value.Password) ? "" : PasswordCrypto.Encrypt(kvp.Value.Password),
+                        DisplayName = kvp.Value.DisplayName,
+                        UserId = kvp.Value.UserId,
+                        Cookies = kvp.Value.Cookies,
+                        ClientKeyXml = kvp.Value.ClientKeyXml,
+                        LastLoginTime = kvp.Value.LastLoginTime
+                    };
+                    accountsToSave[kvp.Key] = accountCopy;
+                }
+
+                string json = JsonConvert.SerializeObject(accountsToSave, Formatting.None);
                 Config.Set(CONFIG_KEY, json);
                 Config.WriteConfig(0);
             }

@@ -13,6 +13,9 @@ using System.Windows.Media.Imaging;
 using System.Windows.Markup;
 using TypeSunny.ArticleSender;
 using TypeSunny.Net;
+using TypeSunny.UI;
+using TypeSunny.Core;
+using TypeSunny.Utils;
 
 
 namespace TypeSunny

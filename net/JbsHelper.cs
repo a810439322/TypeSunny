@@ -37,7 +37,7 @@ namespace Net
         {
             if (jbs == null)
             {
-                jbs = new JBS(Config.GetString("极速用户名"), Config.GetString("极速密码"));
+                jbs = new JBS(Config.GetString("极速用户名"), Config.GetPassword("极速密码"));
             }
             return jbs;
         }
@@ -141,7 +141,7 @@ namespace Net
 
             var txtPassword = new PasswordBox
             {
-                Password = Config.GetString("极速密码"),
+                Password = Config.GetPassword("极速密码"),
                 Padding = new Thickness(5),
                 Margin = new Thickness(70, 0, 0, 0)
             };
@@ -195,13 +195,8 @@ namespace Net
                 {
                     // 保存锦标赛配置
                     Config.Set("极速用户名", txtUsername.Text);
-                    Config.Set("极速密码", txtPassword.Password);
+                    Config.SetPassword("极速密码", txtPassword.Password);
                     Config.Set("极速显示名称", jbs.Username);
-
-                    // 同步极速杯配置（账号一体）
-                    Config.Set("极速杯用户名", txtUsername.Text);
-                    Config.Set("极速杯密码", txtPassword.Password);
-                    Config.Set("极速杯显示名称", jbs.Username);
 
                     Config.WriteConfig(0);
 

@@ -14,7 +14,7 @@
     <WarningLevel>4</WarningLevel>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
-    <LangVersion>latest</LangVersion>
+    <LangVersion>Default</LangVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <TargetFrameworkProfile />
     <PublishUrl>publish\</PublishUrl>
@@ -105,19 +105,22 @@
     <Compile Include="ArticleSender\ArticleFetcher.cs" />
     <Compile Include="ArticleSender\ArticleCache.cs" />
     <Compile Include="ArticleSender\WenlaiHelper.cs" />
-    <Compile Include="ArticleLog.cs" />
-    <Compile Include="WenlaiLog.cs" />
+    <Compile Include="Logs\ArticleLog.cs" />
+    <Compile Include="Logs\WenlaiLog.cs" />
+    <Compile Include="Logs\CounterLog.cs" />
+    <Compile Include="Logs\DebugLog.cs" />
+    <Compile Include="Config\Config.cs" />
     <Compile Include="Colors.cs" />
-    <Compile Include="Config.cs" />
-    <Compile Include="CounterLog.cs" />
-    <Compile Include="DebugLog.cs" />
+    <Compile Include="Config\ThemeManager.cs" />
+    <Compile Include="Config\TxtConfig.cs" />
     <Compile Include="Difficulty\DifficultyDict.cs" />
     <Compile Include="DiffNode.cs" />
     <Compile Include="DiffRes.cs" />
     <Compile Include="DiffTool.cs" />
-    <Compile Include="FileComparer.cs" />
+    <Compile Include="Utils\FileComparer.cs" />
     <Compile Include="GroupedDiffRes.cs" />
-    <Compile Include="IntStringDict.cs" />
+    <Compile Include="Utils\IntStringDict.cs" />
+    <Compile Include="Utils\PasswordCrypto.cs" />
     <Compile Include="Net\AccountSystemManager.cs" />
     <Compile Include="Net\JBS.cs" />
     <Compile Include="Net\JbsHelper.cs" />
@@ -132,28 +135,26 @@
     <Compile Include="Net\Util.cs" />
     <Compile Include="PartSplitedDiffRes.cs" />
     <Compile Include="PathNode.cs" />
-    <Compile Include="QQHelper.cs" />
-    <Compile Include="RetypeCouner.cs" />
-    <Compile Include="Score.cs" />
+    <Compile Include="Utils\QQHelper.cs" />
+    <Compile Include="Core\RetypeCouner.cs" />
+    <Compile Include="Core\Score.cs" />
     <Compile Include="Snake.cs" />
     <Compile Include="SplitedDiffRes.cs" />
-    <Compile Include="StateManager.cs" />
-    <Compile Include="ZiTiHelper.cs" />
-    <Compile Include="StringToFontFamily.cs" />
-    <Compile Include="TextInfo.cs" />
-    <Compile Include="ThemeManager.cs" />
-    <Compile Include="TxtConfig.cs" />
-    <Compile Include="Win32.cs" />
+    <Compile Include="Core\StateManager.cs" />
+    <Compile Include="Utils\ZiTiHelper.cs" />
+    <Compile Include="Utils\StringToFontFamily.cs" />
+    <Compile Include="Core\TextInfo.cs" />
+    <Compile Include="Utils\Win32.cs" />
     <Compile Include="WinConfig\WinColorPicker.xaml.cs">
       <DependentUpon>WinColorPicker.xaml</DependentUpon>
     </Compile>
     <Compile Include="WinConfig\WinConfig.xaml.cs">
       <DependentUpon>WinConfig.xaml</DependentUpon>
     </Compile>
-    <Compile Include="WinRaceLeaderboard.xaml.cs">
+    <Compile Include="UI\WinRaceLeaderboard.xaml.cs">
       <DependentUpon>WinRaceLeaderboard.xaml</DependentUpon>
     </Compile>
-    <Compile Include="WinStatistics.xaml.cs">
+    <Compile Include="UI\WinStatistics.xaml.cs">
       <DependentUpon>WinStatistics.xaml</DependentUpon>
     </Compile>
     <Compile Include="WinTrainer\TrainerConfig.cs" />
@@ -185,11 +186,11 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="WinRaceLeaderboard.xaml">
+    <Page Include="UI\WinRaceLeaderboard.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="WinStatistics.xaml">
+    <Page Include="UI\WinStatistics.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -199,8 +200,9 @@
     </Page>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Paginator.cs" />
-    <Compile Include="RaceConfig.cs" />
+    <Compile Include="Core\Paginator.cs" />
+    <Compile Include="Core\RaceConfig.cs" />
+    <Compile Include="Core\Recorder.cs" />
     <Compile Include="Properties\AssemblyInfo.cs">
       <SubType>Code</SubType>
     </Compile>

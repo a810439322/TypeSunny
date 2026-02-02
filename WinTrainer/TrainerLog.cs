@@ -16,8 +16,6 @@ namespace TypeSunny
         private const string LogFolder = "练单日志";
         private const int MinWordCount = 5;  // 最少字数，不超过此数不计入
 
-        // 迁移状态
-        private static bool _migrationInProgress = false;
         private static readonly object _writeLock = new object();
 
         /// <summary>
@@ -40,9 +38,9 @@ namespace TypeSunny
         }
 
         /// <summary>
-        /// 异步记录训练数据（使用与 ArticleLog 相同的 ArticleRecord 格式）- 使用增量更新统计
+        /// 异步记录训练数据（使用与 ArticleLog 相同的 ArticleRecord 格式）- 使用增量更新统计（按天存储）
         /// </summary>
-        public static void WriteRecord(ArticleLog.ArticleRecord record)
+        public static void WriteRecord(Logs.ArticleLog.ArticleRecord record)
         {
             // 过滤不超过5个字的记录
             if (record.TotalWords < MinWordCount)
@@ -57,18 +55,24 @@ namespace TypeSunny
                     {
                         EnsureLogDirectory();
 
-                        // 1. 读取现有统计数据和最近记录
-                        var summaryData = LoadSummaryData() ?? new ArticleLog.StatisticsData();
-                        var recentData = LoadRecentData() ?? new ArticleLog.RecentRecords();
+                        // 获取今天的日期，用于按天存储统计数据
+                        string today = DateTime.Now.ToString("yyyy-MM-dd");
 
-                        // 2. 获取分组键（ArticleName 用于练单日志）
+                        // 1. 读取所有统计数据和最近记录
+                        var allStatistics = LoadAllStatistics();
+                        var recentData = LoadRecentData() ?? new Logs.ArticleLog.RecentRecords();
+
+                        // 2. 获取或创建今天的统计数据
+                        var summaryData = GetStatisticsForDate(allStatistics, today);
+
+                        // 3. 获取分组键（ArticleName 用于练单日志）
                         string groupKey = string.IsNullOrWhiteSpace(record.ArticleName) ? "未命名" : record.ArticleName;
 
-                        // 3. 查找或创建分组汇总
+                        // 4. 查找或创建分组汇总
                         var summary = summaryData.Summaries.FirstOrDefault(s => s.GroupKey == groupKey);
                         if (summary == null)
                         {
-                            summary = new ArticleLog.StatisticsSummary
+                            summary = new Logs.ArticleLog.StatisticsSummary
                             {
                                 GroupKey = groupKey,
                                 MaxSpeed = record.Speed,
@@ -77,7 +81,7 @@ namespace TypeSunny
                             summaryData.Summaries.Add(summary);
                         }
 
-                        // 4. 增量更新统计数据
+                        // 5. 增量更新统计数据
                         summary.Count++;
                         summary.SumSpeedWeighted += record.Speed * record.TotalWords;
                         summary.SumHitRateWeighted += record.HitRate * record.TotalWords;
@@ -91,20 +95,31 @@ namespace TypeSunny
                         summary.MinSpeed = Math.Min(summary.MinSpeed, record.Speed);
                         summary.LastUpdateTime = DateTime.Now;
 
-                        // 5. 添加到最近记录并清理
+                        // 6. 更新或添加今天的数据到列表中
+                        var existingIndex = allStatistics.DailySummaries.FindIndex(d => d.Date == today);
+                        if (existingIndex >= 0)
+                        {
+                            allStatistics.DailySummaries[existingIndex] = summaryData;
+                        }
+                        else
+                        {
+                            allStatistics.DailySummaries.Add(summaryData);
+                        }
+
+                        // 7. 添加到最近记录并清理
                         recentData.Records.Add(record);
                         CleanOldRecords(recentData);
                         recentData.LastUpdateTime = DateTime.Now;
 
-                        // 6. 定期删除旧的按日期的详细记录文件
+                        // 8. 定期删除旧的按日期的详细记录文件
                         if (ShouldCleanOldDetailFiles(summaryData))
                         {
                             CleanOldDetailFiles();
                             summaryData.LastCleanTime = DateTime.Now;
                         }
 
-                        // 7. 保存统计数据和最近记录
-                        SaveSummaryData(summaryData);
+                        // 9. 保存所有统计数据和最近记录
+                        SaveAllStatistics(allStatistics);
                         SaveRecentData(recentData);
                     }
                     catch (Exception ex)
@@ -118,9 +133,9 @@ namespace TypeSunny
         /// <summary>
         /// 读取指定日期的记录
         /// </summary>
-        public static List<ArticleLog.ArticleRecord> ReadRecords(DateTime date)
+        public static List<Logs.ArticleLog.ArticleRecord> ReadRecords(DateTime date)
         {
-            List<ArticleLog.ArticleRecord> records = new List<ArticleLog.ArticleRecord>();
+            List<Logs.ArticleLog.ArticleRecord> records = new List<Logs.ArticleLog.ArticleRecord>();
 
             try
             {
@@ -131,8 +146,8 @@ namespace TypeSunny
                 string json = File.ReadAllText(logFile, Encoding.UTF8);
                 if (!string.IsNullOrWhiteSpace(json))
                 {
-                    records = JsonConvert.DeserializeObject<List<ArticleLog.ArticleRecord>>(json);
-                    records ??= new List<ArticleLog.ArticleRecord>();
+                    records = JsonConvert.DeserializeObject<List<Logs.ArticleLog.ArticleRecord>>(json);
+                    records ??= new List<Logs.ArticleLog.ArticleRecord>();
                 }
             }
             catch (Exception ex)
@@ -146,9 +161,9 @@ namespace TypeSunny
         /// <summary>
         /// 读取日期范围内的所有记录
         /// </summary>
-        public static List<ArticleLog.ArticleRecord> ReadRecordsInRange(DateTime startDate, DateTime endDate)
+        public static List<Logs.ArticleLog.ArticleRecord> ReadRecordsInRange(DateTime startDate, DateTime endDate)
         {
-            List<ArticleLog.ArticleRecord> allRecords = new List<ArticleLog.ArticleRecord>();
+            List<Logs.ArticleLog.ArticleRecord> allRecords = new List<Logs.ArticleLog.ArticleRecord>();
 
             for (DateTime date = startDate.Date; date <= endDate.Date; date = date.AddDays(1))
             {
@@ -160,7 +175,7 @@ namespace TypeSunny
                         string json = File.ReadAllText(logFile, Encoding.UTF8);
                         if (!string.IsNullOrWhiteSpace(json))
                         {
-                            var records = JsonConvert.DeserializeObject<List<ArticleLog.ArticleRecord>>(json);
+                            var records = JsonConvert.DeserializeObject<List<Logs.ArticleLog.ArticleRecord>>(json);
                             if (records != null)
                                 allRecords.AddRange(records);
                         }
@@ -178,9 +193,9 @@ namespace TypeSunny
         /// <summary>
         /// 获取指定练习项的历史记录
         /// </summary>
-        public static List<ArticleLog.ArticleRecord> GetRecordsByExercise(string exerciseName)
+        public static List<Logs.ArticleLog.ArticleRecord> GetRecordsByExercise(string exerciseName)
         {
-            List<ArticleLog.ArticleRecord> result = new List<ArticleLog.ArticleRecord>();
+            List<Logs.ArticleLog.ArticleRecord> result = new List<Logs.ArticleLog.ArticleRecord>();
 
             if (!Directory.Exists(LogFolder))
                 return result;
@@ -194,7 +209,7 @@ namespace TypeSunny
                         string json = File.ReadAllText(file, Encoding.UTF8);
                         if (!string.IsNullOrWhiteSpace(json))
                         {
-                            var records = JsonConvert.DeserializeObject<List<ArticleLog.ArticleRecord>>(json);
+                            var records = JsonConvert.DeserializeObject<List<Logs.ArticleLog.ArticleRecord>>(json);
                             if (records != null)
                             {
                                 foreach (var record in records)
@@ -245,10 +260,24 @@ namespace TypeSunny
 
         #region 新增：统计数据方法
 
-        private static string GetSummaryFilePath() => Path.Combine(LogFolder, "summary.json");
+        /// <summary>
+        /// 所有统计数据容器（单文件存储）
+        /// </summary>
+        public class DailyStatisticsData
+        {
+            public List<Logs.ArticleLog.StatisticsData> DailySummaries { get; set; } = new List<Logs.ArticleLog.StatisticsData>();
+        }
+
+        private static string GetSummaryFilePath()
+        {
+            return Path.Combine(LogFolder, "summary.json");
+        }
         private static string GetRecentFilePath() => Path.Combine(LogFolder, "recent.json");
 
-        private static ArticleLog.StatisticsData LoadSummaryData()
+        /// <summary>
+        /// 加载所有统计数据（单文件）
+        /// </summary>
+        private static DailyStatisticsData LoadAllStatistics()
         {
             try
             {
@@ -258,8 +287,8 @@ namespace TypeSunny
                     string json = File.ReadAllText(file, Encoding.UTF8);
                     if (!string.IsNullOrWhiteSpace(json))
                     {
-                        var data = JsonConvert.DeserializeObject<ArticleLog.StatisticsData>(json);
-                        return data ?? new ArticleLog.StatisticsData();
+                        var data = JsonConvert.DeserializeObject<DailyStatisticsData>(json);
+                        return data ?? new DailyStatisticsData();
                     }
                 }
             }
@@ -267,10 +296,13 @@ namespace TypeSunny
             {
                 System.Diagnostics.Debug.WriteLine($"加载统计数据失败: {ex.Message}");
             }
-            return new ArticleLog.StatisticsData();
+            return new DailyStatisticsData();
         }
 
-        private static void SaveSummaryData(ArticleLog.StatisticsData data)
+        /// <summary>
+        /// 保存所有统计数据（单文件）
+        /// </summary>
+        private static void SaveAllStatistics(DailyStatisticsData data)
         {
             try
             {
@@ -285,7 +317,15 @@ namespace TypeSunny
             }
         }
 
-        private static ArticleLog.RecentRecords LoadRecentData()
+        /// <summary>
+        /// 获取指定日期的统计数据（从全部数据中查找）
+        /// </summary>
+        private static Logs.ArticleLog.StatisticsData GetStatisticsForDate(DailyStatisticsData allData, string date)
+        {
+            return allData.DailySummaries.FirstOrDefault(d => d.Date == date) ?? new Logs.ArticleLog.StatisticsData { Date = date };
+        }
+
+        private static Logs.ArticleLog.RecentRecords LoadRecentData()
         {
             try
             {
@@ -295,8 +335,8 @@ namespace TypeSunny
                     string json = File.ReadAllText(file, Encoding.UTF8);
                     if (!string.IsNullOrWhiteSpace(json))
                     {
-                        var data = JsonConvert.DeserializeObject<ArticleLog.RecentRecords>(json);
-                        return data ?? new ArticleLog.RecentRecords();
+                        var data = JsonConvert.DeserializeObject<Logs.ArticleLog.RecentRecords>(json);
+                        return data ?? new Logs.ArticleLog.RecentRecords();
                     }
                 }
             }
@@ -304,10 +344,10 @@ namespace TypeSunny
             {
                 System.Diagnostics.Debug.WriteLine($"加载最近记录失败: {ex.Message}");
             }
-            return new ArticleLog.RecentRecords();
+            return new Logs.ArticleLog.RecentRecords();
         }
 
-        private static void SaveRecentData(ArticleLog.RecentRecords data)
+        private static void SaveRecentData(Logs.ArticleLog.RecentRecords data)
         {
             try
             {
@@ -322,7 +362,7 @@ namespace TypeSunny
             }
         }
 
-        private static void CleanOldRecords(ArticleLog.RecentRecords recentData)
+        private static void CleanOldRecords(Logs.ArticleLog.RecentRecords recentData)
         {
             DateTime cutoffTime = DateTime.Now.AddHours(-24);
 
@@ -335,7 +375,7 @@ namespace TypeSunny
             recentData.Records = validRecords;
         }
 
-        private static bool ShouldCleanOldDetailFiles(ArticleLog.StatisticsData summaryData)
+        private static bool ShouldCleanOldDetailFiles(Logs.ArticleLog.StatisticsData summaryData)
         {
             return summaryData.LastCleanTime == default ||
                    (DateTime.Now - summaryData.LastCleanTime).TotalHours >= 24;
@@ -383,151 +423,123 @@ namespace TypeSunny
         /// <summary>
         /// 读取统计数据（返回预计算的统计数据，按ArticleName分组）
         /// </summary>
-        public static List<ArticleLog.LocalArticleStatisticsItem> ReadStatistics()
+        public static List<Logs.ArticleLog.LocalArticleStatisticsItem> ReadStatistics()
         {
-            var summaryData = LoadSummaryData();
-            if (summaryData == null || summaryData.Summaries.Count == 0)
-                return new List<ArticleLog.LocalArticleStatisticsItem>();
+            // 读取所有可用日期的统计数据并合并
+            var dates = GetAvailableSummaryDates();
+            if (dates.Count == 0)
+                return new List<Logs.ArticleLog.LocalArticleStatisticsItem>();
 
-            return summaryData.Summaries
-                .Select(s => new ArticleLog.LocalArticleStatisticsItem
+            return ReadStatisticsInRange(dates.Min(), dates.Max());
+        }
+
+        /// <summary>
+        /// 读取指定时间范围内的统计数据（合并多天的统计）
+        /// </summary>
+        public static List<Logs.ArticleLog.LocalArticleStatisticsItem> ReadStatisticsInRange(DateTime startDate, DateTime endDate)
+        {
+            var allStats = new Dictionary<string, Logs.ArticleLog.AggregatedStatistics>();
+
+            // 1. 读取所有统计数据
+            var allStatistics = LoadAllStatistics();
+
+            // 2. 按日期范围筛选并合并
+            foreach (var dailyData in allStatistics.DailySummaries)
+            {
+                // 检查日期是否在范围内
+                if (!DateTime.TryParseExact(dailyData.Date, "yyyy-MM-dd", null,
+                    System.Globalization.DateTimeStyles.None, out DateTime dateValue))
+                    continue;
+
+                if (dateValue < startDate.Date || dateValue > endDate.Date)
+                    continue;
+
+                // 合并统计数据
+                if (dailyData.Summaries != null)
                 {
-                    BookName = s.GroupKey,
-                    Count = s.Count,
-                    AvgSpeed = s.TotalWords > 0 ? s.SumSpeedWeighted / s.TotalWords : 0,
-                    AvgHitRate = s.TotalWords > 0 ? s.SumHitRateWeighted / s.TotalWords : 0,
-                    AvgAccuracy = s.TotalWords > 0 ? s.SumAccuracyWeighted / s.TotalWords : 0,
-                    AvgKPW = s.TotalWords > 0 ? s.SumKPWWeighted / s.TotalWords : 0,
-                    AvgCorrection = s.Count > 0 ? s.SumCorrection / s.Count : 0,
-                    TotalBacks = s.TotalBacks,
-                    AvgCiRatio = s.TotalWords > 0 ? s.SumCiRatioWeighted / s.TotalWords : 0,
-                    MaxSpeed = s.MaxSpeed,
-                    MinSpeed = s.MinSpeed,
-                    TotalWords = s.TotalWords
+                    foreach (var summary in dailyData.Summaries)
+                    {
+                        if (!allStats.ContainsKey(summary.GroupKey))
+                        {
+                            allStats[summary.GroupKey] = new Logs.ArticleLog.AggregatedStatistics
+                            {
+                                MaxSpeed = summary.MaxSpeed,
+                                MinSpeed = summary.MinSpeed
+                            };
+                        }
+
+                        var agg = allStats[summary.GroupKey];
+                        agg.Count += summary.Count;
+                        agg.SumSpeedWeighted += summary.SumSpeedWeighted;
+                        agg.SumHitRateWeighted += summary.SumHitRateWeighted;
+                        agg.SumAccuracyWeighted += summary.SumAccuracyWeighted;
+                        agg.SumKPWWeighted += summary.SumKPWWeighted;
+                        agg.SumCiRatioWeighted += summary.SumCiRatioWeighted;
+                        agg.SumCorrection += summary.SumCorrection;
+                        agg.TotalBacks += summary.TotalBacks;
+                        agg.TotalWords += summary.TotalWords;
+                        agg.MaxSpeed = Math.Max(agg.MaxSpeed, summary.MaxSpeed);
+                        agg.MinSpeed = Math.Min(agg.MinSpeed, summary.MinSpeed);
+                    }
+                }
+            }
+
+            // 3. 转换为结果
+            return allStats
+                .Select(kvp => new Logs.ArticleLog.LocalArticleStatisticsItem
+                {
+                    BookName = kvp.Key,
+                    Count = kvp.Value.Count,
+                    AvgSpeed = kvp.Value.TotalWords > 0 ? kvp.Value.SumSpeedWeighted / kvp.Value.TotalWords : 0,
+                    AvgHitRate = kvp.Value.TotalWords > 0 ? kvp.Value.SumHitRateWeighted / kvp.Value.TotalWords : 0,
+                    AvgAccuracy = kvp.Value.TotalWords > 0 ? kvp.Value.SumAccuracyWeighted / kvp.Value.TotalWords : 0,
+                    AvgKPW = kvp.Value.TotalWords > 0 ? kvp.Value.SumKPWWeighted / kvp.Value.TotalWords : 0,
+                    AvgCorrection = kvp.Value.Count > 0 ? kvp.Value.SumCorrection / kvp.Value.Count : 0,
+                    TotalBacks = kvp.Value.TotalBacks,
+                    AvgCiRatio = kvp.Value.TotalWords > 0 ? kvp.Value.SumCiRatioWeighted / kvp.Value.TotalWords : 0,
+                    MaxSpeed = kvp.Value.MaxSpeed,
+                    MinSpeed = kvp.Value.MinSpeed,
+                    TotalWords = kvp.Value.TotalWords
                 })
                 .OrderBy(s => s.BookName)
                 .ToList();
         }
 
         /// <summary>
-        /// 读取最近记录
+        /// 获取有统计数据的日期列表（从单文件中获取）
         /// </summary>
-        public static List<ArticleLog.ArticleRecord> ReadRecentRecords(int count = 30)
+        public static List<DateTime> GetAvailableSummaryDates()
         {
-            var recentData = LoadRecentData();
-            if (recentData == null)
-                return new List<ArticleLog.ArticleRecord>();
+            List<DateTime> dates = new List<DateTime>();
 
-            return recentData.Records.Take(count).ToList();
+            try
+            {
+                var allStatistics = LoadAllStatistics();
+
+                foreach (var dailyData in allStatistics.DailySummaries)
+                {
+                    if (DateTime.TryParseExact(dailyData.Date, "yyyy-MM-dd", null,
+                        System.Globalization.DateTimeStyles.None, out DateTime date))
+                    {
+                        dates.Add(date);
+                    }
+                }
+            }
+            catch { }
+
+            return dates;
         }
 
         /// <summary>
-        /// 后台静默迁移旧数据
+        /// 读取最近记录
         /// </summary>
-        public static async Task MigrateOldDataAsync()
+        public static List<Logs.ArticleLog.ArticleRecord> ReadRecentRecords(int count = 30)
         {
-            if (_migrationInProgress)
-                return;
+            var recentData = LoadRecentData();
+            if (recentData == null)
+                return new List<Logs.ArticleLog.ArticleRecord>();
 
-            string summaryFile = GetSummaryFilePath();
-            if (File.Exists(summaryFile))
-                return;
-
-            _migrationInProgress = true;
-
-            await Task.Run(() =>
-            {
-                try
-                {
-                    var allRecords = ReadAllHistoricalRecords();
-
-                    if (allRecords.Count == 0)
-                        return;
-
-                    var summaryData = new ArticleLog.StatisticsData();
-                    var recentData = new ArticleLog.RecentRecords();
-
-                    DateTime cutoffTime = DateTime.Now.AddHours(-24);
-
-                    foreach (var record in allRecords)
-                    {
-                        string groupKey = string.IsNullOrWhiteSpace(record.ArticleName) ? "未命名" : record.ArticleName;
-                        var summary = summaryData.Summaries.FirstOrDefault(s => s.GroupKey == groupKey);
-
-                        if (summary == null)
-                        {
-                            summary = new ArticleLog.StatisticsSummary
-                            {
-                                GroupKey = groupKey,
-                                MaxSpeed = record.Speed,
-                                MinSpeed = record.Speed
-                            };
-                            summaryData.Summaries.Add(summary);
-                        }
-
-                        summary.Count++;
-                        summary.SumSpeedWeighted += record.Speed * record.TotalWords;
-                        summary.SumHitRateWeighted += record.HitRate * record.TotalWords;
-                        summary.SumAccuracyWeighted += record.Accuracy * record.TotalWords;
-                        summary.SumKPWWeighted += record.KPW * record.TotalWords;
-                        summary.SumCiRatioWeighted += record.CiRatio * record.TotalWords;
-                        summary.SumCorrection += record.Correction;
-                        summary.TotalBacks += record.Backs;
-                        summary.TotalWords += record.TotalWords;
-                        summary.MaxSpeed = Math.Max(summary.MaxSpeed, record.Speed);
-                        summary.MinSpeed = Math.Min(summary.MinSpeed, record.Speed);
-
-                        if (record.Time >= cutoffTime)
-                        {
-                            recentData.Records.Add(record);
-                        }
-                    }
-
-                    CleanOldRecords(recentData);
-
-                    SaveSummaryData(summaryData);
-                    SaveRecentData(recentData);
-
-                    System.Diagnostics.Debug.WriteLine($"练单日志迁移完成: {allRecords.Count} 条记录");
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"数据迁移失败: {ex.Message}");
-                }
-                finally
-                {
-                    _migrationInProgress = false;
-                }
-            });
-        }
-
-        private static List<ArticleLog.ArticleRecord> ReadAllHistoricalRecords()
-        {
-            List<ArticleLog.ArticleRecord> allRecords = new List<ArticleLog.ArticleRecord>();
-
-            if (!Directory.Exists(LogFolder))
-                return allRecords;
-
-            foreach (string file in Directory.GetFiles(LogFolder, "*.json"))
-            {
-                string fileName = Path.GetFileNameWithoutExtension(file);
-                if (fileName == "summary" || fileName == "recent")
-                    continue;
-
-                try
-                {
-                    string json = File.ReadAllText(file, Encoding.UTF8);
-                    if (!string.IsNullOrWhiteSpace(json))
-                    {
-                        var records = JsonConvert.DeserializeObject<List<ArticleLog.ArticleRecord>>(json);
-                        if (records != null)
-                            allRecords.AddRange(records);
-                    }
-                }
-                catch { }
-            }
-
-            return allRecords;
+            return recentData.Records.Take(count).ToList();
         }
 
         #endregion
@@ -537,7 +549,7 @@ namespace TypeSunny
         /// <summary>
         /// 训练记录项（旧版，已废弃）
         /// </summary>
-        [Obsolete("请使用 ArticleLog.ArticleRecord 代替")]
+        [Obsolete("请使用 Logs.ArticleLog.ArticleRecord 代替")]
         public class TrainerRecord
         {
             public DateTime Date { get; set; }

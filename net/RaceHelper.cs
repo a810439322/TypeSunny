@@ -184,26 +184,9 @@ namespace TypeSunny.Net
             }
             else
             {
-                // 兼容旧版配置
-                string displayName = Config.GetString("赛文显示名称");
-                if (!string.IsNullOrWhiteSpace(displayName))
-                {
-                    menuItemLogin.Header = $"已登录: {displayName}";
-                    currentUsername = displayName;
-
-                    // 尝试获取用户ID
-                    string userIdStr = Config.GetString("赛文用户ID");
-                    if (int.TryParse(userIdStr, out int userId))
-                    {
-                        currentUserId = userId;
-                    }
-                }
-                else
-                {
-                    menuItemLogin.Header = "登录";
-                    currentUsername = "";
-                    currentUserId = -1;
-                }
+                menuItemLogin.Header = "登录";
+                currentUsername = "";
+                currentUserId = -1;
             }
         }
 
@@ -357,13 +340,6 @@ namespace TypeSunny.Net
                                 accountManager.UpdateLoginInfo(SERVICE_NAME, txtUsername.Text, txtPassword.Password,
                                     username, userId, api.GetCookiesAsString(), api.GetClientKeyXml(), serverUrl);
 
-                                // 兼容旧版配置
-                                Config.Set("赛文用户名", txtUsername.Text);
-                                Config.Set("赛文密码", txtPassword.Password);
-                                Config.Set("赛文显示名称", username);
-                                Config.Set("赛文用户ID", userId.ToString());
-                                Config.WriteConfig(0);
-
                                 currentUserId = userId;
                                 currentUsername = username;
                                 UpdateLoginStatus();
@@ -457,7 +433,7 @@ namespace TypeSunny.Net
 
             var txtPassword = new PasswordBox
             {
-                Password = account?.Password ?? Config.GetString("赛文密码"),
+                Password = account?.Password ?? Config.GetPassword("赛文密码"),
                 Padding = new Thickness(5),
                 Margin = new Thickness(70, 0, 0, 0)
             };
@@ -518,13 +494,6 @@ namespace TypeSunny.Net
                         // 保存到账号管理器
                         accountManager.UpdateLoginInfo(SERVICE_NAME, txtUsername.Text, txtPassword.Password,
                             username, userId, api.GetCookiesAsString(), api.GetClientKeyXml());
-
-                        // 兼容旧版配置
-                        Config.Set("赛文用户名", txtUsername.Text);
-                        Config.Set("赛文密码", txtPassword.Password);
-                        Config.Set("赛文显示名称", username);
-                        Config.Set("赛文用户ID", userId.ToString());
-                        Config.WriteConfig(0);
 
                         currentUserId = userId;
                         currentUsername = username;

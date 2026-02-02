@@ -250,10 +250,10 @@ namespace TypeSunny.Net
                 {
                     Name = "默认服务器",
                     Url = defaultUrl,
-                    Username = Config.GetString("赛文用户名") ?? "",
-                    Password = Config.GetString("赛文密码") ?? "",
-                    DisplayName = Config.GetString("赛文显示名称") ?? "",
-                    UserId = Config.GetInt("赛文用户ID")
+                    Username = "",
+                    Password = "",
+                    DisplayName = "",
+                    UserId = 0
                 };
 
                 // 尝试解析当前文章ID

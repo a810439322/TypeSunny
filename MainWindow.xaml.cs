@@ -1,17 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
-using Newtonsoft.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -31,7 +28,11 @@ using System.Reflection;
 using Interop.UIAutomationClient;
 
 using Net;
-using LibB;
+using CorePage = TypeSunny.Core.Page;
+using TypeSunny.Core;
+using TypeSunny.Logs;
+using TypeSunny.Utils;
+using TypeSunny.UI;
 using TypeSunny.Difficulty;
 using TypeSunny.ArticleSender;
 
@@ -56,7 +57,7 @@ namespace TypeSunny
         /// <summary>
         /// 获取配置的字体大小，如果未配置则返回默认值40
         /// </summary>
-        private static double DisplayFontSize => Config.GetDouble("字体大小") > 0 ? Config.GetDouble("字体大小") : 40.0;
+        private static double DisplayFontSize => Config.GetDouble("发文区字体大小") > 0 ? Config.GetDouble("发文区字体大小") : 40.0;
 
         // 线程安全的调试日志锁对象
         private static readonly object _debugLogLock = new object();
@@ -325,7 +326,7 @@ namespace TypeSunny
             {
                 //计算页码
                 // int nextToType = TextInfo.wordStates.IndexOf(WordStates.NO_TYPE);
-                int nextToType = new StringInfo(TbxInput.Text).LengthInTextElements;
+                int nextToType = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
                 if (nextToType >= TextInfo.Words.Count)
                     nextToType = TextInfo.Words.Count - 1;
 
@@ -378,7 +379,7 @@ namespace TypeSunny
                         return;
                     if (Paginator.Pages.Count < pn)
                         return;
-                    Page p = Paginator.Pages[pn];
+                    CorePage p = Paginator.Pages[pn];
 
 
 
@@ -869,7 +870,7 @@ namespace TypeSunny
             }
 
             // 获取下一个需要打的字
-            StringInfo si = new StringInfo(TbxInput.Text);
+            System.Globalization.StringInfo si = new System.Globalization.StringInfo(TbxInput.Text);
             int nextIndex = si.LengthInTextElements;
 
             if (nextIndex >= TextInfo.Words.Count)
@@ -1197,7 +1198,7 @@ namespace TypeSunny
                 if (StateManager.typingState == TypingState.typing && sw.IsRunning)
                 {
                     // 计算当前输入的字数
-                    int inputWordCount = new StringInfo(TbxInput.Text).LengthInTextElements;
+                    int inputWordCount = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
 
                     // 计算已用时间（秒）
                     double timeSeconds = sw.Elapsed.TotalSeconds;
@@ -1320,8 +1321,6 @@ namespace TypeSunny
                         raceHelper.UpdateArticleButtonStatus();
                     }
 
-                    // 后台静默迁移旧数据
-                    _ = StartDataMigrationInBackground();
                 }
                 catch (Exception ex)
                 {
@@ -1361,29 +1360,6 @@ namespace TypeSunny
             // 注意：UpdateLoginStatus 和 UpdateArticleButtonStatus 已移到 Loaded 事件中调用
             // 因为此时菜单项还未创建完成
         }
-
-        /// <summary>
-        /// 后台静默迁移旧数据
-        /// </summary>
-        private async System.Threading.Tasks.Task StartDataMigrationInBackground()
-        {
-            try
-            {
-                // 同时启动三个日志系统的迁移
-                await System.Threading.Tasks.Task.WhenAll(
-                    ArticleLog.MigrateOldDataAsync(),
-                    WenlaiLog.MigrateOldDataAsync(),
-                    TrainerLog.MigrateOldDataAsync()
-                );
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"数据迁移失败: {ex.Message}");
-            }
-        }
-
-
-
 
         private void BtnF3_Click(object sender, RoutedEventArgs e)
         {
@@ -1429,8 +1405,8 @@ namespace TypeSunny
             if (!dr.Exists)
                 dr.Create();
 
-            CultureInfo cn = CultureInfo.GetCultureInfo("zh-CN");
-            CultureInfo en = CultureInfo.GetCultureInfo("en-US");
+            System.Globalization.CultureInfo cn = System.Globalization.CultureInfo.GetCultureInfo("zh-CN");
+            System.Globalization.CultureInfo en = System.Globalization.CultureInfo.GetCultureInfo("en-US");
 
             foreach (var f in dr.GetFiles("*.ttf"))
             {
@@ -1585,8 +1561,8 @@ namespace TypeSunny
             ApplyButtonMenuColors();
 
             // 应用字体大小
-            TbxInput.FontSize = 40.0;
-            TbxResults.FontSize = 15.0;
+            TbxInput.FontSize = Config.GetDouble("跟打区字体大小") > 0 ? Config.GetDouble("跟打区字体大小") : 40.0;
+            TbxResults.FontSize = Config.GetDouble("成绩区字体大小") > 0 ? Config.GetDouble("成绩区字体大小") : 15.0;
 
             // 应用发文框和跟打框的比例
             ApplyDisplayInputRatio();
@@ -1792,8 +1768,8 @@ namespace TypeSunny
             ApplyButtonMenuColors();
 
             // 应用字体大小
-            TbxInput.FontSize = 40; // 默认跟打区字体大小
-            TbxResults.FontSize = 15; // 默认成绩区字体大小
+            TbxInput.FontSize = Config.GetDouble("跟打区字体大小") > 0 ? Config.GetDouble("跟打区字体大小") : 40.0;
+            TbxResults.FontSize = Config.GetDouble("成绩区字体大小") > 0 ? Config.GetDouble("成绩区字体大小") : 15.0;
 
             if (winTrainer != null)
             {
@@ -2131,7 +2107,7 @@ namespace TypeSunny
             double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
 
             // 保存新的字体大小到配置
-            Config.Set("字体大小", newSize, 1);
+            Config.Set("发文区字体大小", newSize, 1);
 
             // 获取鼠标相对于窗口的位置，判断要调整哪个区域的字体
             Point mousePos = e.GetPosition(this);
@@ -2168,6 +2144,7 @@ namespace TypeSunny
             {
                 // 调整输入区字体
                 TbxInput.FontSize = newSize;
+                Config.Set("跟打区字体大小", newSize, 1);
                 System.Diagnostics.Debug.WriteLine($"输入区字体大小调整: {currentSize} -> {newSize}");
                 return;
             }
@@ -2176,6 +2153,7 @@ namespace TypeSunny
             {
                 // 调整成绩区字体
                 TbxResults.FontSize = newSize;
+                Config.Set("成绩区字体大小", newSize, 1);
                 System.Diagnostics.Debug.WriteLine($"成绩区字体大小调整: {currentSize} -> {newSize}");
                 return;
             }
@@ -2216,7 +2194,7 @@ namespace TypeSunny
                 // 在发文区 - 更新字体大小配置并刷新显示
                 double currentSize = DisplayFontSize;
                 double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
-                Config.Set("字体大小", newSize, 1);
+                Config.Set("发文区字体大小", newSize, 1);
                 UpdateDisplay(UpdateLevel.PageArrange);
                 System.Diagnostics.Debug.WriteLine($"发文区字体大小调整: {currentSize} -> {newSize}");
                 return;
@@ -2240,11 +2218,25 @@ namespace TypeSunny
 
             if (targetControl != null)
             {
-                double currentSize = targetControl.FontSize;
+                // 从配置读取当前字体大小，而不是从控件读取（避免控件值与配置不一致）
+                double currentSize;
+                if (targetControl == TbxInput)
+                    currentSize = Config.GetDouble("跟打区字体大小") > 0 ? Config.GetDouble("跟打区字体大小") : 40.0;
+                else if (targetControl == TbxResults)
+                    currentSize = Config.GetDouble("成绩区字体大小") > 0 ? Config.GetDouble("成绩区字体大小") : 15.0;
+                else
+                    currentSize = targetControl.FontSize;
+
                 double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
 
                 // 更新字体大小
                 targetControl.FontSize = newSize;
+
+                // 保存到配置
+                if (targetControl == TbxInput)
+                    Config.Set("跟打区字体大小", newSize, 1);
+                else if (targetControl == TbxResults)
+                    Config.Set("成绩区字体大小", newSize, 1);
 
                 System.Diagnostics.Debug.WriteLine($"字体大小调整: {currentSize} -> {newSize}");
             }
@@ -2467,7 +2459,7 @@ namespace TypeSunny
 
                 string tbxInputText = "";
                 Dispatcher.Invoke(() => { tbxInputText = TbxInput.Text; });
-                Score.InputWordCount = new StringInfo(tbxInputText).LengthInTextElements;
+                Score.InputWordCount = new System.Globalization.StringInfo(tbxInputText).LengthInTextElements;
                 savedInputWords = Score.InputWordCount; // 更新保存的输入字数
 
                 //计算错字
@@ -2889,7 +2881,7 @@ namespace TypeSunny
 
                         // 计算有效字符数（排除符号）
                         int validCharCount = 0;
-                        StringInfo groupSi = new StringInfo(groupText);
+                        System.Globalization.StringInfo groupSi = new System.Globalization.StringInfo(groupText);
                         for (int j = 0; j < groupSi.LengthInTextElements; j++)
                         {
                             string ch = groupSi.SubstringByTextElements(j, 1);
@@ -3134,7 +3126,7 @@ namespace TypeSunny
             {
                 if (!IsLookingType || TextInfo.Words.Count <= 3)
                 {
-                    StringInfo sb = new StringInfo(TbxInput.Text);
+                    System.Globalization.StringInfo sb = new System.Globalization.StringInfo(TbxInput.Text);
 
                     int lenA = TextInfo.Words.Count;
                     int lenB = sb.LengthInTextElements;
@@ -3146,7 +3138,7 @@ namespace TypeSunny
                 else
                 {
 
-                    StringInfo sb = new StringInfo(TbxInput.Text);
+                    System.Globalization.StringInfo sb = new System.Globalization.StringInfo(TbxInput.Text);
 
                     int lenA = TextInfo.Words.Count;
                     int lenB = sb.LengthInTextElements;
@@ -3177,7 +3169,7 @@ namespace TypeSunny
 
 
                 Score.TotalWordCount = TextInfo.Words.Count;
-                Score.InputWordCount = new StringInfo(TbxInput.Text).LengthInTextElements;
+                Score.InputWordCount = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
 
                 Score.Wrong = 0;
 
@@ -3512,7 +3504,7 @@ public async Task SendArticle()
                 Score.AddInputStack(e.Text);
 
                 //记录选重提交时间、字符
-                StringInfo si = new StringInfo(e.Text);
+                System.Globalization.StringInfo si = new System.Globalization.StringInfo(e.Text);
                 string last = si.SubstringByTextElements(si.LengthInTextElements - 1, 1);
 
 
@@ -4260,7 +4252,7 @@ public async Task SendArticle()
             //设置textinfo
 
             TextInfo.Words.Clear();
-            StringInfo si = new StringInfo(rt.Item1);
+            System.Globalization.StringInfo si = new System.Globalization.StringInfo(rt.Item1);
 
             for (int i = 0; i < si.LengthInTextElements; i++)
             {
@@ -4565,7 +4557,7 @@ public async Task SendArticle()
         private string UnicodeBias(string input)
         {
             StringBuilder sb = new StringBuilder();
-            StringInfo si = new StringInfo(input);
+            System.Globalization.StringInfo si = new System.Globalization.StringInfo(input);
 
             for (int i = 0; i < si.LengthInTextElements; i++)
             {
@@ -4963,7 +4955,7 @@ public async Task SendArticle()
             if (StateManager.ConfigLoaded)
             {
 
-                Config.Set("字体大小", e.NewValue, 1);
+                Config.Set("发文区字体大小", e.NewValue, 1);
 
                 // UpdateDisplay(UpdateLevel.PageArrange);
 
@@ -5164,7 +5156,7 @@ public async Task SendArticle()
             List<string> ls = new List<string>();
 
             string sl = GetContentFromMatchText(TextInfo.MatchText);
-            StringInfo si = new StringInfo(sl);
+            System.Globalization.StringInfo si = new System.Globalization.StringInfo(sl);
 
             for (int i = 0; i < si.LengthInTextElements; i++)
                 ls.Add(si.SubstringByTextElements(i, 1));
@@ -5229,7 +5221,7 @@ public async Task SendArticle()
                 if (StateManager.typingState == TypingState.typing && sw.IsRunning)
                 {
                     // 计算当前输入的字数
-                    int inputWordCount = new StringInfo(TbxInput.Text).LengthInTextElements;
+                    int inputWordCount = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
 
                     // 计算已用时间（秒）
                     double timeSeconds = sw.Elapsed.TotalSeconds;
@@ -7257,7 +7249,7 @@ public async Task SendArticle()
 
         private void BtnJbs_Click(object sender, RoutedEventArgs e) //锦标赛
         {
-            jbs = new JBS(Config.GetString("极速用户名"), Config.GetString("极速密码"));
+            jbs = new JBS(Config.GetString("极速用户名"), Config.GetPassword("极速密码"));
             string article = jbs.GetArticle();
             if (article != null && article.Length > 0)
             {

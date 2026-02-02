@@ -221,7 +221,7 @@
 
                 <!-- 练习区 -->
                 <Grid x:Name="DisplayGrid" Grid.Row="2" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="10,8,10,8" Background="{DynamicResource TypingAreaBackground}">
-                    <TextBox x:Name="fld" Padding="12" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="Wrap" TextAlignment="Left" Foreground="{DynamicResource TextForeground}" IsReadOnly="True" VerticalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent" FontSize="14"/>
+                    <TextBox x:Name="fld" Padding="12" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="Wrap" TextAlignment="Left" Foreground="{DynamicResource TextForeground}" IsReadOnly="True" VerticalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent" FontSize="14" MouseWheel="Fld_MouseWheel"/>
                 </Grid>
 
                 <!-- 进度条区 -->
