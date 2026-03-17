@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using TypeSunny;
 using TypeSunny.Net;
+using TypeSunny.Net.Http;
 using Newtonsoft.Json.Linq;
 
 namespace TypeSunny.ArticleSender
@@ -14,7 +15,8 @@ namespace TypeSunny.ArticleSender
     /// </summary>
     public class WenlaiHelper
     {
-        private RaceAPI raceAPI;
+        private ApiClient apiClient;
+        private JwtAuthProvider jwtAuthProvider;
         private AccountSystemManager accountManager;
         private const string SERVICE_NAME = "文来";
         private int currentUserId = -1;
@@ -55,9 +57,9 @@ namespace TypeSunny.ArticleSender
         }
 
         /// <summary>
-        /// 获取或创建RaceAPI实例
+        /// 获取或创建 ApiClient 实例（使用 JwtAuthProvider）
         /// </summary>
-        private async Task<RaceAPI> GetInstanceAsync()
+        private async Task<ApiClient> GetInstanceAsync()
         {
             string serverUrl = Config.GetString("文来接口地址");
 
@@ -66,6 +68,7 @@ namespace TypeSunny.ArticleSender
                 throw new Exception("文来接口地址未配置，请在设置中配置服务器地址");
             }
 
+            serverUrl = serverUrl.TrimEnd('/');
             System.Diagnostics.Debug.WriteLine($"[文来] 使用服务器地址: {serverUrl}");
 
             // 从账号管理器获取账号信息
@@ -77,75 +80,56 @@ namespace TypeSunny.ArticleSender
             }
             else if (account.Domain != serverUrl)
             {
-                // 更新域名
+                // 服务器地址变了，清掉旧 token，需要重新登录
+                account.JwtToken = "";
+                account.Cookies = "";
                 accountManager.UpdateDomain(SERVICE_NAME, serverUrl);
+                System.Diagnostics.Debug.WriteLine($"[文来] 服务器地址变更，已清除本地 token");
             }
 
-            // 创建或更新RaceAPI实例
-            if (raceAPI == null || raceAPI.GetType().GetField("serverUrl",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
-                ?.GetValue(raceAPI)?.ToString() != serverUrl)
+            // 创建或更新 ApiClient 实例
+            if (apiClient == null || apiClient.BaseUrl != serverUrl)
             {
-                raceAPI = new RaceAPI(serverUrl, account.ClientKeyXml);
+                // 创建 JwtAuthProvider（地址变了 token 已清空，不会携带旧 token）
+                jwtAuthProvider = new JwtAuthProvider();
 
-                // 设置密钥不匹配时的自动重新登录回调
-                raceAPI.OnKeyMismatchCallback = async () =>
+                // 如果有保存的 JWT Token，恢复它
+                if (!string.IsNullOrWhiteSpace(account.JwtToken))
                 {
-                    System.Diagnostics.Debug.WriteLine($"[文来] 密钥不匹配，触发自动重新登录");
-                    var (success, cookies, keyXml) = await accountManager.ReloginAsync(SERVICE_NAME, serverUrl);
-                    if (success)
-                    {
-                        // 更新本地状态
-                        currentUserId = accountManager.GetAccount(SERVICE_NAME)?.UserId ?? currentUserId;
-                        // 触发UI更新
-                        System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
-                        {
-                            loginStatusChangedCallback?.Invoke(true);
-                        }));
-                    }
-                    return (cookies, keyXml);
-                };
-
-                // 加载Cookie
-                if (!string.IsNullOrWhiteSpace(account.Cookies))
-                {
-                    raceAPI.LoadCookiesFromString(account.Cookies);
+                    jwtAuthProvider.AccessToken = account.JwtToken;
                 }
+
+                apiClient = new ApiClient(serverUrl, jwtAuthProvider);
+
+                // 初始化 ArticleFetcher（注入同一个 ApiClient）
+                ArticleFetcher.Initialize(apiClient);
             }
             else
             {
-                // ✅ 每次使用前重新加载Cookie（以防其他服务已登录并同步了Cookie）
+                // 每次使用前检查最新的账号信息（支持多窗口同步）
                 var latestAccount = accountManager.GetAccount(SERVICE_NAME);
-                if (latestAccount != null && !string.IsNullOrWhiteSpace(latestAccount.Cookies))
+                if (latestAccount != null)
                 {
-                    // ✅ 检查域名是否匹配（只有同域名才重新加载Cookie）
-                    if (IsSameDomain(latestAccount.Domain, serverUrl))
+                    // 同步 JWT Token
+                    if (!string.IsNullOrWhiteSpace(latestAccount.JwtToken) && jwtAuthProvider != null)
                     {
-                        raceAPI.LoadCookiesFromString(latestAccount.Cookies);
-                        System.Diagnostics.Debug.WriteLine($"✓ 文来重新加载Cookie（域名匹配，可能是赛文登录后同步的）");
-
-                        // ✅ 如果账号信息有更新（比如用户ID变了），触发回调通知UI更新
-                        if (latestAccount.UserId != currentUserId && latestAccount.UserId > 0)
-                        {
-                            currentUserId = latestAccount.UserId;
-                            // 在UI线程更新登录状态显示
-                            System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
-                            {
-                                loginStatusChangedCallback?.Invoke(true);
-                                System.Diagnostics.Debug.WriteLine($"✓ 文来登录状态已更新: {latestAccount.DisplayName}");
-                            }));
-                        }
+                        jwtAuthProvider.AccessToken = latestAccount.JwtToken;
                     }
-                    else
+
+                    // 同步用户ID
+                    if (latestAccount.UserId > 0 && latestAccount.UserId != currentUserId)
                     {
-                        System.Diagnostics.Debug.WriteLine($"⚠ 文来跳过Cookie加载（域名不匹配: {latestAccount.Domain} vs {serverUrl}）");
+                        currentUserId = latestAccount.UserId;
+                        Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            loginStatusChangedCallback?.Invoke(true);
+                            System.Diagnostics.Debug.WriteLine($"✓ 文来登录状态已更新: {latestAccount.DisplayName}");
+                        }));
                     }
                 }
             }
 
-            // 确保已初始化
-            await raceAPI.InitializeAsync();
-            return raceAPI;
+            return apiClient;
         }
 
         /// <summary>
@@ -153,11 +137,9 @@ namespace TypeSunny.ArticleSender
         /// </summary>
         public bool IsLoggedIn()
         {
-            // ✅ 重新加载配置以获取最新的登录状态（支持多窗口同步）
             accountManager.Reload();
             var account = accountManager.GetAccount(SERVICE_NAME);
 
-            // ✅ 同步更新 currentUserId（如果账号信息有变化）
             if (account != null && account.UserId > 0 && account.UserId != currentUserId)
             {
                 currentUserId = account.UserId;
@@ -176,11 +158,9 @@ namespace TypeSunny.ArticleSender
         {
             System.Diagnostics.Debug.WriteLine($"WenlaiHelper.GetCurrentUsername() 被调用");
 
-            // ✅ 重新加载配置以获取最新的登录状态（支持多窗口同步）
             accountManager.Reload();
             var account = accountManager.GetAccount(SERVICE_NAME);
 
-            // ✅ 同步更新 currentUserId（如果账号信息有变化）
             if (account != null && account.UserId > 0 && account.UserId != currentUserId)
             {
                 currentUserId = account.UserId;
@@ -206,7 +186,7 @@ namespace TypeSunny.ArticleSender
             {
                 Title = "文来注册",
                 Width = 350,
-                Height = 250,
+                Height = 350,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = owner,
                 ResizeMode = ResizeMode.NoResize
@@ -215,13 +195,17 @@ namespace TypeSunny.ArticleSender
             var grid = new Grid();
             grid.Margin = new Thickness(20);
 
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 0: 用户名
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 2: 密码
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 4: 邮箱
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 6: 验证码
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 8: 自动登录
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(20) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 10: 按钮
 
             var lblUsername = new Label { Content = "用户名:" };
             Grid.SetRow(lblUsername, 0);
@@ -247,13 +231,55 @@ namespace TypeSunny.ArticleSender
             Grid.SetRow(txtPassword, 2);
             grid.Children.Add(txtPassword);
 
+            var lblEmail = new Label { Content = "邮箱:" };
+            Grid.SetRow(lblEmail, 4);
+            grid.Children.Add(lblEmail);
+
+            var txtEmail = new TextBox
+            {
+                Padding = new Thickness(5),
+                Margin = new Thickness(70, 0, 0, 0)
+            };
+            Grid.SetRow(txtEmail, 4);
+            grid.Children.Add(txtEmail);
+
+            // 验证码行：输入框 + 发送按钮
+            var lblCode = new Label { Content = "验证码:" };
+            Grid.SetRow(lblCode, 6);
+            grid.Children.Add(lblCode);
+
+            var codePanel = new Grid();
+            codePanel.Margin = new Thickness(70, 0, 0, 0);
+            codePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            codePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var txtCode = new TextBox
+            {
+                Padding = new Thickness(5),
+                Margin = new Thickness(0, 0, 5, 0)
+            };
+            Grid.SetColumn(txtCode, 0);
+            codePanel.Children.Add(txtCode);
+
+            var btnSendCode = new Button
+            {
+                Content = "发送",
+                Width = 60,
+                Height = 28
+            };
+            Grid.SetColumn(btnSendCode, 1);
+            codePanel.Children.Add(btnSendCode);
+
+            Grid.SetRow(codePanel, 6);
+            grid.Children.Add(codePanel);
+
             var chkAutoLogin = new CheckBox
             {
                 Content = "注册后自动登录",
                 IsChecked = true,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            Grid.SetRow(chkAutoLogin, 4);
+            Grid.SetRow(chkAutoLogin, 8);
             grid.Children.Add(chkAutoLogin);
 
             var btnPanel = new StackPanel
@@ -261,7 +287,7 @@ namespace TypeSunny.ArticleSender
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Right
             };
-            Grid.SetRow(btnPanel, 6);
+            Grid.SetRow(btnPanel, 10);
 
             var btnRegister = new Button
             {
@@ -278,6 +304,63 @@ namespace TypeSunny.ArticleSender
                 Height = 30
             };
 
+            // 发送验证码
+            btnSendCode.Click += async (s, args) =>
+            {
+                if (string.IsNullOrWhiteSpace(txtEmail.Text))
+                {
+                    MessageBox.Show("请输入邮箱", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                btnSendCode.IsEnabled = false;
+                btnSendCode.Content = "发送中...";
+
+                try
+                {
+                    var client = await GetInstanceAsync();
+                    var response = await client.PostAsync("/api/auth/register/sendCode", new { email = txtEmail.Text.Trim() });
+
+                    if (response.IsSuccess)
+                    {
+                        MessageBox.Show("验证码已发送，请查收邮箱", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                        // 倒计时 60 秒
+                        int countdown = 60;
+                        var timer = new System.Windows.Threading.DispatcherTimer();
+                        timer.Interval = TimeSpan.FromSeconds(1);
+                        timer.Tick += (ts, te) =>
+                        {
+                            countdown--;
+                            if (countdown <= 0)
+                            {
+                                timer.Stop();
+                                btnSendCode.Content = "发送";
+                                btnSendCode.IsEnabled = true;
+                            }
+                            else
+                            {
+                                btnSendCode.Content = $"{countdown}s";
+                            }
+                        };
+                        timer.Start();
+                    }
+                    else
+                    {
+                        MessageBox.Show(response.Msg ?? "发送验证码失败", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                        btnSendCode.IsEnabled = true;
+                        btnSendCode.Content = "发送";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"发送验证码失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    btnSendCode.IsEnabled = true;
+                    btnSendCode.Content = "发送";
+                }
+            };
+
+            // 注册
             btnRegister.Click += async (s, args) =>
             {
                 if (string.IsNullOrWhiteSpace(txtUsername.Text))
@@ -297,39 +380,52 @@ namespace TypeSunny.ArticleSender
 
                 try
                 {
-                    var api = await GetInstanceAsync();
-                    var result = await api.RegisterAsync(txtUsername.Text, txtPassword.Password);
+                    var client = await GetInstanceAsync();
 
-                    if (result.Success)
+                    var registerRequest = new RegisterRequest
                     {
-                        // 保存客户端密钥
-                        string clientKeyXml = api.GetClientKeyXml();
-                        string cookies = api.GetCookiesAsString();
+                        Username = txtUsername.Text.Trim(),
+                        Password = txtPassword.Password,
+                        Email = txtEmail.Text.Trim(),
+                        VerifyCode = txtCode.Text.Trim()
+                    };
 
-                        // 如果选择自动登录，则直接登录
+                    var response = await client.PostAsync<LoginResponse>("/api/auth/register", registerRequest);
+
+                    if (response.IsSuccess)
+                    {
+                        // 如果选择自动登录
                         if (chkAutoLogin.IsChecked == true)
                         {
-                            var loginResult = await api.LoginAsync(txtUsername.Text, txtPassword.Password);
-                            if (loginResult.Success)
+                            // 注册成功后直接登录
+                            var loginRequest = new LoginRequest
                             {
-                                // 解析用户信息
-                                JObject data = loginResult.Data;
-                                int userId = data["user"]?["id"]?.ToObject<int>() ?? -1;
-                                string username = data["user"]?["username"]?.ToString() ?? txtUsername.Text;
+                                Username = txtUsername.Text.Trim(),
+                                Password = txtPassword.Password
+                            };
+                            var loginResponse = await client.PostAsync<LoginResponse>("/api/auth/login", loginRequest);
 
-                                // 获取文来服务器地址（用于同域名同步到赛文）
+                            if (loginResponse.IsSuccess && loginResponse.Data != null)
+                            {
+                                string token = loginResponse.Data.Token;
+                                int userId = loginResponse.Data.UserId;
+                                string displayName = loginResponse.Data.DisplayName ?? loginResponse.Data.Username ?? txtUsername.Text;
+
+                                // 设置 JWT Token
+                                if (jwtAuthProvider != null)
+                                    jwtAuthProvider.AccessToken = token;
+
                                 string serverUrl = Config.GetString("文来接口地址");
 
-                                // 更新账号信息（传入serverUrl以确保Domain正确设置，从而实现同域名同步）
-                                accountManager.UpdateLoginInfo(SERVICE_NAME, txtUsername.Text, txtPassword.Password,
-                                    username, userId, api.GetCookiesAsString(), api.GetClientKeyXml(), serverUrl);
+                                accountManager.UpdateLoginInfo(SERVICE_NAME, txtUsername.Text.Trim(), txtPassword.Password,
+                                    displayName, userId, null, null, serverUrl, token);
 
-                                MessageBox.Show($"注册成功并已自动登录！欢迎 {username}", "提示",
+                                MessageBox.Show($"注册成功并已自动登录！欢迎 {displayName}", "提示",
                                     MessageBoxButton.OK, MessageBoxImage.Information);
                             }
                             else
                             {
-                                MessageBox.Show($"注册成功！但自动登录失败: {loginResult.Message}", "提示",
+                                MessageBox.Show($"注册成功！但自动登录失败: {loginResponse.Msg}", "提示",
                                     MessageBoxButton.OK, MessageBoxImage.Information);
                             }
                         }
@@ -344,7 +440,7 @@ namespace TypeSunny.ArticleSender
                     }
                     else
                     {
-                        MessageBox.Show(result.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                        MessageBox.Show(response.Msg ?? "注册失败", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                         btnRegister.IsEnabled = true;
                         btnRegister.Content = "注册";
                     }
@@ -379,15 +475,13 @@ namespace TypeSunny.ArticleSender
             // 清除账号信息
             accountManager.ClearAccount(SERVICE_NAME);
 
-            // 清空ArticleFetcher的Cookie
-            string serverUrl = Config.GetString("文来接口地址");
-            if (!string.IsNullOrWhiteSpace(serverUrl))
-            {
-                ArticleFetcher.ClearCookies(serverUrl);
-            }
+            // 清除 JWT Token
+            if (jwtAuthProvider != null)
+                jwtAuthProvider.ClearAuth();
 
-            // 清空RaceAPI实例，下次使用时会重新创建
-            raceAPI = null;
+            // 清空 ApiClient 实例，下次使用时会重新创建
+            apiClient = null;
+            jwtAuthProvider = null;
 
             System.Diagnostics.Debug.WriteLine("✓ 文来已退出登录");
         }
@@ -459,7 +553,6 @@ namespace TypeSunny.ArticleSender
                     return;
                 }
 
-                // 验证URL格式
                 try
                 {
                     var uri = new Uri(newServerUrl);
@@ -481,13 +574,21 @@ namespace TypeSunny.ArticleSender
                     Config.Set("文来接口地址", newServerUrl);
                     Config.WriteConfig(0);
 
-                    // 更新账号域名
+                    // 地址变了，清掉本地 token，需要重新登录
+                    var account = accountManager.GetAccount(SERVICE_NAME);
+                    if (account != null)
+                    {
+                        account.JwtToken = "";
+                        account.Cookies = "";
+                    }
                     accountManager.UpdateDomain(SERVICE_NAME, newServerUrl);
 
-                    // 清空RaceAPI实例，下次使用时会使用新地址
-                    raceAPI = null;
+                    // 清空 ApiClient 实例，下次使用时会使用新地址
+                    apiClient = null;
+                    jwtAuthProvider = null;
+                    ArticleFetcher.Initialize(null);  // 清掉 ArticleFetcher 的旧客户端
 
-                    MessageBox.Show("服务器地址已更新", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show("服务器地址已更新，请重新登录", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
 
                 settingsDialog.DialogResult = true;
@@ -511,7 +612,6 @@ namespace TypeSunny.ArticleSender
         /// <summary>
         /// 显示登录对话框
         /// </summary>
-        /// <returns>登录是否成功</returns>
         public bool? ShowLoginDialog(Window owner)
         {
             var account = accountManager.GetAccount(SERVICE_NAME);
@@ -602,69 +702,48 @@ namespace TypeSunny.ArticleSender
 
                 try
                 {
-                    var api = await GetInstanceAsync();
-                    var result = await api.LoginAsync(txtUsername.Text, txtPassword.Password);
+                    var client = await GetInstanceAsync();
 
-                    if (result.Success)
+                    // 使用新 API（JWT）登录
+                    var loginRequest = new LoginRequest
                     {
-                        // 解析返回的用户信息
-                        JObject data = result.Data;
-                        int userId = data["user"]?["id"]?.ToObject<int>() ?? -1;
-                        string username = data["user"]?["username"]?.ToString() ?? txtUsername.Text;
+                        Username = txtUsername.Text.Trim(),
+                        Password = txtPassword.Password
+                    };
+                    var loginResponse = await client.PostAsync<LoginResponse>("/api/auth/login", loginRequest);
 
-                        // 获取文来服务器地址（用于同域名同步到赛文）
+                    if (loginResponse.IsSuccess && loginResponse.Data != null)
+                    {
+                        // JWT 登录成功
+                        string token = loginResponse.Data.Token;
+                        int userId = loginResponse.Data.UserId;
+                        string displayName = loginResponse.Data.DisplayName ?? loginResponse.Data.Username ?? txtUsername.Text;
+
+                        // 设置 JWT Token
+                        if (jwtAuthProvider != null)
+                            jwtAuthProvider.AccessToken = token;
+
                         string serverUrl = Config.GetString("文来接口地址");
 
-                        // 保存登录信息（传入serverUrl以确保Domain正确设置，从而实现同域名同步）
-                        accountManager.UpdateLoginInfo(SERVICE_NAME, txtUsername.Text, txtPassword.Password,
-                            username, userId, api.GetCookiesAsString(), api.GetClientKeyXml(), serverUrl);
+                        accountManager.UpdateLoginInfo(SERVICE_NAME, txtUsername.Text.Trim(), txtPassword.Password,
+                            displayName, userId, null, null, serverUrl, token);
 
-                        MessageBox.Show($"登录成功！欢迎 {username}", "提示",
+                        MessageBox.Show($"登录成功！欢迎 {displayName}", "提示",
                             MessageBoxButton.OK, MessageBoxImage.Information);
                         loginDialog.DialogResult = true;
                         loginDialog.Close();
                     }
                     else
                     {
-                        // 检查是否是服务器端未实现的错误
-                        string errorMsg = result.Message;
-                        if (errorMsg.Contains("create_web_session") || errorMsg.Contains("has no attribute"))
-                        {
-                            MessageBox.Show(
-                                "登录失败：服务器端尚未实现Cookie会话功能\n\n" +
-                                "请联系服务器管理员更新服务器代码，添加 create_web_session 方法。\n\n" +
-                                "技术说明：登录接口需要在成功后调用 db.create_web_session(user_id) 来创建会话Cookie。",
-                                "服务器功能缺失",
-                                MessageBoxButton.OK,
-                                MessageBoxImage.Warning
-                            );
-                        }
-                        else
-                        {
-                            MessageBox.Show(errorMsg, "登录失败", MessageBoxButton.OK, MessageBoxImage.Error);
-                        }
+                        string errorMsg = loginResponse.Msg ?? "登录失败";
+                        MessageBox.Show(errorMsg, "登录失败", MessageBoxButton.OK, MessageBoxImage.Error);
                         btnLogin.IsEnabled = true;
                         btnLogin.Content = "登录";
                     }
                 }
                 catch (Exception ex)
                 {
-                    string errorMsg = ex.Message;
-                    if (errorMsg.Contains("create_web_session") || errorMsg.Contains("has no attribute"))
-                    {
-                        MessageBox.Show(
-                            "登录失败：服务器端尚未实现Cookie会话功能\n\n" +
-                            "请联系服务器管理员更新服务器代码，添加 create_web_session 方法。\n\n" +
-                            "技术说明：登录接口需要在成功后调用 db.create_web_session(user_id) 来创建会话Cookie。",
-                            "服务器功能缺失",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Warning
-                        );
-                    }
-                    else
-                    {
-                        MessageBox.Show($"登录失败: {errorMsg}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-                    }
+                    MessageBox.Show($"登录失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                     btnLogin.IsEnabled = true;
                     btnLogin.Content = "登录";
                 }

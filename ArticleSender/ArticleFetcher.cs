@@ -1,11 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net;
-using System.Net.Http;
-using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
+using TypeSunny.Net.Http;
 
 namespace TypeSunny.ArticleSender
 {
@@ -20,138 +18,77 @@ namespace TypeSunny.ArticleSender
     }
 
     /// <summary>
-    /// 文章获取器，通过HTTP GET请求获取文章
+    /// 文章获取器，通过 ApiClient 获取文章
     /// </summary>
     public class ArticleFetcher
     {
-        private static HttpClient httpClient;
-        private static CookieContainer cookieContainer;
+        private static ApiClient apiClient;
         private static List<DifficultyInfo> cachedDifficulties = null;
         private static DateTime cacheTime = DateTime.MinValue;
-        private static readonly TimeSpan CACHE_EXPIRATION = TimeSpan.FromMinutes(5);  // 缓存5分钟过期
+        private static readonly TimeSpan CACHE_EXPIRATION = TimeSpan.FromMinutes(5);
 
-        static ArticleFetcher()
+        // ========== 安全取值工具方法 ==========
+        // JToken?.ToObject<int>() 对 JSON null 无效（JToken 不是 C# null，?.不会短路）
+        // 必须先检查 Type != JTokenType.Null
+
+        private static int SafeInt(JToken token, int defaultValue = 0)
         {
-            // 1. 启用所有TLS版本（包括 TLS 1.3）
-            System.Net.ServicePointManager.SecurityProtocol = (System.Net.SecurityProtocolType)0x3000 | // TLS 1.3 (0x3000)
-                                                               System.Net.SecurityProtocolType.Tls12 |
-                                                               System.Net.SecurityProtocolType.Tls11 |
-                                                               System.Net.SecurityProtocolType.Tls;
+            if (token == null || token.Type == JTokenType.Null)
+                return defaultValue;
+            try { return token.ToObject<int>(); }
+            catch { return defaultValue; }
+        }
 
-            // 2. 创建 HttpClientHandler 并配置
-            var handler = new HttpClientHandler
-            {
-                CookieContainer = new CookieContainer(),
-                UseCookies = true,
-                // 忽略证书错误（避免证书验证问题）
-                ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true,
-                // 允许自动重定向
-                AllowAutoRedirect = true,
-                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
-            };
+        private static double SafeDouble(JToken token, double defaultValue = 0)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+                return defaultValue;
+            try { return token.ToObject<double>(); }
+            catch { return defaultValue; }
+        }
 
-            cookieContainer = handler.CookieContainer;
-
-            // 3. 初始化 HttpClient
-            httpClient = new HttpClient(handler)
-            {
-                Timeout = TimeSpan.FromSeconds(30)
-            };
-
-            // 4. 添加请求头（模拟浏览器）
-            httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-            httpClient.DefaultRequestHeaders.Add("Accept", "application/json, text/plain, */*");
-            httpClient.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate, br");
-            httpClient.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9");
-
-            System.Diagnostics.Debug.WriteLine($"[ArticleFetcher] TLS协议已设置，支持TLS 1.0/1.1/1.2/1.3");
+        private static string SafeString(JToken token, string defaultValue = "")
+        {
+            if (token == null || token.Type == JTokenType.Null)
+                return defaultValue;
+            return token.ToString();
         }
 
         /// <summary>
-        /// 从Cookie字符串加载Cookie
+        /// 注入 ApiClient 实例（由 WenlaiHelper 在初始化时调用）
         /// </summary>
-        public static void LoadCookiesFromString(string serverUrl, string cookieString)
+        public static void Initialize(ApiClient client)
         {
-            if (string.IsNullOrWhiteSpace(cookieString) || string.IsNullOrWhiteSpace(serverUrl))
-                return;
-
-            try
-            {
-                Uri uri = new Uri(serverUrl);
-                foreach (var cookiePair in cookieString.Split(';'))
-                {
-                    var parts = cookiePair.Trim().Split('=');
-                    if (parts.Length == 2)
-                    {
-                        cookieContainer.Add(uri, new Cookie(parts[0].Trim(), parts[1].Trim()));
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"加载Cookie失败: {ex.Message}");
-            }
+            apiClient = client;
+            System.Diagnostics.Debug.WriteLine($"[ArticleFetcher] 已初始化 ApiClient，baseUrl: {client.BaseUrl}");
         }
 
         /// <summary>
-        /// 获取Cookie字符串
+        /// 获取或创建 ApiClient（如果未通过 Initialize 注入，则从配置创建）
         /// </summary>
-        public static string GetCookiesAsString(string serverUrl)
+        private static ApiClient EnsureClient()
         {
-            if (string.IsNullOrWhiteSpace(serverUrl))
-                return "";
+            if (apiClient != null)
+                return apiClient;
 
-            try
-            {
-                Uri uri = new Uri(serverUrl);
-                var cookies = cookieContainer.GetCookies(uri);
-                var cookieList = new System.Collections.Generic.List<string>();
-                foreach (Cookie cookie in cookies)
-                {
-                    cookieList.Add($"{cookie.Name}={cookie.Value}");
-                }
-                return string.Join("; ", cookieList);
-            }
-            catch
-            {
-                return "";
-            }
-        }
+            string apiUrl = Config.GetString("文来接口地址");
+            if (string.IsNullOrWhiteSpace(apiUrl))
+                return null;
 
-        /// <summary>
-        /// 清除指定服务器的所有Cookie
-        /// </summary>
-        public static void ClearCookies(string serverUrl)
-        {
-            if (string.IsNullOrWhiteSpace(serverUrl))
-                return;
+            apiUrl = apiUrl.TrimEnd('/');
+            if (apiUrl.EndsWith("/api/get_text"))
+                apiUrl = apiUrl.Substring(0, apiUrl.Length - "/api/get_text".Length);
 
-            try
-            {
-                Uri uri = new Uri(serverUrl);
-                var cookies = cookieContainer.GetCookies(uri);
-
-                // 将所有cookie标记为过期
-                foreach (Cookie cookie in cookies)
-                {
-                    cookie.Expired = true;
-                }
-
-                System.Diagnostics.Debug.WriteLine($"✓ 已清除 {serverUrl} 的所有Cookie");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"清除Cookie失败: {ex.Message}");
-            }
+            apiClient = new ApiClient(apiUrl);
+            System.Diagnostics.Debug.WriteLine($"[ArticleFetcher] 自动创建 ApiClient，baseUrl: {apiUrl}");
+            return apiClient;
         }
 
         /// <summary>
         /// 获取难度列表（只返回缓存，不会触发网络请求）
         /// </summary>
-        /// <returns>难度列表</returns>
         public static List<DifficultyInfo> GetDifficulties()
         {
-            // 检查缓存是否过期（5分钟）
             if (cachedDifficulties != null && DateTime.Now - cacheTime > CACHE_EXPIRATION)
             {
                 System.Diagnostics.Debug.WriteLine($"[难度] 缓存已过期（{(DateTime.Now - cacheTime).TotalMinutes:F1}分钟），清除缓存");
@@ -159,96 +96,77 @@ namespace TypeSunny.ArticleSender
                 cacheTime = DateTime.MinValue;
             }
 
-            // 只返回缓存，避免同步阻塞
             if (cachedDifficulties != null)
-            {
                 return cachedDifficulties;
-            }
 
-            // 没有缓存，返回空列表
             return new List<DifficultyInfo>();
         }
 
         /// <summary>
         /// 异步获取难度列表
         /// </summary>
-        /// <returns>难度列表</returns>
         public static async Task<List<DifficultyInfo>> GetDifficultiesAsync()
         {
-            // 如果有缓存，直接返回
             if (cachedDifficulties != null)
-            {
                 return cachedDifficulties;
-            }
 
             try
             {
-                string apiUrl = Config.GetString("文来接口地址");
-
-                if (string.IsNullOrWhiteSpace(apiUrl))
-                {
+                var client = EnsureClient();
+                if (client == null)
                     return new List<DifficultyInfo>();
-                }
 
-                // 移除可能的尾部斜杠
-                apiUrl = apiUrl.TrimEnd('/');
+                // 新 API 路径：/api/segments/stats
+                var response = await client.GetAsync("/api/segments/stats");
 
-                // 构建难度API URL
-                string difficultyUrl = apiUrl + "/api/stats_by_difficulty";
-
-                // 发送GET请求（使用真正的异步）
-                var response = await httpClient.GetAsync(difficultyUrl);
-
-                // 读取响应体内容
-                string responseBody = await response.Content.ReadAsStringAsync();
-
-                // 尝试解析JSON响应
-                JObject result;
-                try
-                {
-                    result = JObject.Parse(responseBody);
-                }
-                catch
-                {
-                    // 无法解析JSON，返回空列表
+                if (!response.IsSuccess || response.RawData == null)
                     return new List<DifficultyInfo>();
-                }
 
-                // 检查错误码
-                int errorCode = result["error"]?.ToObject<int>() ?? -1;
-                if (errorCode != 0)
-                {
-                    return new List<DifficultyInfo>();
-                }
-
-                // 解析msg对象
-                var msgObj = result["msg"] as JObject;
-                if (msgObj == null)
-                {
-                    return new List<DifficultyInfo>();
-                }
-
-                // 解析难度列表
                 var difficulties = new List<DifficultyInfo>();
-                foreach (var item in msgObj)
+
+                // 难度标签 → 等级ID 映射（服务端 DifficultyConstant）
+                var labelToLevel = new Dictionary<string, int>
                 {
-                    int id = int.Parse(item.Key);
-                    var value = item.Value as JObject;
-                    if (value != null)
+                    ["淼"] = 1, ["水"] = 2, ["易"] = 3,
+                    ["普"] = 4, ["难"] = 5, ["虐"] = 6
+                };
+
+                // 新格式：data = { totalSegments, levelStats: { "淼": 10000, "水": 20000, ... }, totalChars }
+                var levelStats = response.RawData["levelStats"] as JObject;
+                if (levelStats != null)
+                {
+                    foreach (var item in levelStats)
+                    {
+                        string label = item.Key;
+                        long count = item.Value?.Type == JTokenType.Integer ? (long)item.Value : 0;
+                        int level = labelToLevel.ContainsKey(label) ? labelToLevel[label] : 0;
+                        if (level > 0)
+                        {
+                            difficulties.Add(new DifficultyInfo
+                            {
+                                Id = level,
+                                Name = label,
+                                Count = (int)count
+                            });
+                        }
+                    }
+                }
+                // 旧格式兼容：data 是数组 [{ id, name, count }, ...]
+                else if (response.RawData.Type == JTokenType.Array)
+                {
+                    foreach (var item in response.RawData)
                     {
                         difficulties.Add(new DifficultyInfo
                         {
-                            Id = id,
-                            Name = value["name"]?.ToString() ?? "",
-                            Count = value["count"]?.ToObject<int>() ?? 0
+                            Id = SafeInt(item["id"]),
+                            Name = SafeString(item["name"]),
+                            Count = SafeInt(item["count"])
                         });
                     }
                 }
 
-                // 按ID排序
                 difficulties.Sort((a, b) => a.Id.CompareTo(b.Id));
 
-                // 缓存结果并记录时间
                 cachedDifficulties = difficulties;
                 cacheTime = DateTime.Now;
                 System.Diagnostics.Debug.WriteLine($"[难度] 已更新难度缓存，共{difficulties.Count}个难度");
@@ -269,19 +187,149 @@ namespace TypeSunny.ArticleSender
             cacheTime = DateTime.MinValue;
         }
 
+        // ========== 兼容性方法（过渡期保留） ==========
+
+        /// <summary>
+        /// 加载 Cookie（兼容旧代码调用，新 API 使用 JWT 无需此操作）
+        /// </summary>
+        public static void LoadCookiesFromString(string serverUrl, string cookieString)
+        {
+            // 新架构使用 JWT 认证，Cookie 由 ApiClient 内部管理
+            // 此方法保留以兼容 MainWindow.xaml.cs 和 WinConfig.xaml.cs 中的调用
+            System.Diagnostics.Debug.WriteLine($"[ArticleFetcher] LoadCookiesFromString 已弃用（JWT模式），忽略Cookie加载");
+        }
+
+        /// <summary>
+        /// 清除 Cookie（兼容旧代码调用）
+        /// </summary>
+        public static void ClearCookies(string serverUrl)
+        {
+            System.Diagnostics.Debug.WriteLine($"[ArticleFetcher] ClearCookies 已弃用（JWT模式）");
+        }
+
+        /// <summary>
+        /// 从响应数据中解析文章（支持新旧两种字段命名）
+        /// </summary>
+        private static ArticleData ParseArticleFromData(JToken data)
+        {
+            if (data == null || data.Type != JTokenType.Object)
+            {
+                return new ArticleData
+                {
+                    Title = "数据错误",
+                    Content = "API返回的数据字段不是对象",
+                    FullContent = "",
+                    Mark = ""
+                };
+            }
+
+            var dataObj = data as JObject;
+
+            // 获取标题（新: bookName, 旧: name）
+            string title = SafeString(dataObj["bookName"])
+                ?? SafeString(dataObj["name"])
+                ?? "未知标题";
+            if (string.IsNullOrEmpty(title)) title = "未知标题";
+
+            // 去掉标题中#及后面的内容
+            int hashIndex = title.IndexOf('#');
+            if (hashIndex >= 0)
+                title = title.Substring(0, hashIndex);
+
+            // 获取文章内容
+            string content = SafeString(dataObj["content"]);
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return new ArticleData
+                {
+                    Title = "数据错误",
+                    Content = "API返回的文章内容为空",
+                    FullContent = "",
+                    Mark = ""
+                };
+            }
+
+            // 获取段落标记
+            string mark = SafeString(dataObj["mark"]);
+
+            // 获取难度信息（新: difficultyLevel/difficultyLabel/difficultyScore, 旧: difficulty/custom_difficulty）
+            string difficultyText = "";
+            string difficultyName = "";
+            int difficultyId = 0;
+            int difficultyLevel = 0;
+            string difficultyLabel = "";
+            double difficultyScore = 0;
+
+            if (dataObj["difficultyLabel"] != null && dataObj["difficultyLabel"].Type != JTokenType.Null)
+            {
+                // 新格式
+                difficultyLevel = SafeInt(dataObj["difficultyLevel"]);
+                difficultyLabel = SafeString(dataObj["difficultyLabel"]);
+                difficultyScore = SafeDouble(dataObj["difficultyScore"]);
+                difficultyText = $"{difficultyLabel}({difficultyScore:F2})";
+                difficultyName = difficultyLabel;
+                difficultyId = difficultyLevel;
+            }
+            else
+            {
+                // 旧格式
+                difficultyText = SafeString(dataObj["difficulty"]);
+                difficultyId = SafeInt(dataObj["custom_difficulty"]);
+
+                if (difficultyId > 0 && cachedDifficulties != null)
+                {
+                    var diffInfo = cachedDifficulties.FirstOrDefault(d => d.Id == difficultyId);
+                    if (diffInfo != null)
+                        difficultyName = diffInfo.Name;
+                }
+            }
+
+            // 获取书籍ID和段号（新: bookId/sortNum, 旧: book_id/sort_num）
+            int bookId = SafeInt(dataObj["bookId"]) != 0
+                ? SafeInt(dataObj["bookId"])
+                : SafeInt(dataObj["book_id"]);
+            int sortNum = SafeInt(dataObj["sortNum"]) != 0
+                ? SafeInt(dataObj["sortNum"])
+                : SafeInt(dataObj["sort_num"]);
+
+            // 新字段
+            int endSortNum = SafeInt(dataObj["endSortNum"]);
+            string endChars = SafeString(dataObj["endChars"]);
+            string category = SafeString(dataObj["category"]);
+
+            // 应用字符过滤规则
+            content = Filter.ProcFilter(content);
+            string fullContent = content;
+
+            return new ArticleData
+            {
+                Title = title,
+                Content = content,
+                FullContent = fullContent,
+                Mark = mark,
+                Difficulty = difficultyText,
+                DifficultyName = difficultyName,
+                BookId = bookId,
+                SortNum = sortNum,
+                DifficultyId = difficultyId,
+                EndSortNum = endSortNum,
+                EndChars = endChars,
+                Category = category,
+                DifficultyLevel = difficultyLevel,
+                DifficultyLabel = difficultyLabel,
+                DifficultyScore = difficultyScore
+            };
+        }
+
         /// <summary>
         /// 异步获取随机文章
         /// </summary>
-        /// <param name="difficulty">难度ID（从GetDifficulties获取可用难度）</param>
-        /// <param name="maxLength">最大字数</param>
-        /// <returns>文章对象，包含标题和内容</returns>
         public static async Task<ArticleData> FetchArticleAsync(int difficulty, int maxLength)
         {
             try
             {
-                string apiUrl = Config.GetString("文来接口地址");
-
-                if (string.IsNullOrWhiteSpace(apiUrl))
+                var client = EnsureClient();
+                if (client == null)
                 {
                     return new ArticleData
                     {
@@ -292,276 +340,59 @@ namespace TypeSunny.ArticleSender
                     };
                 }
 
-                // 移除可能的尾部斜杠
-                apiUrl = apiUrl.TrimEnd('/');
-
-                // 移除可能已经存在的 /api/get_text 路径（兼容旧配置）
-                if (apiUrl.EndsWith("/api/get_text"))
-                {
-                    apiUrl = apiUrl.Substring(0, apiUrl.Length - "/api/get_text".Length);
-                }
-
-                // 构建文章获取API URL
-                string baseUrl = apiUrl + "/api/get_text";
-
                 // 从配置读取参数
                 int configDifficulty = Config.GetInt("文来难度");
                 int configLength = Config.GetInt("文来字数");
+                if (configDifficulty > 0) difficulty = configDifficulty;
+                if (configLength > 0) maxLength = configLength;
 
-                // 使用配置中的值，如果配置为0则使用传入的默认值
-                if (configDifficulty > 0)
-                    difficulty = configDifficulty;
-                if (configLength > 0)
-                    maxLength = configLength;
-
-                // 构建URL参数
-                var queryParams = new List<string>();
+                // 构建查询参数（新参数名）
+                var queryParams = new Dictionary<string, string>();
                 if (difficulty > 0)
-                {
-                    queryParams.Add($"difficulty={difficulty}");
-                }
+                    queryParams["difficultyLevel"] = difficulty.ToString();
                 if (maxLength > 0)
                 {
-                    queryParams.Add($"length={maxLength}");
-                    // 只有设置了字数时才添加 strict_length 参数
+                    queryParams["length"] = maxLength.ToString();
                     string lengthMode = Config.GetString("字数模式");
                     bool strictLength = (lengthMode == "精确字数");
-                    queryParams.Add($"strict_length={strictLength.ToString().ToLower()}");
+                    queryParams["strictLength"] = strictLength.ToString().ToLower();
                 }
 
-                // 构建完整URL
-                string requestUrl = baseUrl;
-                if (queryParams.Count > 0)
+                System.Diagnostics.Debug.WriteLine($"[文来] 正在请求随机文章，参数: {string.Join(", ", queryParams)}");
+
+                // 新 API 路径：/api/texts/random
+                var response = await client.GetAsync("/api/texts/random", queryParams);
+
+                if (!response.IsSuccess)
                 {
-                    string separator = requestUrl.Contains("?") ? "&" : "?";
-                    requestUrl = requestUrl + separator + string.Join("&", queryParams);
-                }
+                    string errorMsg = response.Msg ?? "未知错误";
+                    System.Diagnostics.Debug.WriteLine($"[文来] 请求失败: {errorMsg}");
 
-                System.Diagnostics.Debug.WriteLine($"[文来] 正在请求文章接口: {requestUrl}");
-
-                // 改回使用 HttpClient（更好的TLS支持）
-                HttpResponseMessage response;
-                string responseBody;
-                JObject result = null;
-
-                try
-                {
-                    response = await httpClient.GetAsync(requestUrl);
-                    System.Diagnostics.Debug.WriteLine($"[文来] HTTP状态码: {(int)response.StatusCode} {response.StatusCode}");
-
-                    // 先读取响应体（无论状态码是什么）
-                    responseBody = await response.Content.ReadAsStringAsync();
-                    System.Diagnostics.Debug.WriteLine($"[文来] 服务器响应长度: {responseBody.Length} 字符");
-
-                    // 尝试解析JSON响应（统一处理所有响应）
-                    try
-                    {
-                        result = JObject.Parse(responseBody);
-                    }
-                    catch
-                    {
-                        // 无法解析JSON
-                    }
-
-                    // 如果响应不成功，尝试从JSON中提取错误信息
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        string errorMsg = null;
-
-                        // 尝试从JSON中提取msg字段
-                        if (result != null)
-                        {
-                            errorMsg = result["msg"]?.ToString();
-                        }
-
-                        // 如果没有msg字段，使用默认错误消息
-                        if (string.IsNullOrEmpty(errorMsg))
-                        {
-                            errorMsg = $"HTTP {(int)response.StatusCode} {response.StatusCode}";
-                        }
-
-                        System.Diagnostics.Debug.WriteLine($"[文来] 请求失败: {errorMsg}");
-
-                        // 特殊处理401未授权（触发自动登录）
-                        if (response.StatusCode == HttpStatusCode.Unauthorized)
-                        {
-                            return new ArticleData
-                            {
-                                Title = "接口错误",
-                                Content = "请先登录文来服务",
-                                FullContent = "",
-                                Mark = ""
-                            };
-                        }
-
-                        // 其他错误统一返回
-                        return new ArticleData
-                        {
-                            Title = "接口错误",
-                            Content = errorMsg,
-                            FullContent = "",
-                            Mark = ""
-                        };
-                    }
-
-                    // 响应成功，但可能JSON中包含error字段
-                    if (result == null)
+                    if (response.Code == 401)
                     {
                         return new ArticleData
                         {
                             Title = "接口错误",
-                            Content = "服务器返回内容无法解析为JSON",
+                            Content = "请先登录文来服务",
                             FullContent = "",
                             Mark = ""
                         };
                     }
-
-                    // 检查JSON中的error字段
-                    int errorCode = result["error"]?.ToObject<int>() ?? 0;
-                    if (errorCode != 0)
-                    {
-                        // 提取错误消息
-                        string errorMsg = result["msg"]?.ToString() ?? "未知错误";
-                        return new ArticleData
-                        {
-                            Title = "接口错误",
-                            Content = errorMsg,
-                            FullContent = "",
-                            Mark = ""
-                        };
-                    }
-                }
-                catch (HttpRequestException httpEx)
-                {
-                    string errorMsg = $"发送请求失败\n\n请求地址: {requestUrl}\n\n错误: {httpEx.Message}";
-                    System.Diagnostics.Debug.WriteLine($"[文来] ✗ {errorMsg}");
-                    System.Diagnostics.Debug.WriteLine($"[文来] 完整异常: {httpEx}");
 
                     return new ArticleData
                     {
-                        Title = "获取失败",
+                        Title = "接口错误",
                         Content = errorMsg,
                         FullContent = "",
                         Mark = ""
                     };
                 }
-                catch (TaskCanceledException)
-                {
-                    return new ArticleData
-                    {
-                        Title = "获取失败",
-                        Content = "请求超时，请检查网络连接",
-                        FullContent = "",
-                        Mark = ""
-                    };
-                }
 
-                // result已在上面的try块中解析和验证
-
-                // 解析msg对象
-                var msgObj = result["msg"] as JObject;
-                if (msgObj == null)
-                {
-                    return new ArticleData
-                    {
-                        Title = "数据错误",
-                        Content = "API返回的msg字段不是对象",
-                        FullContent = "",
-                        Mark = ""
-                    };
-                }
-
-                // 获取标题
-                string title = msgObj["name"]?.ToString() ?? "未知标题";
-
-                // 去掉标题中#及后面的内容
-                int hashIndex = title.IndexOf('#');
-                if (hashIndex >= 0)
-                {
-                    title = title.Substring(0, hashIndex);
-                }
-
-                // 获取文章内容
-                string content = msgObj["content"]?.ToString() ?? "";
-
-                if (string.IsNullOrWhiteSpace(content))
-                {
-                    return new ArticleData
-                    {
-                        Title = "数据错误",
-                        Content = "API返回的文章内容为空",
-                        FullContent = "",
-                        Mark = ""
-                    };
-                }
-
-                // 获取段落标记（mark字段，格式如 "1-34112"）
-                string mark = msgObj["mark"]?.ToString() ?? "";
-
-                // 获取难度（difficulty字段，格式如 "一般(2.05)"）
-                string difficultyText = msgObj["difficulty"]?.ToString() ?? "";
-
-                // 获取书籍ID、段号、自定义难度ID（用于获取下一段/上一段和查找难度名称）
-                int bookId = msgObj["book_id"]?.ToObject<int>() ?? 0;
-                int sortNum = msgObj["sort_num"]?.ToObject<int>() ?? 0;
-                int difficultyId = msgObj["custom_difficulty"]?.ToObject<int>() ?? 0;
-
-                // 从缓存的难度列表中查找难度名称（如"简"、"普"、"难"）
-                string difficultyName = "";
-                if (difficultyId > 0 && cachedDifficulties != null)
-                {
-                    var difficultyInfo = cachedDifficulties.FirstOrDefault(d => d.Id == difficultyId);
-                    if (difficultyInfo != null)
-                    {
-                        difficultyName = difficultyInfo.Name;
-                    }
-                }
-
-                // 应用字符过滤规则（全角转半角、字符映射、白名单过滤）
-                content = Filter.ProcFilter(content);
-
-                // 保存完整内容（文来接口已由服务端根据length参数处理，不再本地截断）
-                string fullContent = content;
-
-                return new ArticleData
-                {
-                    Title = title,
-                    Content = content,
-                    FullContent = fullContent,
-                    Mark = mark,
-                    Difficulty = difficultyText,
-                    DifficultyName = difficultyName,
-                    BookId = bookId,
-                    SortNum = sortNum,
-                    DifficultyId = difficultyId
-                };
-            }
-            catch (TaskCanceledException)
-            {
-                return new ArticleData
-                {
-                    Title = "获取失败",
-                    Content = "请求超时，请检查网络连接或API服务器状态",
-                    FullContent = "",
-                    Mark = ""
-                };
-            }
-            catch (HttpRequestException ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[文来] ✗ 网络请求失败: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"[文来] 完整异常: {ex}");
-                return new ArticleData
-                {
-                    Title = "获取失败",
-                    Content = $"网络请求失败: {ex.Message}",
-                    FullContent = "",
-                    Mark = ""
-                };
+                return ParseArticleFromData(response.RawData);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[文来] ✗ 获取文章失败: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"[文来] 完整异常: {ex}");
                 return new ArticleData
                 {
                     Title = "获取失败",
@@ -577,16 +408,17 @@ namespace TypeSunny.ArticleSender
         /// </summary>
         /// <param name="bookId">书籍ID</param>
         /// <param name="sortNum">当前段号</param>
-        /// <param name="pageType">页面类型：1=下一段，0=上一段</param>
-        /// <param name="difficulty">难度ID</param>
-        /// <returns>文章对象</returns>
-        public static async Task<ArticleData> FetchSegmentAsync(int bookId, int sortNum, int pageType, int difficulty)
+        /// <param name="pageType">页面类型：1=下一段(next)，0=上一段(prev)</param>
+        /// <param name="category">分类代码（必需）</param>
+        /// <param name="endSortNum">上一段结果的最后段序号</param>
+        /// <param name="endChars">上一段结果的尾部字符</param>
+        public static async Task<ArticleData> FetchSegmentAsync(int bookId, int sortNum, int pageType,
+            string category, int endSortNum = 0, string endChars = null)
         {
             try
             {
-                string apiUrl = Config.GetString("文来接口地址");
-
-                if (string.IsNullOrWhiteSpace(apiUrl))
+                var client = EnsureClient();
+                if (client == null)
                 {
                     return new ArticleData
                     {
@@ -597,53 +429,38 @@ namespace TypeSunny.ArticleSender
                     };
                 }
 
-                // 移除可能的尾部斜杠
-                apiUrl = apiUrl.TrimEnd('/');
-
-                // 构建文章获取API URL
-                string baseUrl = apiUrl + "/api/get_text";
-
-                // 构建URL参数
-                var queryParams = new List<string>
+                // 构建查询参数（按服务端 TextController.getAdjacent 要求）
+                string direction = pageType == 1 ? "next" : "prev";
+                var queryParams = new Dictionary<string, string>
                 {
-                    $"book_id={bookId}",
-                    $"sort_num={sortNum}",
-                    $"page_type={pageType}"
+                    ["bookId"] = bookId.ToString(),
+                    ["sortNum"] = sortNum.ToString(),
+                    ["direction"] = direction,
+                    ["category"] = string.IsNullOrEmpty(category) ? "wangwen" : category
                 };
-                if (difficulty > 0)
+                if (endSortNum > 0)
+                    queryParams["endSortNum"] = endSortNum.ToString();
+                if (!string.IsNullOrWhiteSpace(endChars))
+                    queryParams["endChars"] = endChars;
+
+                // 读取字数和模式配置
+                int configLength = Config.GetInt("文来字数");
+                if (configLength > 0)
                 {
-                    queryParams.Add($"difficulty={difficulty}");
+                    queryParams["length"] = configLength.ToString();
+                    string lengthMode = Config.GetString("字数模式");
+                    bool strictLength = (lengthMode == "精确字数");
+                    queryParams["strictLength"] = strictLength.ToString().ToLower();
                 }
 
-                // 构建完整URL
-                string requestUrl = baseUrl + "?" + string.Join("&", queryParams);
+                System.Diagnostics.Debug.WriteLine($"[文来] 正在请求段落接口，参数: {string.Join(", ", queryParams)}");
 
-                System.Diagnostics.Debug.WriteLine($"[文来] 正在请求段落接口: {requestUrl}");
+                // 新 API 路径：/api/texts/adjacent
+                var response = await client.GetAsync("/api/texts/adjacent", queryParams);
 
-                HttpResponseMessage response = await httpClient.GetAsync(requestUrl);
-                string responseBody = await response.Content.ReadAsStringAsync();
-
-                JObject result = null;
-                try
+                if (!response.IsSuccess)
                 {
-                    result = JObject.Parse(responseBody);
-                }
-                catch
-                {
-                    return new ArticleData
-                    {
-                        Title = "接口错误",
-                        Content = "服务器返回内容无法解析为JSON",
-                        FullContent = "",
-                        Mark = ""
-                    };
-                }
-
-                // 检查错误
-                int errorCode = result["error"]?.ToObject<int>() ?? -1;
-                if (errorCode != 0)
-                {
-                    string errorMsg = result["msg"]?.ToString() ?? "未知错误";
+                    string errorMsg = response.Msg ?? "未知错误";
                     return new ArticleData
                     {
                         Title = "获取失败",
@@ -653,79 +470,7 @@ namespace TypeSunny.ArticleSender
                     };
                 }
 
-                // 解析msg对象
-                var msgObj = result["msg"] as JObject;
-                if (msgObj == null)
-                {
-                    return new ArticleData
-                    {
-                        Title = "数据错误",
-                        Content = "API返回的msg字段不是对象",
-                        FullContent = "",
-                        Mark = ""
-                    };
-                }
-
-                // 获取标题
-                string title = msgObj["name"]?.ToString() ?? "未知标题";
-                int hashIndex = title.IndexOf('#');
-                if (hashIndex >= 0)
-                {
-                    title = title.Substring(0, hashIndex);
-                }
-
-                // 获取文章内容
-                string content = msgObj["content"]?.ToString() ?? "";
-
-                if (string.IsNullOrWhiteSpace(content))
-                {
-                    return new ArticleData
-                    {
-                        Title = "数据错误",
-                        Content = "API返回的文章内容为空",
-                        FullContent = "",
-                        Mark = ""
-                    };
-                }
-
-                // 获取段落标记
-                string mark = msgObj["mark"]?.ToString() ?? "";
-
-                // 获取难度
-                string difficultyText = msgObj["difficulty"]?.ToString() ?? "";
-
-                // 获取书籍ID、段号、自定义难度ID（用于继续翻页）
-                int responseBookId = msgObj["book_id"]?.ToObject<int>() ?? 0;
-                int responseSortNum = msgObj["sort_num"]?.ToObject<int>() ?? 0;
-                int difficultyId = msgObj["custom_difficulty"]?.ToObject<int>() ?? 0;
-
-                // 从缓存的难度列表中查找难度名称（如"简"、"普"、"难"）
-                string difficultyName = "";
-                if (difficultyId > 0 && cachedDifficulties != null)
-                {
-                    var difficultyInfo = cachedDifficulties.FirstOrDefault(d => d.Id == difficultyId);
-                    if (difficultyInfo != null)
-                    {
-                        difficultyName = difficultyInfo.Name;
-                    }
-                }
-
-                // 应用字符过滤规则
-                content = Filter.ProcFilter(content);
-                string fullContent = content;
-
-                return new ArticleData
-                {
-                    Title = title,
-                    Content = content,
-                    FullContent = fullContent,
-                    Mark = mark,
-                    Difficulty = difficultyText,
-                    DifficultyName = difficultyName,
-                    BookId = responseBookId,
-                    SortNum = responseSortNum,
-                    DifficultyId = difficultyId
-                };
+                return ParseArticleFromData(response.RawData);
             }
             catch (Exception ex)
             {
@@ -743,20 +488,17 @@ namespace TypeSunny.ArticleSender
         /// <summary>
         /// 获取下一段/上一段（同步版本）
         /// </summary>
-        public static ArticleData FetchSegment(int bookId, int sortNum, int pageType, int difficulty)
+        public static ArticleData FetchSegment(int bookId, int sortNum, int pageType,
+            string category, int endSortNum = 0, string endChars = null)
         {
-            return FetchSegmentAsync(bookId, sortNum, pageType, difficulty).GetAwaiter().GetResult();
+            return FetchSegmentAsync(bookId, sortNum, pageType, category, endSortNum, endChars).GetAwaiter().GetResult();
         }
 
         /// <summary>
-        /// 获取随机文章（同步版本，内部调用异步版本）
+        /// 获取随机文章（同步版本）
         /// </summary>
-        /// <param name="difficulty">难度ID（从GetDifficulties获取可用难度）</param>
-        /// <param name="maxLength">最大字数</param>
-        /// <returns>文章对象，包含标题和内容</returns>
         public static ArticleData FetchArticle(int difficulty, int maxLength)
         {
-            // 同步版本直接调用异步版本（阻塞等待）
             return FetchArticleAsync(difficulty, maxLength).GetAwaiter().GetResult();
         }
 
@@ -769,25 +511,40 @@ namespace TypeSunny.ArticleSender
         {
             try
             {
-                string apiUrl = Config.GetString("文来接口地址");
-                if (string.IsNullOrWhiteSpace(apiUrl))
+                var client = EnsureClient();
+                if (client == null)
                     return "";
 
-                apiUrl = apiUrl.TrimEnd('/');
-                string url = apiUrl + "/api/calc_difficulty";
-
+                // 新 API 路径：/api/texts/calcDifficulty
+                // 使用短超时的独立请求
                 var payload = new { content = content };
-                string jsonPayload = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
 
-                var httpContent = new StringContent(jsonPayload, System.Text.Encoding.UTF8, "application/json");
-
-                // 2秒超时
                 using (var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(2)))
                 {
-                    var response = await httpClient.PostAsync(url, httpContent, cts.Token);
-                    string responseBody = await response.Content.ReadAsStringAsync();
+                    // 直接通过 SendRawAsync 发送带超时的请求
+                    string url = client.BaseUrl + "/api/texts/calcDifficulty";
+                    var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url);
+                    string json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+                    request.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+                    client.AuthProvider?.ApplyAuth(request);
+
+                    // 注意：SendRawAsync 不支持 CancellationToken，但短超时场景下可接受
+                    var httpResponse = await client.SendRawAsync(request);
+                    string responseBody = await httpResponse.Content.ReadAsStringAsync();
 
                     var result = JObject.Parse(responseBody);
+
+                    // 新格式：{ code: 200, data: { difficultyLevel, difficultyLabel, difficultyScore } }
+                    if (result["code"]?.ToObject<int>() == 200)
+                    {
+                        var data = result["data"];
+                        double score = data["difficultyScore"]?.ToObject<double>() ?? 0;
+                        string label = data["difficultyLabel"]?.ToString() ?? "";
+                        return $"{label}({score:F2})";
+                    }
+
+                    // 旧格式：{ success: true, data: { score, level } }
                     if (result["success"]?.ToObject<bool>() == true)
                     {
                         var data = result["data"];
@@ -813,11 +570,18 @@ namespace TypeSunny.ArticleSender
         public string Title { get; set; }
         public string Content { get; set; }
         public string FullContent { get; set; }
-        public string Mark { get; set; }  // 段落标记，格式如 "1-34112" 表示第1段/共34112段
-        public string Difficulty { get; set; }  // 难度描述，格式如 "一般(2.05)"
-        public string DifficultyName { get; set; }  // 难度名称，如 "简"、"普"、"难"
-        public int BookId { get; set; }  // 书籍ID，用于获取下一段/上一段
-        public int SortNum { get; set; }  // 当前段号，用于获取下一段/上一段
-        public int DifficultyId { get; set; }  // 难度ID，来自custom_difficulty字段，对应/api/stats_by_difficulty中的id
+        public string Mark { get; set; }
+        public string Difficulty { get; set; }
+        public string DifficultyName { get; set; }
+        public int BookId { get; set; }
+        public int SortNum { get; set; }
+        public int DifficultyId { get; set; }
+        // 新字段
+        public int EndSortNum { get; set; }
+        public string EndChars { get; set; }
+        public string Category { get; set; }
+        public int DifficultyLevel { get; set; }
+        public string DifficultyLabel { get; set; }
+        public double DifficultyScore { get; set; }
     }
 }

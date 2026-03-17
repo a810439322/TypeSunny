@@ -20,6 +20,9 @@ namespace TypeSunny.ArticleSender
         private int bookId;  // 书籍ID
         private int sortNum;  // 当前段号
         private int difficultyId;  // 难度ID，来自custom_difficulty字段
+        private int endSortNum;  // 最后段序号（翻页用）
+        private string endChars;  // 最后段尾部字符（翻页用）
+        private string category;  // 分类代码（翻页用）
 
         /// <summary>
         /// 当前段落索引（从1开始）
@@ -47,6 +50,9 @@ namespace TypeSunny.ArticleSender
             bookId = article.BookId;  // 保存书籍ID
             sortNum = article.SortNum;  // 保存段号
             difficultyId = article.DifficultyId;  // 保存难度ID（来自custom_difficulty）
+            endSortNum = article.EndSortNum;  // 保存最后段序号
+            endChars = article.EndChars ?? "";  // 保存最后段尾部字符
+            category = article.Category ?? "";  // 保存分类代码
             segmentLength = Config.GetInt("文来字数");
 
             if (segmentLength <= 0)
@@ -265,6 +271,30 @@ namespace TypeSunny.ArticleSender
         public int GetDifficultyId()
         {
             return difficultyId;
+        }
+
+        /// <summary>
+        /// 获取最后段序号（用于翻页）
+        /// </summary>
+        public int GetEndSortNum()
+        {
+            return endSortNum;
+        }
+
+        /// <summary>
+        /// 获取最后段尾部字符（用于翻页）
+        /// </summary>
+        public string GetEndChars()
+        {
+            return endChars ?? "";
+        }
+
+        /// <summary>
+        /// 获取分类代码（用于翻页）
+        /// </summary>
+        public string GetCategory()
+        {
+            return category ?? "";
         }
 
         /// <summary>

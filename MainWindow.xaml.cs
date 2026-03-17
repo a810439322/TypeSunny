@@ -7013,7 +7013,7 @@ public async Task SendArticle()
 
             var txtUrl = new TextBox
             {
-                Text = Config.GetString("赛文服务器地址") ?? "https://typing.fcxxz.com/",
+                Text = Config.GetString("赛文服务器地址") ?? "https://qingfawen.fcxxz.com/",
                 Padding = new Thickness(5),
                 Margin = new Thickness(90, 0, 0, 0)
             };
@@ -7577,10 +7577,12 @@ public async Task SendArticle()
             // 获取当前书籍信息
             int bookId = articleCache.GetBookId();
             int sortNum = articleCache.GetSortNum();
-            int difficultyId = articleCache.GetDifficultyId();
+            string category = articleCache.GetCategory();
+            int endSortNum = articleCache.GetEndSortNum();
+            string endChars = articleCache.GetEndChars();
 
             // 调用API获取下一段（使用异步方法避免死锁）
-            ArticleData segmentData = await ArticleFetcher.FetchSegmentAsync(bookId, sortNum, 1, difficultyId);
+            ArticleData segmentData = await ArticleFetcher.FetchSegmentAsync(bookId, sortNum, 1, category, endSortNum, endChars);
 
             if (string.IsNullOrEmpty(segmentData.Content) || segmentData.Title == "获取失败" || segmentData.Title == "接口错误")
             {
@@ -7610,10 +7612,10 @@ public async Task SendArticle()
             // 获取当前书籍信息
             int bookId = articleCache.GetBookId();
             int sortNum = articleCache.GetSortNum();
-            int difficultyId = articleCache.GetDifficultyId();
+            string category = articleCache.GetCategory();
 
-            // 调用API获取上一段（使用异步方法避免死锁）
-            ArticleData segmentData = await ArticleFetcher.FetchSegmentAsync(bookId, sortNum, 0, difficultyId);
+            // 上一段不需要 endSortNum/endChars
+            ArticleData segmentData = await ArticleFetcher.FetchSegmentAsync(bookId, sortNum, 0, category);
 
             if (string.IsNullOrEmpty(segmentData.Content) || segmentData.Title == "获取失败" || segmentData.Title == "接口错误")
             {

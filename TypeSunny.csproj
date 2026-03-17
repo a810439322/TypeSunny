@@ -133,6 +133,12 @@
     <Compile Include="Net\RaceServerManager.cs" />
     <Compile Include="Net\Sender.cs" />
     <Compile Include="Net\Util.cs" />
+    <Compile Include="Net\Http\ApiResponse.cs" />
+    <Compile Include="Net\Http\IAuthProvider.cs" />
+    <Compile Include="Net\Http\JwtAuthProvider.cs" />
+    <Compile Include="Net\Http\CookieAuthProvider.cs" />
+    <Compile Include="Net\Http\ApiClient.cs" />
+    <Compile Include="Net\Http\ApiModels.cs" />
     <Compile Include="PartSplitedDiffRes.cs" />
     <Compile Include="PathNode.cs" />
     <Compile Include="Utils\QQHelper.cs" />

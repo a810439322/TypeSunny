@@ -98,8 +98,8 @@ namespace TypeSunny
             "字数模式", "智能分段",  // 智能分段/精确字数
             //"文来接口地址", "http://127.0.0.1:8000",
             //"赛文服务器地址", "http://127.0.0.1:8000",
-            "文来接口地址", "https://typing.fcxxz.com/",
-            "赛文服务器地址", "https://typing.fcxxz.com/",
+            "文来接口地址", "https://qingfawen.fcxxz.com/",
+            "赛文服务器地址", "https://qingfawen.fcxxz.com/",
             "赛文服务器配置", "",  // 新增：赛文服务器配置（JSON格式）
             "赛文输入法", "",
             "账号体系配置", "",  // 新增：账号体系配置（JSON格式）

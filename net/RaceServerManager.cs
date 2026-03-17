@@ -243,7 +243,7 @@ namespace TypeSunny.Net
 
                 if (string.IsNullOrWhiteSpace(defaultUrl))
                 {
-                    defaultUrl = "https://typing.fcxxz.com/";  // 使用默认值
+                    defaultUrl = "https://qingfawen.fcxxz.com/";  // 使用默认值
                 }
 
                 var server = new RaceServer
@@ -412,18 +412,26 @@ namespace TypeSunny.Net
                 // 尝试多种可能的数据格式
                 Newtonsoft.Json.Linq.JToken racesToken = null;
 
-                // 格式1: { "races": [...] }
+                // 格式1: { "races": [...] } 或 { "configs": [...] }
                 if (result.Data["races"] != null)
                 {
                     racesToken = result.Data["races"];
                 }
-                // 格式2: { "data": { "races": [...] } }
+                else if (result.Data["configs"] != null)
+                {
+                    racesToken = result.Data["configs"];
+                }
+                // 格式2: { "data": [...] } (新 API 直接返回数组)
                 else if (result.Data["data"] != null)
                 {
                     var dataObj = result.Data["data"];
-                    if (dataObj.Type == Newtonsoft.Json.Linq.JTokenType.Object)
+                    if (dataObj.Type == Newtonsoft.Json.Linq.JTokenType.Array)
                     {
-                        racesToken = dataObj["races"];
+                        racesToken = dataObj;
+                    }
+                    else if (dataObj.Type == Newtonsoft.Json.Linq.JTokenType.Object)
+                    {
+                        racesToken = dataObj["races"] ?? dataObj["configs"];
                     }
                 }
 
@@ -436,11 +444,16 @@ namespace TypeSunny.Net
                         {
                             Id = raceData["id"]?.ToObject<int>() ?? 0,
                             Name = raceData["name"]?.ToString() ?? "",
-                            DifficultyGroup = raceData["difficulty_group"]?.ToObject<int>() ?? 1,
-                            AllowResubmit = raceData["allow_resubmit"]?.ToObject<bool>() ?? false,
-                            IsActive = true,
-                            CharCount = raceData["char_count"]?.ToObject<int>() ?? 0,
-                            StrictLength = raceData["strict_length"]?.ToObject<bool>() ?? false
+                            // 支持 camelCase (新) 和 snake_case (旧)
+                            DifficultyGroup = raceData["difficultyGroup"]?.ToObject<int>()
+                                ?? raceData["difficulty_group"]?.ToObject<int>() ?? 1,
+                            AllowResubmit = raceData["allowResubmit"]?.ToObject<bool>()
+                                ?? raceData["allow_resubmit"]?.ToObject<bool>() ?? false,
+                            IsActive = raceData["isActive"]?.ToObject<bool>() ?? true,
+                            CharCount = raceData["charCount"]?.ToObject<int>()
+                                ?? raceData["char_count"]?.ToObject<int>() ?? 0,
+                            StrictLength = raceData["strictLength"]?.ToObject<bool>()
+                                ?? raceData["strict_length"]?.ToObject<bool>() ?? false
                         });
                     }
 

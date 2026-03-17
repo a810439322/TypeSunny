@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using TypeSunny;
 using TypeSunny.Net;
+using TypeSunny.Net.Http;
 using Newtonsoft.Json.Linq;
 
 namespace TypeSunny.Net
@@ -41,12 +42,16 @@ namespace TypeSunny.Net
 
             if (account == null || string.IsNullOrWhiteSpace(account.Cookies))
             {
-                // 备选：通过域名匹配查找账号（支持从文来等同域名服务同步）
+                // 备选：通过域名匹配查找账号
                 var allAccounts = accountManager.GetAllAccounts();
                 foreach (var acc in allAccounts)
                 {
-                    if (acc != null && acc.UserId > 0 && !string.IsNullOrWhiteSpace(acc.Cookies) && !string.IsNullOrWhiteSpace(acc.Domain))
+                    if (acc != null && acc.UserId > 0 && !string.IsNullOrWhiteSpace(acc.Domain))
                     {
+                        // 检查是否有 JWT token 或 Cookie
+                        bool hasAuth = !string.IsNullOrWhiteSpace(acc.Cookies) || !string.IsNullOrWhiteSpace(acc.JwtToken);
+                        if (!hasAuth) continue;
+
                         try
                         {
                             Uri serverUri = new Uri(server.Url.TrimEnd('/'));
@@ -64,7 +69,7 @@ namespace TypeSunny.Net
                 }
             }
 
-            // 确定要使用的密钥：优先使用找到的账号的密钥，否则使用 server 的密钥
+            // 确定要使用的密钥
             string keyXml = (account != null && !string.IsNullOrWhiteSpace(account.ClientKeyXml))
                 ? account.ClientKeyXml
                 : server.ClientKeyXml;
@@ -76,7 +81,6 @@ namespace TypeSunny.Net
                 api.LoadCookiesFromString(account.Cookies);
                 System.Diagnostics.Debug.WriteLine($"[CreateRaceAPIAsync] 已加载 Cookie: {account.ServiceName} (域名匹配: {usedDomainMatch})");
 
-                // 如果通过域名匹配找到账号，同步密钥到 server 对象
                 if (usedDomainMatch && !string.IsNullOrWhiteSpace(account.ClientKeyXml))
                 {
                     server.ClientKeyXml = account.ClientKeyXml;
@@ -88,10 +92,9 @@ namespace TypeSunny.Net
             api.OnKeyMismatchCallback = async () =>
             {
                 System.Diagnostics.Debug.WriteLine($"[赛文V2] 密钥不匹配，触发自动重新登录: {server.Name}");
-                var (success, cookies, keyXml) = await accountManager.ReloginAsync(server.Id, server.Url);
+                var (success, cookies, newKeyXml) = await accountManager.ReloginAsync(server.Id, server.Url);
                 if (success)
                 {
-                    // 更新服务器密钥
                     var updatedAccount = accountManager.GetAccount(server.Id);
                     if (updatedAccount != null)
                     {
@@ -100,7 +103,7 @@ namespace TypeSunny.Net
                         server.Username = updatedAccount.DisplayName;
                     }
                 }
-                return (cookies, keyXml);
+                return (cookies, newKeyXml);
             };
 
             await api.InitializeAsync();
@@ -205,40 +208,35 @@ namespace TypeSunny.Net
 
                 try
                 {
-                    // 使用 CreateRaceAPIAsync 创建 API 实例（会自动设置密钥不匹配回调）
                     var api = await CreateRaceAPIAsync(server);
                     var result = await api.LoginAsync(txtUsername.Text, txtPassword.Password);
 
                     if (result.Success)
                     {
-                        // 解析返回的用户信息 - 根据新API文档，结构是 {"user": {"id": ..., "username": ...}}
                         JObject data = result.Data;
                         JObject userData = data["user"] as JObject;
 
                         int userId = userData?["id"]?.ToObject<int>() ?? -1;
                         string username = userData?["username"]?.ToString() ?? txtUsername.Text;
 
-                        // 保存客户端密钥对（可能是新生成的）
                         server.ClientKeyXml = api.GetClientKeyXml();
 
-                        // 更新服务器登录信息
                         server.Username = txtUsername.Text;
                         server.Password = txtPassword.Password;
                         serverManager.UpdateServerLogin(serverId, userId, txtUsername.Text, username);
 
-                        // 保存到 AccountSystemManager（支持同域名自动登录）
+                        // 保存到 AccountSystemManager
                         accountManager.UpdateLoginInfo(
-                            serverId,  // 使用 serverId 作为 serviceName
+                            serverId,
                             txtUsername.Text,
                             txtPassword.Password,
                             username,
                             userId,
                             api.GetCookiesAsString(),
                             api.GetClientKeyXml(),
-                            server.Url  // 传入 serverUrl 以确保 Domain 正确设置
+                            server.Url
                         );
 
-                        // 同时保存一份以 server.Name 为 key（方便域名匹配时查找）
                         if (!string.IsNullOrWhiteSpace(server.Name) && server.Name != serverId)
                         {
                             accountManager.UpdateLoginInfo(
@@ -256,7 +254,6 @@ namespace TypeSunny.Net
 
                         System.Diagnostics.Debug.WriteLine($"✓ 赛文登录已保存到AccountSystemManager: {username} (serverId={serverId})");
 
-                        // 登录成功后，刷新该服务器的赛文列表
                         await serverManager.RefreshServerRaces(serverId);
 
                         MessageBox.Show($"登录成功！欢迎 {username}", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -388,13 +385,11 @@ namespace TypeSunny.Net
 
                 try
                 {
-                    // 使用 CreateRaceAPIAsync 创建 API 实例（会自动设置密钥不匹配回调）
                     var api = await CreateRaceAPIAsync(server);
                     var result = await api.RegisterAsync(txtUsername.Text, txtPassword.Password);
 
                     if (result.Success)
                     {
-                        // 保存客户端密钥对（注册时生成的）
                         server.ClientKeyXml = api.GetClientKeyXml();
                         serverManager.SaveToConfig();
 
@@ -442,15 +437,12 @@ namespace TypeSunny.Net
                 return "服务器不存在";
             }
 
-            // 从 AccountSystemManager 同步登录信息（支持同域名自动登录）
-
-            // 先强制重新加载配置（确保获取最新数据）
+            // 从 AccountSystemManager 同步登录信息
             accountManager.Reload();
 
             var allAccounts = accountManager.GetAllAccounts();
             AccountInfo matchedAccount = null;
 
-            // 优先：直接通过 serverId 查找账号（最精确的匹配）
             var directAccount = accountManager.GetAccount(serverId);
             if (directAccount != null && directAccount.UserId > 0)
             {
@@ -458,17 +450,14 @@ namespace TypeSunny.Net
             }
             else
             {
-                // 备选：遍历所有账号，找到域名匹配的账号
                 foreach (var account in allAccounts)
                 {
                     if (account != null && account.UserId > 0 && !string.IsNullOrWhiteSpace(account.Domain))
                     {
-                        // 检查域名是否匹配
                         try
                         {
                             Uri serverUri = new Uri(server.Url.TrimEnd('/'));
                             Uri accountUri = new Uri(account.Domain.TrimEnd('/'));
-                            // 比较时忽略大小写
                             if (serverUri.Host.Equals(accountUri.Host, StringComparison.OrdinalIgnoreCase))
                             {
                                 matchedAccount = account;
@@ -482,7 +471,6 @@ namespace TypeSunny.Net
 
             if (matchedAccount != null)
             {
-                // 直接同步账号信息到 server 对象
                 server.UserId = matchedAccount.UserId;
                 server.DisplayName = matchedAccount.DisplayName;
                 server.Username = matchedAccount.Username;
@@ -497,7 +485,6 @@ namespace TypeSunny.Net
 
             try
             {
-                // 使用 CreateRaceAPIAsync 创建 API 实例（会自动设置密钥不匹配回调）
                 var api = await CreateRaceAPIAsync(server);
                 var result = await api.GetDailyArticleAsync(raceId, server.UserId);
 
@@ -509,7 +496,6 @@ namespace TypeSunny.Net
                     string article = articleData?["content"]?.ToString() ?? "";
                     int articleId = articleData?["id"]?.ToObject<int>() ?? -1;
 
-                    // 保存当前文章ID和赛文ID
                     serverManager.SetCurrentRace(serverId, raceId);
                     serverManager.SetCurrentArticle(serverId, articleId);
 
@@ -546,7 +532,7 @@ namespace TypeSunny.Net
 
             try
             {
-                string url = $"{server.Url}/api/race/history?race_id={raceId}&username={Uri.EscapeDataString(server.Username)}";
+                string url = $"{server.Url}/api/race/history?raceId={raceId}&username={Uri.EscapeDataString(server.Username)}";
                 System.Diagnostics.Process.Start(url);
             }
             catch (Exception ex)
@@ -569,7 +555,7 @@ namespace TypeSunny.Net
 
             try
             {
-                string url = $"{server.Url}/api/race/leaderboard?race_id={raceId}";
+                string url = $"{server.Url}/api/race/leaderboard?raceId={raceId}";
                 System.Diagnostics.Process.Start(url);
             }
             catch (Exception ex)
@@ -632,7 +618,6 @@ namespace TypeSunny.Net
                     InputMethod = inputMethod
                 };
 
-                // 使用 CreateRaceAPIAsync 创建 API 实例（会自动设置密钥不匹配回调）
                 var api = await CreateRaceAPIAsync(server);
                 var result = await api.SubmitScoreAsync(scoreData);
 

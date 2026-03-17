@@ -94,7 +94,7 @@ namespace TypeSunny.Core
 
             if (string.IsNullOrWhiteSpace(serverUrl))
             {
-                serverUrl = "https://typing.fcxxz.com/";  // 使用默认值
+                serverUrl = "https://qingfawen.fcxxz.com/";  // 使用默认值
             }
 
             configs.Add(new RaceConfigItem

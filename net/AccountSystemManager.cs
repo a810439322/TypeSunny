@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using TypeSunny.Net.Http;
 using TypeSunny.Utils;
 
 namespace TypeSunny.Net
@@ -55,6 +56,11 @@ namespace TypeSunny.Net
         public string ClientKeyXml { get; set; }
 
         /// <summary>
+        /// JWT Token（新 API 认证）
+        /// </summary>
+        public string JwtToken { get; set; }
+
+        /// <summary>
         /// 最后登录时间
         /// </summary>
         public DateTime LastLoginTime { get; set; }
@@ -69,6 +75,7 @@ namespace TypeSunny.Net
             UserId = -1;
             Cookies = "";
             ClientKeyXml = "";
+            JwtToken = "";
             LastLoginTime = DateTime.MinValue;
         }
     }
@@ -149,6 +156,7 @@ namespace TypeSunny.Net
                         UserId = kvp.Value.UserId,
                         Cookies = kvp.Value.Cookies,
                         ClientKeyXml = kvp.Value.ClientKeyXml,
+                        JwtToken = kvp.Value.JwtToken,
                         LastLoginTime = kvp.Value.LastLoginTime
                     };
                     accountsToSave[kvp.Key] = accountCopy;
@@ -262,7 +270,7 @@ namespace TypeSunny.Net
         /// 更新登录信息
         /// </summary>
         public void UpdateLoginInfo(string serviceName, string username, string password,
-            string displayName, int userId, string cookies = null, string clientKeyXml = null, string domain = null)
+            string displayName, int userId, string cookies = null, string clientKeyXml = null, string domain = null, string jwtToken = null)
         {
             var account = GetAccount(serviceName);
             bool isNewAccount = false;
@@ -288,6 +296,8 @@ namespace TypeSunny.Net
                 account.Cookies = cookies;
             if (clientKeyXml != null)
                 account.ClientKeyXml = clientKeyXml;
+            if (jwtToken != null)
+                account.JwtToken = jwtToken;
 
             SaveAccount(account);
 
@@ -317,6 +327,7 @@ namespace TypeSunny.Net
                         otherAccount.UserId = userId;
                         otherAccount.Cookies = cookies ?? otherAccount.Cookies;
                         otherAccount.ClientKeyXml = clientKeyXml ?? otherAccount.ClientKeyXml;
+                        otherAccount.JwtToken = jwtToken ?? otherAccount.JwtToken;
                         otherAccount.LastLoginTime = DateTime.Now;
                         System.Diagnostics.Debug.WriteLine($"✓ 同步登录信息到相同域名的服务: {otherAccount.ServiceName}");
                     }
@@ -379,6 +390,7 @@ namespace TypeSunny.Net
                 account.UserId = -1;
                 account.Cookies = "";
                 account.ClientKeyXml = "";
+                account.JwtToken = "";
                 account.LastLoginTime = DateTime.MinValue;
 
                 // 跳过域名共享，直接保存清空的账号信息
@@ -418,6 +430,7 @@ namespace TypeSunny.Net
 
         /// <summary>
         /// 自动重新登录（使用保存的密码）
+        /// 优先使用 JWT 登录（新 API），回退到 RaceAPI 登录（旧 API）
         /// </summary>
         /// <param name="serviceName">服务名称</param>
         /// <param name="serverUrl">服务器URL（可选，用于获取账号信息）</param>
@@ -449,23 +462,50 @@ namespace TypeSunny.Net
             {
                 System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] 开始自动重新登录: {serviceName}");
 
-                // 创建新的 RaceAPI 实例（使用保存的密钥）
+                // 尝试使用新 API（JWT）登录
+                var jwtAuth = new JwtAuthProvider();
+                var apiClient = new ApiClient(url, jwtAuth);
+                var loginRequest = new LoginRequest
+                {
+                    Username = account.Username,
+                    Password = account.Password
+                };
+
+                var loginResponse = await apiClient.PostAsync<LoginResponse>("/api/auth/login", loginRequest);
+
+                if (loginResponse.IsSuccess && loginResponse.Data != null)
+                {
+                    // JWT 登录成功
+                    string token = loginResponse.Data.Token;
+                    int userId = loginResponse.Data.UserId;
+                    string displayName = loginResponse.Data.DisplayName ?? loginResponse.Data.Username ?? account.DisplayName;
+
+                    jwtAuth.AccessToken = token;
+
+                    UpdateLoginInfo(serviceName, account.Username, account.Password,
+                        displayName, userId, null, null, null, token);
+
+                    System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] JWT 自动重新登录成功: {serviceName}");
+                    return (true, "", "");
+                }
+
+                // JWT 登录失败，回退到旧 API（RaceAPI）
+                System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] JWT 登录失败，回退到旧 API: {serviceName}");
+
                 var api = new RaceAPI(url, account.ClientKeyXml);
                 await api.InitializeAsync();
                 var result = await api.LoginAsync(account.Username, account.Password);
 
                 if (result.Success)
                 {
-                    // 解析返回的用户信息
                     JObject data = result.Data;
-                    int userId = data["user"]?["id"]?.ToObject<int>() ?? account.UserId;
-                    string displayName = data["user"]?["username"]?.ToString() ?? account.DisplayName;
+                    int userId2 = data["user"]?["id"]?.ToObject<int>() ?? account.UserId;
+                    string displayName2 = data["user"]?["username"]?.ToString() ?? account.DisplayName;
 
-                    // 更新账号信息
                     UpdateLoginInfo(serviceName, account.Username, account.Password,
-                        displayName, userId, api.GetCookiesAsString(), api.GetClientKeyXml());
+                        displayName2, userId2, api.GetCookiesAsString(), api.GetClientKeyXml());
 
-                    System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] 自动重新登录成功: {serviceName}");
+                    System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] 旧 API 自动重新登录成功: {serviceName}");
                     return (true, api.GetCookiesAsString(), api.GetClientKeyXml());
                 }
                 else
