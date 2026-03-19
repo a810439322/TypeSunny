@@ -48,8 +48,11 @@ namespace TypeSunny.Net.Http
         [JsonProperty("email")]
         public string Email { get; set; }
 
-        [JsonProperty("verifyCode")]
+        [JsonProperty("code")]
         public string VerifyCode { get; set; }
+
+        [JsonProperty("publicKey", NullValueHandling = NullValueHandling.Ignore)]
+        public string PublicKey { get; set; }
     }
 
     // ==================== 文章/段落相关 ====================
@@ -94,6 +97,9 @@ namespace TypeSunny.Net.Http
 
         [JsonProperty("endChars")]
         public string EndChars { get; set; }
+
+        [JsonProperty("startChars")]
+        public string StartChars { get; set; }
 
         [JsonProperty("category")]
         public string Category { get; set; }

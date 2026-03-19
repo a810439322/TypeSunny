@@ -173,6 +173,7 @@ namespace TypeSunny
                         "文来接口地址",
                         "文来字数",
                         "文来难度",
+                        "文来分类",
                         "文来换段模式",
                         "字数模式",
                         "赛文服务器地址",
@@ -444,7 +445,10 @@ namespace TypeSunny
             foreach (var itemKey in category.Items)
             {
                 if (!Config.dicts.ContainsKey(itemKey))
-                    continue;
+                {
+                    // 新配置项可能还不存在，给默认空值让控件能正常创建
+                    Config.dicts[itemKey] = "";
+                }
 
                 string itemValue = Config.dicts[itemKey];
 
@@ -817,6 +821,20 @@ namespace TypeSunny
 
                 // 异步加载难度数据，加载完成后替换控件
                 _ = LoadDifficultyDataAsync(loadingPanel, itemValue);
+            }
+            else if (itemKey == "文来分类")
+            {
+                var loadingPanel = new StackPanel
+                {
+                    Width = 200,
+                    Margin = new Thickness(0, 8, 0, 8),
+                    HorizontalAlignment = HorizontalAlignment.Left
+                };
+                var loadingText = new TextBlock { Text = "加载中..." };
+                loadingPanel.Children.Add(loadingText);
+                valueControl = loadingPanel;
+
+                _ = LoadCategoryDataAsync(loadingPanel, itemValue);
             }
             else if (itemKey == "成绩显示项")
             {
@@ -1276,6 +1294,65 @@ namespace TypeSunny
                         Margin = new Thickness(0, 8, 0, 8)
                     };
                     container.Children.Add(errorText);
+                });
+            }
+        }
+
+        /// <summary>
+        /// 异步加载分类数据
+        /// </summary>
+        private async Task LoadCategoryDataAsync(Panel container, string currentValue)
+        {
+            try
+            {
+                var categories = await ArticleFetcher.GetCategoriesAsync();
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    container.Children.Clear();
+
+                    var cb = new ComboBox
+                    {
+                        Width = 200,
+                        Margin = new Thickness(0, 8, 0, 8),
+                        HorizontalAlignment = HorizontalAlignment.Left
+                    };
+
+                    cb.Items.Add("全部");
+                    var codeMapping = new Dictionary<int, string>();
+                    codeMapping[0] = "";
+
+                    int idx = 1;
+                    foreach (var cat in categories)
+                    {
+                        cb.Items.Add(cat.Name);
+                        codeMapping[idx] = cat.Code;
+                        idx++;
+                    }
+
+                    cb.Tag = codeMapping;
+                    cb.SelectedIndex = 0;
+                    if (!string.IsNullOrEmpty(currentValue))
+                    {
+                        var match = codeMapping.FirstOrDefault(kv => kv.Value == currentValue);
+                        if (match.Value != null && match.Key > 0)
+                            cb.SelectedIndex = match.Key;
+                    }
+
+                    container.Children.Add(cb);
+                });
+            }
+            catch (Exception ex)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    container.Children.Clear();
+                    container.Children.Add(new TextBlock
+                    {
+                        Text = "加载失败",
+                        Foreground = new SolidColorBrush(Color.FromRgb(200, 50, 50)),
+                        Margin = new Thickness(0, 8, 0, 8)
+                    });
                 });
             }
         }
@@ -2024,6 +2101,22 @@ namespace TypeSunny
                     else
                     {
                         // 未登录状态或加载中，保持空值
+                        value.Add("");
+                    }
+                }
+                // 处理文来分类的 StackPanel
+                else if (cb != null && labelText == "文来分类")
+                {
+                    key.Add(labelText);
+                    if (cb.Tag is Dictionary<int, string> codeMapping)
+                    {
+                        if (codeMapping.ContainsKey(cb.SelectedIndex))
+                            value.Add(codeMapping[cb.SelectedIndex]);
+                        else
+                            value.Add("");
+                    }
+                    else
+                    {
                         value.Add("");
                     }
                 }

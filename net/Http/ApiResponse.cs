@@ -73,7 +73,7 @@ namespace TypeSunny.Net.Http
                 return response;
             }
 
-            // 检测加密响应
+            // 检测加密响应（旧格式）
             if (json["encrypted_data"] != null && json["encrypted_data"].Type == JTokenType.String)
             {
                 response.Code = 200;
@@ -81,6 +81,9 @@ namespace TypeSunny.Net.Http
                 response.EncryptedData = json["encrypted_data"].ToString();
                 return response;
             }
+
+            // 检测新版加密 envelope（encryptedKey + iv + encryptedData）
+            // 这种情况下 data 本身就是 envelope，不需要特殊处理，由调用方解密
 
             // 旧格式1（文来）: { "error": 0, "msg": { ... } }
             if (json["error"] != null && json["error"].Type == JTokenType.Integer)

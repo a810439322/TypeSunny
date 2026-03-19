@@ -382,12 +382,18 @@ namespace TypeSunny.ArticleSender
                 {
                     var client = await GetInstanceAsync();
 
+                    // 生成 RSA 密钥对（用于赛文加密）
+                    var cryptoClient = new TypeSunny.Net.RaceCryptoClient();
+                    string clientKeyXml = cryptoClient.GetClientKeyXml();
+                    string publicKeyBase64 = cryptoClient.GetClientPublicKeyBase64();
+
                     var registerRequest = new RegisterRequest
                     {
                         Username = txtUsername.Text.Trim(),
                         Password = txtPassword.Password,
                         Email = txtEmail.Text.Trim(),
-                        VerifyCode = txtCode.Text.Trim()
+                        VerifyCode = txtCode.Text.Trim(),
+                        PublicKey = publicKeyBase64
                     };
 
                     var response = await client.PostAsync<LoginResponse>("/api/auth/register", registerRequest);
@@ -418,7 +424,7 @@ namespace TypeSunny.ArticleSender
                                 string serverUrl = Config.GetString("文来接口地址");
 
                                 accountManager.UpdateLoginInfo(SERVICE_NAME, txtUsername.Text.Trim(), txtPassword.Password,
-                                    displayName, userId, null, null, serverUrl, token);
+                                    displayName, userId, null, clientKeyXml, serverUrl, token);
 
                                 MessageBox.Show($"注册成功并已自动登录！欢迎 {displayName}", "提示",
                                     MessageBoxButton.OK, MessageBoxImage.Information);
@@ -725,8 +731,31 @@ namespace TypeSunny.ArticleSender
 
                         string serverUrl = Config.GetString("文来接口地址");
 
+                        // 确保本地有客户端密钥对，没有则生成新的
+                        var existingAccount = accountManager.GetAccount(SERVICE_NAME);
+                        string clientKeyXml = existingAccount?.ClientKeyXml;
+                        if (string.IsNullOrWhiteSpace(clientKeyXml))
+                        {
+                            var cryptoClient = new TypeSunny.Net.RaceCryptoClient();
+                            clientKeyXml = cryptoClient.GetClientKeyXml();
+                        }
+
                         accountManager.UpdateLoginInfo(SERVICE_NAME, txtUsername.Text.Trim(), txtPassword.Password,
-                            displayName, userId, null, null, serverUrl, token);
+                            displayName, userId, null, clientKeyXml, serverUrl, token);
+
+                        // 登录后同步公钥到服务端（补录或更新）
+                        try
+                        {
+                            var jwtAuth = new TypeSunny.Net.Http.JwtAuthProvider(token);
+                            var tempApiClient = new TypeSunny.Net.Http.ApiClient(serverUrl, jwtAuth);
+                            var raceApi = new TypeSunny.Net.RaceAPI(tempApiClient, clientKeyXml);
+                            await raceApi.UpdatePublicKeyAsync();
+                            System.Diagnostics.Debug.WriteLine("[文来] 登录后公钥同步完成");
+                        }
+                        catch (Exception pkEx)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[文来] 登录后公钥同步失败（不影响登录）: {pkEx.Message}");
+                        }
 
                         MessageBox.Show($"登录成功！欢迎 {displayName}", "提示",
                             MessageBoxButton.OK, MessageBoxImage.Information);

@@ -54,6 +54,9 @@ namespace TypeSunny.Net
         public int CurrentArticleId { get; set; }  // 当前文章ID
         public DateTime LastLoadTime { get; set; }  // 最后载文时间
         public string ClientKeyXml { get; set; }  // 客户端RSA密钥对（XML格式，持久化保存）
+        public string ServerPublicKey { get; set; }  // 服务器RSA公钥（Base64，从 init 响应获取）
+        public string KeyId { get; set; }  // 密钥ID（从 init 响应获取，提交时带回）
+        public string SessionNonce { get; set; }  // 会话 nonce（从 init 响应获取，提交时带回）
 
         // 记录每个赛文今天是否已提交（不可重复提交的赛文）：key = "日期_赛文ID", value = true
         [JsonIgnore]
@@ -67,6 +70,9 @@ namespace TypeSunny.Net
             CurrentRaceId = -1;
             CurrentArticleId = -1;
             ClientKeyXml = "";  // 初始为空，首次使用时生成
+            ServerPublicKey = "";
+            KeyId = "";
+            SessionNonce = "";
             TodaySubmitted = new Dictionary<string, bool>();
         }
 
@@ -394,8 +400,9 @@ namespace TypeSunny.Net
 
             try
             {
-                var api = new RaceAPI(server.Url, server.ClientKeyXml);
-                await api.InitializeAsync();
+                // 赛文列表不需要认证，使用无认证的 ApiClient
+                var apiClient = new Http.ApiClient(server.Url);
+                var api = new RaceAPI(apiClient, server.ClientKeyXml);
 
                 var result = await api.GetRaceListAsync();
                 if (!result.Success)

@@ -344,7 +344,7 @@ namespace TypeSunny.Net
                         if (!string.IsNullOrWhiteSpace(raceServerUrl) && ExtractDomain(raceServerUrl) == extractedDomain)
                         {
                             System.Diagnostics.Debug.WriteLine($"  ✓ 赛文服务器地址与文来相同，自动创建/更新赛文账号");
-                            UpdateLoginInfo("赛文", username, password, displayName, userId, cookies, clientKeyXml, raceServerUrl);
+                            UpdateLoginInfo("赛文", username, password, displayName, userId, cookies, clientKeyXml, raceServerUrl, jwtToken);
                         }
                     }
                     catch (Exception ex)
@@ -489,30 +489,9 @@ namespace TypeSunny.Net
                     return (true, "", "");
                 }
 
-                // JWT 登录失败，回退到旧 API（RaceAPI）
-                System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] JWT 登录失败，回退到旧 API: {serviceName}");
-
-                var api = new RaceAPI(url, account.ClientKeyXml);
-                await api.InitializeAsync();
-                var result = await api.LoginAsync(account.Username, account.Password);
-
-                if (result.Success)
-                {
-                    JObject data = result.Data;
-                    int userId2 = data["user"]?["id"]?.ToObject<int>() ?? account.UserId;
-                    string displayName2 = data["user"]?["username"]?.ToString() ?? account.DisplayName;
-
-                    UpdateLoginInfo(serviceName, account.Username, account.Password,
-                        displayName2, userId2, api.GetCookiesAsString(), api.GetClientKeyXml());
-
-                    System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] 旧 API 自动重新登录成功: {serviceName}");
-                    return (true, api.GetCookiesAsString(), api.GetClientKeyXml());
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] 自动重新登录失败: {serviceName} - {result.Message}");
-                    return (false, "", "");
-                }
+                // JWT 登录失败
+                System.Diagnostics.Debug.WriteLine($"[AccountSystemManager] JWT 自动重新登录失败: {serviceName} - {loginResponse.Msg}");
+                return (false, "", "");
             }
             catch (Exception ex)
             {

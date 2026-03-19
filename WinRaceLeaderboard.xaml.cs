@@ -18,7 +18,7 @@ namespace TypeSunny
         private int pageSize = 50;
         private int totalPages = 1;
 
-        public WinRaceLeaderboard(string serverId, int raceId, string serverUrl, string raceName, string clientKeyXml = null)
+        public WinRaceLeaderboard(string serverId, int raceId, string serverUrl, string raceName, string clientKeyXml = null, string jwtToken = null)
         {
             InitializeComponent();
 
@@ -26,8 +26,18 @@ namespace TypeSunny
             this.raceId = raceId;
             this.allEntries = new List<LeaderboardEntry>();
 
-            // 初始化RaceAPI
-            raceAPI = new RaceAPI(serverUrl, clientKeyXml);
+            // 初始化RaceAPI（带 JWT 认证）
+            Net.Http.ApiClient apiClient;
+            if (!string.IsNullOrWhiteSpace(jwtToken))
+            {
+                var jwtAuth = new Net.Http.JwtAuthProvider(jwtToken);
+                apiClient = new Net.Http.ApiClient(serverUrl, jwtAuth);
+            }
+            else
+            {
+                apiClient = new Net.Http.ApiClient(serverUrl);
+            }
+            raceAPI = new RaceAPI(apiClient, clientKeyXml);
 
             // 设置标题
             txtTitle.Text = $"{raceName} - 排行榜";
@@ -256,9 +266,6 @@ namespace TypeSunny
             {
                 txtStatus.Text = "加载中...";
                 btnRefresh.IsEnabled = false;
-
-                // 初始化API
-                await raceAPI.InitializeAsync();
 
                 // 获取选择的日期
                 string dateStr = null;

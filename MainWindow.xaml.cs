@@ -5813,7 +5813,7 @@ public async Task SendArticle()
         }
 
         /// <summary>
-        /// 初始化赛文菜单（动态生成菜单项）
+        /// 初始化赛文菜单（扁平二级菜单，不再支持多服务器）
         /// </summary>
         private void InitializeRaceMenu()
         {
@@ -5858,239 +5858,183 @@ public async Task SendArticle()
                 this.Resources["MenuStyle"] = menuStyle;
                 this.Resources["ContextMenuStyle"] = contextMenuStyle;
 
-                // ========== 第一部分：添加所有赛文API服务器 ==========
-                var serverManager = new TypeSunny.Net.RaceServerManager();
-                var servers = serverManager.GetAllServers();
+                // ========== 检查登录状态（共用文来账号） ==========
+                bool isLoggedIn = wenlaiHelper.IsLoggedIn();
+                string username = wenlaiHelper.GetCurrentUsername();
 
-                if (servers == null)
+                if (isLoggedIn && !string.IsNullOrWhiteSpace(username))
                 {
-                    servers = new List<TypeSunny.Net.RaceServer>();
+                    // 已登录：显示用户名
+                    MenuItem loginStatusItem = new MenuItem
+                    {
+                        Header = $"已登录: {username}",
+                        Background = menuBg,
+                        Foreground = menuFg,
+                        IsEnabled = false,
+                        Style = menuItemStyle
+                    };
+                    MenuItemRace.Items.Add(loginStatusItem);
+
+                    // 退出登录
+                    MenuItem logoutItem = new MenuItem
+                    {
+                        Header = "退出登录",
+                        Background = menuBg,
+                        Foreground = menuFg,
+                        Style = menuItemStyle
+                    };
+                    logoutItem.Click += MenuItemRaceLogout_Click;
+                    MenuItemRace.Items.Add(logoutItem);
+                }
+                else
+                {
+                    // 未登录：显示登录和注册
+                    MenuItem loginItem = new MenuItem
+                    {
+                        Header = "登录",
+                        Background = menuBg,
+                        Foreground = menuFg,
+                        Style = menuItemStyle
+                    };
+                    loginItem.Click += MenuItemRaceLogin_Click;
+                    MenuItemRace.Items.Add(loginItem);
+
+                    MenuItem registerItem = new MenuItem
+                    {
+                        Header = "注册",
+                        Background = menuBg,
+                        Foreground = menuFg,
+                        Style = menuItemStyle
+                    };
+                    registerItem.Click += MenuItemRaceRegister_Click;
+                    MenuItemRace.Items.Add(registerItem);
                 }
 
-                // ✨ 关键修复：从 AccountSystemManager 同步登录信息到每个服务器
-                var accountManager = new TypeSunny.Net.AccountSystemManager();
-                System.Diagnostics.Debug.WriteLine("  检查是否需要同步账号登录信息到赛文服务器...");
+                MenuItemRace.Items.Add(CreateStyledSeparator(menuBg));
 
+                // ========== 赛文列表（扁平展示） ==========
+                var serverManager = raceHelperV2.GetServerManager();
+                var servers = serverManager.GetAllServers() ?? new List<TypeSunny.Net.RaceServer>();
+
+                // 同步账号信息到服务器
+                var accountManager = new TypeSunny.Net.AccountSystemManager();
                 foreach (var server in servers)
                 {
-                    System.Diagnostics.Debug.WriteLine($"  处理服务器: {server.Name}, Url={server.Url}");
-
-                    // 根据服务器名称查找对应的账号（服务名称通常为"赛文"或服务器名称）
-                    // 尝试多个可能的服务名称
-                    string[] possibleServiceNames = { "赛文", server.Name, $"赛文_{server.Id}" };
-                    TypeSunny.Net.AccountInfo matchedAccount = null;
-
-                    foreach (var serviceName in possibleServiceNames)
+                    var wenlaiAccount = accountManager.GetAccount("文来");
+                    if (wenlaiAccount != null && !string.IsNullOrWhiteSpace(wenlaiAccount.Username))
                     {
-                        var account = accountManager.GetAccount(serviceName);
-                        if (account != null && !string.IsNullOrWhiteSpace(account.Domain))
+                        string serverDomain = ExtractDomainFromUrl(server.Url);
+                        string accountDomain = ExtractDomainFromUrl(wenlaiAccount.Domain);
+                        if (serverDomain == accountDomain)
                         {
-                            // 检查域名是否匹配
-                            string serverDomain = ExtractDomainFromUrl(server.Url);
-                            string accountDomain = ExtractDomainFromUrl(account.Domain);
-
-                            System.Diagnostics.Debug.WriteLine($"    尝试服务名称: {serviceName}, 账号Domain={accountDomain}, 服务器Domain={serverDomain}");
-
-                            if (serverDomain == accountDomain)
-                            {
-                                matchedAccount = account;
-                                System.Diagnostics.Debug.WriteLine($"    ✓ 找到匹配的账号: {serviceName}, Username={account.Username}");
-                                break;
-                            }
+                            server.UserId = wenlaiAccount.UserId;
+                            server.Username = wenlaiAccount.Username;
+                            server.DisplayName = wenlaiAccount.DisplayName;
+                            if (!string.IsNullOrWhiteSpace(wenlaiAccount.ClientKeyXml))
+                                server.ClientKeyXml = wenlaiAccount.ClientKeyXml;
                         }
                     }
-
-                    // 如果找到匹配的账号，同步登录信息
-                    if (matchedAccount != null && !string.IsNullOrWhiteSpace(matchedAccount.Username))
-                    {
-                        System.Diagnostics.Debug.WriteLine($"    ✓ 同步登录信息: UserId={matchedAccount.UserId}, Username={matchedAccount.Username}, DisplayName={matchedAccount.DisplayName}");
-                        server.UserId = matchedAccount.UserId;
-                        server.Username = matchedAccount.Username;
-                        server.DisplayName = matchedAccount.DisplayName;
-                        server.Password = matchedAccount.Password;
-                        server.ClientKeyXml = matchedAccount.ClientKeyXml;
-                    }
-                    else
-                    {
-                        System.Diagnostics.Debug.WriteLine($"    ⚠ 未找到匹配的账号");
-                    }
                 }
 
+                // 收集所有赛文
+                bool hasRaces = false;
                 foreach (var server in servers)
                 {
-                    // 创建服务器一级菜单
-                    MenuItem serverMenu = new MenuItem();
-                    serverMenu.Header = server.GetDisplayName();
-                    serverMenu.Background = menuBg;
-                    serverMenu.Foreground = menuFg;
-                    serverMenu.Tag = $"server_{server.Id}";
-                    serverMenu.Style = menuItemStyle;
-
-                    // 登录/注册菜单
-                    if (!server.IsLoggedIn())
-                    {
-                        // 未登录：显示登录和注册
-                        MenuItem loginItem = new MenuItem { Header = "🔑 登录", Background = menuBg, Foreground = menuFg, Tag = $"server_{server.Id}", Style = menuItemStyle };
-                        loginItem.Click += MenuItemRaceServerLogin_Click;
-                        serverMenu.Items.Add(loginItem);
-
-                        MenuItem registerItem = new MenuItem { Header = "📝 注册", Background = menuBg, Foreground = menuFg, Tag = $"server_{server.Id}", Style = menuItemStyle };
-                        registerItem.Click += MenuItemRaceServerRegister_Click;
-                        serverMenu.Items.Add(registerItem);
-
-                        serverMenu.Items.Add(CreateStyledSeparator(menuBg));
-                    }
-                    else
-                    {
-                        // 已登录：显示用户名
-                        string displayName = string.IsNullOrWhiteSpace(server.DisplayName) ? server.Username : server.DisplayName;
-                        MenuItem loginStatusItem = new MenuItem
-                        {
-                            Header = $"✅ {displayName ?? "未知用户"}",
-                            Background = menuBg,
-                            Foreground = menuFg,
-                            IsEnabled = false,
-                            Style = menuItemStyle
-                        };
-                        serverMenu.Items.Add(loginStatusItem);
-
-                        // 添加退出登录菜单项
-                        MenuItem logoutItem = new MenuItem
-                        {
-                            Header = "🚪 退出登录",
-                            Background = menuBg,
-                            Foreground = menuFg,
-                            Tag = $"server_{server.Id}",
-                            Style = menuItemStyle
-                        };
-                        logoutItem.Click += MenuItemRaceServerLogout_Click;
-                        serverMenu.Items.Add(logoutItem);
-
-                        serverMenu.Items.Add(CreateStyledSeparator(menuBg));
-                    }
-
-                    // 添加该服务器的所有赛文（作为子菜单）
                     if (server.Races != null && server.Races.Count > 0)
                     {
                         foreach (var race in server.Races)
                         {
-                            // 创建赛文菜单项 - 加强视觉效果
-                            MenuItem raceMenu = new MenuItem
-                            {
-                                Header = $"▸ {race.Name}",
-                                Background = menuBg,
-                                Foreground = menuFg,
-                                FontWeight = System.Windows.FontWeights.SemiBold,
-                                FontSize = 13,
-                                Style = menuItemStyle
-                            };
+                            hasRaces = true;
 
-                            // 添加赛文信息说明（调整颜色以适应暗色主题）
+                            // 赛文信息
                             string countStr = race.CharCount > 0 ? $"{race.CharCount}字" : "";
                             string diffStr = $"难度{race.DifficultyGroup}";
                             string submitStr = race.AllowResubmit ? "可重复" : "每日一次";
-
-                            // 拼接信息：字数 · 难度 · 提交方式
-                            string infoText = "      ";
+                            string infoText = "";
                             if (!string.IsNullOrWhiteSpace(countStr))
                                 infoText += $"{countStr} · ";
                             infoText += $"{diffStr} · {submitStr}";
 
-                            // 根据背景色计算合适的灰色文字颜色
-                            var infoColor = GetSecondaryTextColor(menuBg);
-
-                            MenuItem infoItem = new MenuItem
+                            // 赛文名称 + 信息
+                            MenuItem raceItem = new MenuItem
                             {
-                                Header = infoText,
+                                Header = $"{race.Name}  ({infoText})",
                                 Background = menuBg,
-                                Foreground = new System.Windows.Media.SolidColorBrush(infoColor),
+                                Foreground = menuFg,
                                 IsEnabled = false,
-                                FontSize = 10.5,
+                                FontWeight = System.Windows.FontWeights.SemiBold,
                                 Style = menuItemStyle
                             };
-                            raceMenu.Items.Add(infoItem);
+                            MenuItemRace.Items.Add(raceItem);
 
-                            // 子菜单1：发文
+                            // 发文按钮
                             MenuItem loadArticleItem = new MenuItem
                             {
                                 Background = menuBg,
                                 Foreground = menuFg,
                                 Tag = $"server_{server.Id}_race_{race.Id}_load",
-                                FontSize = 12,
                                 Style = menuItemStyle
                             };
 
-                            // 根据状态设置不同的显示
                             if (!race.AllowResubmit && server.IsTodaySubmitted(race.Id))
                             {
-                                loadArticleItem.Header = "      ✓ 今日已完成";
-                                // 根据主题使用合适的成功颜色
+                                loadArticleItem.Header = "    今日已完成";
                                 var successColor = GetSuccessColor(menuBg);
                                 loadArticleItem.Foreground = new System.Windows.Media.SolidColorBrush(successColor);
                                 loadArticleItem.IsEnabled = false;
                             }
                             else
                             {
-                                loadArticleItem.Header = "      📝 发文";
+                                loadArticleItem.Header = "    发文";
                                 loadArticleItem.Click += MenuItemRaceServerLoadArticle_Click;
                             }
+                            MenuItemRace.Items.Add(loadArticleItem);
 
-                            raceMenu.Items.Add(loadArticleItem);
-
-                            // 子菜单2：排行榜
+                            // 排行榜
                             MenuItem leaderboardItem = new MenuItem
                             {
-                                Header = "      🏆 排行榜",
+                                Header = "    排行榜",
                                 Background = menuBg,
                                 Foreground = menuFg,
                                 Tag = $"server_{server.Id}_race_{race.Id}_leaderboard",
-                                FontSize = 12,
                                 Style = menuItemStyle
                             };
                             leaderboardItem.Click += MenuItemRaceLeaderboard_Click;
-                            raceMenu.Items.Add(leaderboardItem);
+                            MenuItemRace.Items.Add(leaderboardItem);
 
-                            serverMenu.Items.Add(raceMenu);
+                            MenuItemRace.Items.Add(CreateStyledSeparator(menuBg));
                         }
                     }
-                    else
-                    {
-                        // 没有赛文，显示提示
-                        MenuItem noRaceItem = new MenuItem
-                        {
-                            Header = "⚠️ 暂无赛文（请刷新）",
-                            Background = menuBg,
-                            Foreground = menuFg,
-                            IsEnabled = false,
-                            Style = menuItemStyle
-                        };
-                        serverMenu.Items.Add(noRaceItem);
-                    }
-
-                    // 底部添加刷新选项
-                    serverMenu.Items.Add(CreateStyledSeparator(menuBg));
-                    MenuItem refreshItem = new MenuItem { Header = "🔄 刷新赛文列表", Background = menuBg, Foreground = menuFg, Tag = $"server_{server.Id}", FontSize = 11, Style = menuItemStyle };
-                    refreshItem.Click += MenuItemRefreshServer_Click;
-                    serverMenu.Items.Add(refreshItem);
-
-                    // 将服务器菜单添加到主菜单
-                    MenuItemRace.Items.Add(serverMenu);
                 }
 
-                // 分隔符
-                if (servers.Count > 0)
+                if (!hasRaces)
                 {
+                    MenuItem noRaceItem = new MenuItem
+                    {
+                        Header = "暂无赛文",
+                        Background = menuBg,
+                        Foreground = menuFg,
+                        IsEnabled = false,
+                        Style = menuItemStyle
+                    };
+                    MenuItemRace.Items.Add(noRaceItem);
                     MenuItemRace.Items.Add(CreateStyledSeparator(menuBg));
                 }
 
-                // ========== 第二部分：添加服务器菜单（简化为直接添加服务器） ==========
-                MenuItem addServerItem = new MenuItem { Header = "➕ 添加服务器", Background = menuBg, Foreground = menuFg, Style = menuItemStyle };
-                addServerItem.Click += MenuItemAddRaceServer_Click;
-                MenuItemRace.Items.Add(addServerItem);
+                // ========== 刷新按钮 ==========
+                MenuItem refreshItem = new MenuItem
+                {
+                    Header = "刷新赛文列表",
+                    Background = menuBg,
+                    Foreground = menuFg,
+                    Style = menuItemStyle
+                };
+                refreshItem.Click += MenuItemRefreshRaceList_Click;
+                MenuItemRace.Items.Add(refreshItem);
 
+                // ========== 分隔符 + 传统赛文源（锦标赛、极速杯） ==========
                 MenuItemRace.Items.Add(CreateStyledSeparator(menuBg));
 
-                // ========== 第三部分：添加传统赛文源（锦标赛、极速杯） ==========
                 var raceConfigs = RaceConfig.GetRaceConfigs();
 
                 foreach (var config in raceConfigs)
@@ -6104,7 +6048,6 @@ public async Task SendArticle()
 
                     // 创建一级菜单项（赛文源名称，如"锦标赛"、"极速杯"）
                     MenuItem parentMenu = new MenuItem();
-                    // 为一级菜单添加图标（根据名称判断）
                     string parentIcon = config.Name.Contains("锦标赛") ? "🏅 " : (config.Name.Contains("极速") ? "⚡ " : "🏁 ");
                     parentMenu.Header = parentIcon + config.Name;
 
@@ -6117,7 +6060,6 @@ public async Task SendArticle()
                     foreach (var feature in config.Features)
                     {
                         MenuItem subMenu = new MenuItem();
-                        // 为功能添加图标
                         string featureIcon = feature switch
                         {
                             "载文" => "📄 ",
@@ -6126,14 +6068,12 @@ public async Task SendArticle()
                             _ => ""
                         };
                         subMenu.Header = featureIcon + feature;
-                        subMenu.Tag = config.Type + "_" + feature; // 用于识别事件来源
+                        subMenu.Tag = config.Type + "_" + feature;
 
-                        // 应用菜单颜色和样式到子菜单
                         subMenu.Background = menuBg;
                         subMenu.Foreground = menuFg;
                         subMenu.Style = menuItemStyle;
 
-                        // 根据功能类型绑定事件
                         switch (feature)
                         {
                             case "载文":
@@ -6141,7 +6081,6 @@ public async Task SendArticle()
                                     subMenu.Click += MenuItemLoadArticle_Click;
                                 else if (config.Type == "jisucup")
                                     subMenu.Click += MenuItemJiSuLoadArticle_Click;
-                                // 保存载文菜单项引用（用于Helper）
                                 raceMenuItems[config.Type + "_loadArticle"] = subMenu;
                                 break;
                             case "登录":
@@ -6149,7 +6088,6 @@ public async Task SendArticle()
                                     subMenu.Click += MenuItemLogin_Click;
                                 else if (config.Type == "jisucup")
                                     subMenu.Click += MenuItemJiSuLogin_Click;
-                                // 保存登录菜单项引用（用于Helper）
                                 raceMenuItems[config.Type + "_login"] = subMenu;
                                 break;
                             case "排行榜":
@@ -6164,7 +6102,6 @@ public async Task SendArticle()
                         parentMenu.Items.Add(subMenu);
                     }
 
-                    // 将一级菜单添加到主菜单
                     MenuItemRace.Items.Add(parentMenu);
                 }
 
@@ -6175,7 +6112,6 @@ public async Task SendArticle()
                         raceMenuItems.ContainsKey("jbs_login") ? raceMenuItems["jbs_login"] : null,
                         raceMenuItems.ContainsKey("jbs_loadArticle") ? raceMenuItems["jbs_loadArticle"] : null
                     );
-                    // 更新登录状态显示
                     jbsHelper.UpdateLoginStatus();
                     jbsHelper.UpdateArticleButtonStatus();
                 }
@@ -6186,7 +6122,6 @@ public async Task SendArticle()
                         raceMenuItems.ContainsKey("jisucup_login") ? raceMenuItems["jisucup_login"] : null,
                         raceMenuItems.ContainsKey("jisucup_loadArticle") ? raceMenuItems["jisucup_loadArticle"] : null
                     );
-                    // 更新登录状态显示
                     jiSuCupHelper.UpdateLoginStatus();
                 }
 
@@ -6194,11 +6129,9 @@ public async Task SendArticle()
             }
             catch (Exception ex)
             {
-                // 如果初始化菜单失败，记录错误并添加错误提示
                 System.Diagnostics.Debug.WriteLine($"❌ 初始化赛文菜单失败: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
 
-                // 添加错误提示菜单项
                 try
                 {
                     MenuItem errorItem = new MenuItem
@@ -6208,10 +6141,7 @@ public async Task SendArticle()
                     };
                     MenuItemRace.Items.Add(errorItem);
                 }
-                catch
-                {
-                    // 忽略二次错误
-                }
+                catch { }
             }
         }
 
@@ -6462,6 +6392,109 @@ public async Task SendArticle()
                 }
                 MenuWenlai.Items.Add(difficultyItem);
 
+                // 选择分类（需要登录，作为子菜单）
+                MenuItem categoryItem = new MenuItem
+                {
+                    Header = "📂 选择分类",
+                    Background = menuBg,
+                    Foreground = menuFg,
+                    Style = menuItemStyle,
+                    IsEnabled = isLoggedIn && !string.IsNullOrWhiteSpace(username)
+                };
+
+                if (isLoggedIn && !string.IsNullOrWhiteSpace(username))
+                {
+                    var categories = ArticleFetcher.GetCategories();
+                    string currentCategory = Config.GetString("文来分类") ?? "";
+                    string currentCategoryName = "全部";
+                    if (!string.IsNullOrEmpty(currentCategory) && categories.Count > 0)
+                    {
+                        var cur = categories.FirstOrDefault(c => c.Code == currentCategory);
+                        if (cur != null) currentCategoryName = cur.Name;
+                    }
+                    categoryItem.Header = $"📂 选择分类 [{currentCategoryName}]";
+
+                    // 刷新
+                    MenuItem refreshCatItem = new MenuItem
+                    {
+                        Header = "🔄 刷新分类列表",
+                        Background = menuBg,
+                        Foreground = menuFg,
+                        Style = menuItemStyle
+                    };
+                    refreshCatItem.Click += async (s, args) =>
+                    {
+                        ArticleFetcher.ClearCategoryCache();
+                        await ArticleFetcher.GetCategoriesAsync();
+                        InitializeWenlaiMenu();
+                    };
+                    categoryItem.Items.Add(refreshCatItem);
+
+                    if (categories.Count > 0)
+                    {
+                        categoryItem.Items.Add(CreateStyledSeparator(menuBg));
+
+                        // "全部"选项
+                        MenuItem allItem = new MenuItem
+                        {
+                            Header = $"全部{(string.IsNullOrEmpty(currentCategory) ? " ✓" : "")}",
+                            Background = menuBg,
+                            Foreground = menuFg,
+                            Style = menuItemStyle
+                        };
+                        allItem.Click += (s, args) =>
+                        {
+                            Config.Set("文来分类", "");
+                            InitializeWenlaiMenu();
+                        };
+                        categoryItem.Items.Add(allItem);
+
+                        foreach (var cat in categories)
+                        {
+                            MenuItem catMenuItem = new MenuItem
+                            {
+                                Header = $"{cat.Name}{(cat.Code == currentCategory ? " ✓" : "")}",
+                                Background = menuBg,
+                                Foreground = menuFg,
+                                Style = menuItemStyle,
+                                Tag = cat.Code
+                            };
+                            catMenuItem.Click += (s, args) =>
+                            {
+                                Config.Set("文来分类", cat.Code);
+                                InitializeWenlaiMenu();
+                            };
+                            categoryItem.Items.Add(catMenuItem);
+                        }
+                    }
+                    else
+                    {
+                        categoryItem.Items.Add(CreateStyledSeparator(menuBg));
+                        MenuItem loadingCatItem = new MenuItem
+                        {
+                            Header = "⏳ 加载分类数据...",
+                            Background = menuBg,
+                            Foreground = menuFg,
+                            Style = menuItemStyle,
+                            IsEnabled = false
+                        };
+                        categoryItem.Items.Add(loadingCatItem);
+
+                        System.Threading.Tasks.Task.Run(async () =>
+                        {
+                            var loaded = await ArticleFetcher.GetCategoriesAsync();
+                            if (loaded != null && loaded.Count > 0)
+                            {
+                                this.Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    InitializeWenlaiMenu();
+                                }));
+                            }
+                        });
+                    }
+                }
+                MenuWenlai.Items.Add(categoryItem);
+
                 // 成绩统计（始终显示，放在最下面）
                 MenuWenlai.Items.Add(CreateStyledSeparator(menuBg));
                 MenuItem statisticsItem = new MenuItem
@@ -6609,16 +6642,35 @@ public async Task SendArticle()
         }
 
         /// <summary>
-        /// 文来菜单 - 退出登录
+        /// 文来菜单 - 退出登录（同时退出赛文）
         /// </summary>
         private void MenuItemWenlaiLogout_Click(object sender, RoutedEventArgs e)
         {
-            var result = MessageBox.Show("确定要退出登录吗？", "确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            var result = MessageBox.Show("退出登录将同时退出文来和赛文。\n确定要退出吗？", "确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (result == MessageBoxResult.Yes)
             {
                 wenlaiHelper.Logout();
-                // 重新初始化菜单以更新登录状态
+
+                // 同时清除赛文账号
+                var accountManager = new TypeSunny.Net.AccountSystemManager();
+                accountManager.ClearAccount("赛文");
+
+                // 清除赛文服务器登录信息
+                var serverManager = raceHelperV2.GetServerManager();
+                foreach (var server in serverManager.GetAllServers())
+                {
+                    server.UserId = -1;
+                    server.Username = "";
+                    server.DisplayName = "";
+                    server.ServerPublicKey = "";
+                    server.KeyId = "";
+                    server.SessionNonce = "";
+                }
+                serverManager.SaveToConfig();
+
+                // 刷新两个菜单
                 InitializeWenlaiMenu();
+                InitializeRaceMenu();
 
                 // 通知所有打开的设置窗口刷新文来难度数据
                 NotifyConfigWindowsRefreshWenlai();
@@ -6761,16 +6813,77 @@ public async Task SendArticle()
             jiSuCupHelper.OpenRanking();
         }
 
-        // 赛文API - 登录
+        // 赛文API - 登录（调用文来登录）
         private void MenuItemRaceLogin_Click(object sender, RoutedEventArgs e)
         {
-            raceHelper.ShowLoginDialog(this);
+            wenlaiHelper.ShowLoginDialog(this);
+
+            // 登录后刷新两个菜单
+            InitializeWenlaiMenu();
+            if (wenlaiHelper.IsLoggedIn())
+            {
+                Task.Run(async () =>
+                {
+                    await ArticleFetcher.GetDifficultiesAsync();
+                }).GetAwaiter().GetResult();
+
+                InitializeRaceMenu();
+                NotifyConfigWindowsRefreshWenlai();
+            }
         }
 
-        // 赛文API - 注册
+        // 赛文API - 注册（调用文来注册）
         private void MenuItemRaceRegister_Click(object sender, RoutedEventArgs e)
         {
-            raceHelper.ShowRegisterDialog(this);
+            wenlaiHelper.ShowRegisterDialog(this);
+
+            // 注册后刷新两个菜单
+            InitializeWenlaiMenu();
+            if (wenlaiHelper.IsLoggedIn())
+            {
+                Task.Run(async () =>
+                {
+                    await ArticleFetcher.GetDifficultiesAsync();
+                }).GetAwaiter().GetResult();
+
+                InitializeRaceMenu();
+                NotifyConfigWindowsRefreshWenlai();
+            }
+        }
+
+        // 赛文API - 退出登录（同时退出文来和赛文）
+        private void MenuItemRaceLogout_Click(object sender, RoutedEventArgs e)
+        {
+            var result = MessageBox.Show("退出登录将同时退出文来和赛文。\n确定要退出吗？", "确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result != MessageBoxResult.Yes)
+                return;
+
+            // 退出文来
+            wenlaiHelper.Logout();
+
+            // 清除赛文相关账号
+            var accountManager = new TypeSunny.Net.AccountSystemManager();
+            accountManager.ClearAccount("赛文");
+
+            // 清除赛文服务器登录信息
+            var serverManager = raceHelperV2.GetServerManager();
+            foreach (var server in serverManager.GetAllServers())
+            {
+                server.UserId = -1;
+                server.Username = "";
+                server.DisplayName = "";
+                server.ServerPublicKey = "";
+                server.KeyId = "";
+                server.SessionNonce = "";
+            }
+            serverManager.SaveToConfig();
+
+            // 刷新两个菜单
+            InitializeWenlaiMenu();
+            InitializeRaceMenu();
+            NotifyConfigWindowsRefreshWenlai();
+
+            MessageBox.Show("已退出登录", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         // 赛文API - 载文
@@ -6790,77 +6903,71 @@ public async Task SendArticle()
 
         // ========== 新版赛文API事件处理（支持多服务器） ==========
 
-        // 赛文服务器 - 登录
+        // 赛文服务器 - 登录（直接调用文来登录）
         private void MenuItemRaceServerLogin_Click(object sender, RoutedEventArgs e)
         {
-            MenuItem menuItem = sender as MenuItem;
-            if (menuItem == null || menuItem.Tag == null)
-                return;
+            wenlaiHelper.ShowLoginDialog(this);
 
-            string tag = menuItem.Tag.ToString();
-            string serverId = tag.Replace("server_", "");
+            InitializeWenlaiMenu();
+            if (wenlaiHelper.IsLoggedIn())
+            {
+                Task.Run(async () =>
+                {
+                    await ArticleFetcher.GetDifficultiesAsync();
+                }).GetAwaiter().GetResult();
 
-            raceHelperV2.ShowLoginDialog(this, serverId);
-
-            // 刷新菜单
-            RefreshRaceMenu();
+                InitializeRaceMenu();
+                NotifyConfigWindowsRefreshWenlai();
+            }
         }
 
-        // 赛文服务器 - 注册
+        // 赛文服务器 - 注册（直接调用文来注册）
         private void MenuItemRaceServerRegister_Click(object sender, RoutedEventArgs e)
         {
-            MenuItem menuItem = sender as MenuItem;
-            if (menuItem == null || menuItem.Tag == null)
-                return;
+            wenlaiHelper.ShowRegisterDialog(this);
 
-            string tag = menuItem.Tag.ToString();
-            string serverId = tag.Replace("server_", "");
+            InitializeWenlaiMenu();
+            if (wenlaiHelper.IsLoggedIn())
+            {
+                Task.Run(async () =>
+                {
+                    await ArticleFetcher.GetDifficultiesAsync();
+                }).GetAwaiter().GetResult();
 
-            raceHelperV2.ShowRegisterDialog(this, serverId);
+                InitializeRaceMenu();
+                NotifyConfigWindowsRefreshWenlai();
+            }
         }
 
-        // 赛文服务器 - 退出登录
+        // 赛文服务器 - 退出登录（同时退出文来和赛文）
         private void MenuItemRaceServerLogout_Click(object sender, RoutedEventArgs e)
         {
-            MenuItem menuItem = sender as MenuItem;
-            if (menuItem == null || menuItem.Tag == null)
-                return;
-
-            string tag = menuItem.Tag.ToString();
-            string serverId = tag.Replace("server_", "");
-
-            var serverManager = new TypeSunny.Net.RaceServerManager();
-            var server = serverManager.GetAllServers().Find(s => s.Id == serverId);
-            if (server == null)
-                return;
-
-            // 确认退出登录
-            var result = MessageBox.Show($"确定要退出服务器「{server.GetDisplayName()}」的登录吗？", "退出登录", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            var result = MessageBox.Show("退出登录将同时退出文来和赛文。\n确定要退出吗？", "确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (result != MessageBoxResult.Yes)
                 return;
 
+            wenlaiHelper.Logout();
+
             var accountManager = new TypeSunny.Net.AccountSystemManager();
-
-            // 清除服务器登录信息
-            server.UserId = -1;
-            server.Username = "";
-            server.DisplayName = "";
-            server.Password = "";
-            // 注意：不清除 ClientKeyXml，以便下次登录时可以使用相同的密钥对
-            serverManager.SaveToConfig();
-
-            // 清除所有与该服务器相关的账号（server.Id、server.Name、"赛文"）
-            // 不清除"文来"账号，保持与文来退出逻辑的一致性
-            accountManager.ClearAccount(serverId);
-            accountManager.ClearAccount(server.Name);
             accountManager.ClearAccount("赛文");
 
-            System.Diagnostics.Debug.WriteLine($"✓ 已清除服务器登录: {server.Name}（ID={serverId}, 名称={server.Name}）");
+            var serverManager = raceHelperV2.GetServerManager();
+            foreach (var server in serverManager.GetAllServers())
+            {
+                server.UserId = -1;
+                server.Username = "";
+                server.DisplayName = "";
+                server.ServerPublicKey = "";
+                server.KeyId = "";
+                server.SessionNonce = "";
+            }
+            serverManager.SaveToConfig();
 
-            // 刷新菜单
-            RefreshRaceMenu();
+            InitializeWenlaiMenu();
+            InitializeRaceMenu();
+            NotifyConfigWindowsRefreshWenlai();
 
-            System.Diagnostics.Debug.WriteLine($"✓ 已退出服务器登录: {server.Name}");
+            MessageBox.Show("已退出登录", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         // 赛文服务器 - 载文
@@ -6957,12 +7064,18 @@ public async Task SendArticle()
             // 打开排行榜窗口
             try
             {
+                // 获取 JWT token
+                var accountManager = new TypeSunny.Net.AccountSystemManager();
+                var account = accountManager.GetAccount("文来");
+                string jwtToken = account?.JwtToken;
+
                 var leaderboardWindow = new WinRaceLeaderboard(
                     serverId,
                     raceId,
                     server.Url,
                     race.Name ?? "未命名赛文",
-                    server.ClientKeyXml
+                    server.ClientKeyXml,
+                    jwtToken
                 );
                 leaderboardWindow.Owner = this;
                 leaderboardWindow.ShowDialog();
@@ -7087,7 +7200,43 @@ public async Task SendArticle()
             dialog.ShowDialog();
         }
 
-        // 刷新单个赛文服务器
+        // 刷新赛文列表（全局）
+        private async void MenuItemRefreshRaceList_Click(object sender, RoutedEventArgs e)
+        {
+            var serverManager = raceHelperV2.GetServerManager();
+            var servers = serverManager.GetAllServers();
+
+            if (servers == null || servers.Count == 0)
+            {
+                MessageBox.Show("没有赛文服务器", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                bool anySuccess = false;
+                foreach (var server in servers)
+                {
+                    bool success = await serverManager.RefreshServerRaces(server.Id);
+                    if (success) anySuccess = true;
+                }
+
+                if (anySuccess)
+                {
+                    RefreshRaceMenu();
+                }
+                else
+                {
+                    MessageBox.Show("刷新失败，请检查网络连接或服务器地址", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"刷新失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // 刷新单个赛文服务器（保留兼容）
         private async void MenuItemRefreshServer_Click(object sender, RoutedEventArgs e)
         {
             MenuItem menuItem = sender as MenuItem;
@@ -7170,6 +7319,7 @@ public async Task SendArticle()
         }
 
         private bool isRefreshingRaceMenu = false;
+        private bool needsRaceMenuRefresh = false;
         private static bool hasCheckedRaceMenuLogin = false;
 
         /// <summary>
@@ -7178,10 +7328,14 @@ public async Task SendArticle()
         private void MenuItemRace_SubmenuClosed(object sender, RoutedEventArgs e)
         {
             // 检查是否是整个赛文菜单关闭（而不是子菜单关闭）
-            // 通过检查 sender 是否是 MenuItemRace 来判断
             if (sender != MenuItemRace)
+                return;
+
+            // 如果后台刷新了赛文列表，菜单关闭后再重建
+            if (needsRaceMenuRefresh)
             {
-                // 只是子菜单关闭，不处理
+                needsRaceMenuRefresh = false;
+                InitializeRaceMenu();
                 return;
             }
 
@@ -7221,11 +7375,48 @@ public async Task SendArticle()
         }
 
         /// <summary>
-        /// 赛文菜单打开时标记已检查
+        /// 赛文菜单打开时自动刷新赛文列表
         /// </summary>
         private void MenuItemRace_SubmenuOpened(object sender, RoutedEventArgs e)
         {
             hasCheckedRaceMenuLogin = false;
+
+            // 自动刷新：后台刷新赛文列表，标记需要刷新，等菜单关闭后再重建
+            if (!isRefreshingRaceMenu)
+            {
+                isRefreshingRaceMenu = true;
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        var serverManager = raceHelperV2.GetServerManager();
+                        var servers = serverManager.GetAllServers();
+                        bool changed = false;
+                        if (servers != null)
+                        {
+                            foreach (var server in servers)
+                            {
+                                bool success = await serverManager.RefreshServerRaces(server.Id);
+                                if (success) changed = true;
+                            }
+                        }
+
+                        if (changed)
+                        {
+                            // 标记需要刷新，等菜单关闭后再重建，避免打断用户操作
+                            needsRaceMenuRefresh = true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[赛文菜单] 自动刷新失败: {ex.Message}");
+                    }
+                    finally
+                    {
+                        isRefreshingRaceMenu = false;
+                    }
+                });
+            }
         }
 
         /// <summary>
@@ -7613,9 +7804,10 @@ public async Task SendArticle()
             int bookId = articleCache.GetBookId();
             int sortNum = articleCache.GetSortNum();
             string category = articleCache.GetCategory();
+            string startChars = articleCache.GetStartChars();
 
-            // 上一段不需要 endSortNum/endChars
-            ArticleData segmentData = await ArticleFetcher.FetchSegmentAsync(bookId, sortNum, 0, category);
+            // 上一段：传 startChars 用于前翻精确定位
+            ArticleData segmentData = await ArticleFetcher.FetchSegmentAsync(bookId, sortNum, 0, category, 0, null, startChars);
 
             if (string.IsNullOrEmpty(segmentData.Content) || segmentData.Title == "获取失败" || segmentData.Title == "接口错误")
             {

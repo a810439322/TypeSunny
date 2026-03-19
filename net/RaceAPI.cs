@@ -1,8 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Net;
-using System.Net.Http;
-using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -11,338 +8,78 @@ using TypeSunny.Net.Http;
 namespace TypeSunny.Net
 {
     /// <summary>
-    /// 赛文API客户端
-    /// 提供注册、登录、获取赛文、提交成绩等功能
-    /// 内部使用 ApiClient 进行 HTTP 通信
+    /// 赛文API客户端（新版）
+    /// 使用 JWT 认证（共用文来登录），AES-256-GCM + RSA-OAEP-SHA256 加密
     /// </summary>
     public class RaceAPI
     {
         private readonly string serverUrl;
         private readonly ApiClient apiClient;
-        private readonly CookieAuthProvider cookieAuth;
-        private RaceCryptoClient cryptoClient;
-        private string clientKeyXml;
-
-        /// <summary>
-        /// 密钥不匹配时需要重新登录的回调
-        /// </summary>
-        public Func<Task<(string cookies, string clientKeyXml)>> OnKeyMismatchCallback { get; set; }
-
-        private bool isRetrying = false;
+        private readonly RaceCryptoClient cryptoClient;
 
         /// <summary>
         /// 初始化赛文API客户端
         /// </summary>
-        /// <param name="serverUrl">服务器地址</param>
-        /// <param name="clientKeyXml">客户端RSA密钥对（XML格式，可选）</param>
-        public RaceAPI(string serverUrl, string clientKeyXml = null)
+        /// <param name="apiClient">已带 JWT 认证的 ApiClient（从 WenlaiHelper 获取）</param>
+        /// <param name="clientKeyXml">客户端RSA密钥对（XML格式）</param>
+        public RaceAPI(ApiClient apiClient, string clientKeyXml = null)
         {
-            this.serverUrl = serverUrl.TrimEnd('/');
-            this.clientKeyXml = clientKeyXml;
-
-            // 使用 CookieAuthProvider 管理 Cookie
-            this.cookieAuth = new CookieAuthProvider(null, this.serverUrl);
-
-            // 创建 ApiClient（统一的 TLS/UA/超时 配置）
-            this.apiClient = new ApiClient(this.serverUrl, this.cookieAuth, this.cookieAuth.GetCookieContainer());
+            this.serverUrl = apiClient.BaseUrl;
+            this.apiClient = apiClient;
+            this.cryptoClient = new RaceCryptoClient(clientKeyXml);
         }
 
         /// <summary>
-        /// 获取内部 ApiClient（供外部使用）
-        /// </summary>
-        public ApiClient GetApiClient()
-        {
-            return apiClient;
-        }
-
-        /// <summary>
-        /// 获取客户端密钥对
+        /// 获取客户端密钥对 XML
         /// </summary>
         public string GetClientKeyXml()
         {
-            return cryptoClient?.GetClientKeyXml() ?? clientKeyXml ?? "";
+            return cryptoClient.GetClientKeyXml();
         }
 
         /// <summary>
-        /// 获取Cookie容器
+        /// 获取客户端公钥 PEM
         /// </summary>
-        public CookieContainer GetCookieContainer()
+        public string GetClientPublicKeyPem()
         {
-            return cookieAuth.GetCookieContainer();
+            return cryptoClient.GetClientPublicKeyPem();
         }
 
         /// <summary>
-        /// 从Cookie字符串加载Cookie
+        /// 获取客户端公钥 Base64
         /// </summary>
-        public void LoadCookiesFromString(string cookieString)
+        public string GetClientPublicKeyBase64()
         {
-            cookieAuth.LoadCookies(cookieString, serverUrl);
+            return cryptoClient.GetClientPublicKeyBase64();
         }
 
-        /// <summary>
-        /// 获取Cookie字符串
-        /// </summary>
-        public string GetCookiesAsString()
-        {
-            return cookieAuth.GetCookiesAsString(serverUrl);
-        }
+        // ==================== 公钥管理 ====================
 
         /// <summary>
-        /// 解密认证数据，当密钥不匹配时自动触发重新登录
+        /// 更新服务端存储的客户端公钥（POST /api/auth/updatePublicKey）
+        /// 适用于登录后补录、或密钥对更换场景
         /// </summary>
-        private async Task<JObject> DecryptAuthenticatedWithRetry(string encryptedData)
+        public async Task<RaceApiResult> UpdatePublicKeyAsync()
         {
             try
             {
-                return cryptoClient.DecryptAuthenticated(encryptedData);
-            }
-            catch (Exception ex)
-            {
-                if ((ex.Message.Contains("OAEP") || ex.Message.Contains("填充")) && !isRetrying)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[赛文] 检测到密钥不匹配，尝试自动重新登录: {ex.Message}");
-
-                    if (OnKeyMismatchCallback != null)
-                    {
-                        isRetrying = true;
-                        try
-                        {
-                            var (newCookies, newKeyXml) = await OnKeyMismatchCallback();
-
-                            if (!string.IsNullOrWhiteSpace(newKeyXml))
-                            {
-                                clientKeyXml = newKeyXml;
-                                string publicKey = await GetPublicKeyAsync();
-                                cryptoClient = new RaceCryptoClient(publicKey, clientKeyXml);
-                            }
-
-                            if (!string.IsNullOrWhiteSpace(newCookies))
-                            {
-                                LoadCookiesFromString(newCookies);
-                            }
-
-                            System.Diagnostics.Debug.WriteLine($"[赛文] 重新登录成功，重试解密");
-                            return cryptoClient.DecryptAuthenticated(encryptedData);
-                        }
-                        finally
-                        {
-                            isRetrying = false;
-                        }
-                    }
-                }
-
-                throw;
-            }
-        }
-
-        /// <summary>
-        /// 初始化加密客户端（获取服务器公钥）
-        /// </summary>
-        public async Task<bool> InitializeAsync()
-        {
-            try
-            {
-                System.Diagnostics.Debug.WriteLine($"[赛文] 开始初始化加密客户端，服务器地址: {serverUrl}");
-
-                string publicKey = await GetPublicKeyAsync();
-                if (string.IsNullOrEmpty(publicKey))
-                {
-                    System.Diagnostics.Debug.WriteLine($"[赛文] ✗ 获取服务器公钥失败：公钥为空");
-                    System.Windows.MessageBox.Show($"获取服务器公钥失败：公钥为空\n服务器地址: {serverUrl}", "赛文初始化失败", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-                    return false;
-                }
-
-                System.Diagnostics.Debug.WriteLine($"[赛文] ✓ 成功获取服务器公钥");
-
-                cryptoClient = new RaceCryptoClient(publicKey, clientKeyXml);
-                clientKeyXml = cryptoClient.GetClientKeyXml();
-
-                System.Diagnostics.Debug.WriteLine($"[赛文] ✓ 加密客户端初始化成功");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[赛文] ✗ 初始化赛文API失败: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"[赛文] 详细错误: {ex}");
-                System.Windows.MessageBox.Show($"初始化赛文API失败\n\n错误信息: {ex.Message}\n\n服务器地址: {serverUrl}\n\n完整错误:\n{ex}", "赛文初始化失败", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// 获取服务器RSA公钥
-        /// </summary>
-        private async Task<string> GetPublicKeyAsync()
-        {
-            try
-            {
-                System.Diagnostics.Debug.WriteLine($"[赛文] 正在请求公钥接口");
-
-                var response = await apiClient.GetAsync("/api/race/public_key");
-
-                System.Diagnostics.Debug.WriteLine($"[赛文] 公钥接口响应 code: {response.Code}");
+                string publicKeyBase64 = cryptoClient.GetClientPublicKeyBase64();
+                var body = new { publicKey = publicKeyBase64 };
+                var response = await apiClient.PostAsync("/api/auth/updatePublicKey", body);
 
                 if (!response.IsSuccess)
-                {
-                    throw new Exception($"获取公钥失败: {response.Msg}");
-                }
+                    return new RaceApiResult { Success = false, Message = $"更新公钥失败: {response.Msg}" };
 
-                // 新格式：data 中包含 publicKey
-                if (response.RawData != null)
-                {
-                    string key = response.RawData["publicKey"]?.ToString()
-                        ?? response.RawData.ToString();
-                    if (!string.IsNullOrWhiteSpace(key))
-                        return key;
-                }
-
-                // 旧格式：顶层有 public_key
-                if (response.RawJson != null)
-                {
-                    return response.RawJson["public_key"]?.ToString();
-                }
-
-                return null;
+                System.Diagnostics.Debug.WriteLine("[赛文] 公钥已更新到服务端");
+                return new RaceApiResult { Success = true, Message = "公钥已更新" };
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[赛文] ✗ 获取公钥时发生异常: {ex.GetType().Name}");
-                System.Diagnostics.Debug.WriteLine($"[赛文] 异常详情: {ex.Message}");
-                throw new Exception($"获取公钥失败: {ex.Message}", ex);
+                return new RaceApiResult { Success = false, Message = $"更新公钥失败: {ex.Message}" };
             }
         }
 
-        /// <summary>
-        /// 用户注册
-        /// </summary>
-        public async Task<RaceApiResult> RegisterAsync(string username, string password)
-        {
-            try
-            {
-                if (cryptoClient == null)
-                {
-                    bool initialized = await InitializeAsync();
-                    if (!initialized)
-                        return new RaceApiResult { Success = false, Message = "初始化加密客户端失败" };
-                }
-
-                string clientPublicKeyPem = cryptoClient.GetClientPublicKeyPem();
-
-                var registerData = new
-                {
-                    username = username,
-                    password = password,
-                    client_public_key = clientPublicKeyPem
-                };
-
-                string encryptedData = cryptoClient.Encrypt(registerData);
-
-                var response = await apiClient.PostAsync("/api/race/register", new { encrypted_data = encryptedData });
-
-                if (!response.IsSuccess && string.IsNullOrWhiteSpace(response.EncryptedData))
-                {
-                    return new RaceApiResult
-                    {
-                        Success = false,
-                        Message = $"注册失败: {response.Msg}"
-                    };
-                }
-
-                // 处理加密响应
-                JObject responseData;
-                if (!string.IsNullOrWhiteSpace(response.EncryptedData))
-                {
-                    responseData = await DecryptAuthenticatedWithRetry(response.EncryptedData);
-                }
-                else if (response.RawJson != null)
-                {
-                    responseData = response.RawJson;
-                }
-                else
-                {
-                    return new RaceApiResult { Success = false, Message = "注册失败: 服务器返回内容无法解析" };
-                }
-
-                bool serverSuccess = responseData["success"]?.ToObject<bool>() ?? true;
-                string serverMessage = responseData["msg"]?.ToString() ?? "";
-
-                return new RaceApiResult
-                {
-                    Success = serverSuccess,
-                    Message = string.IsNullOrEmpty(serverMessage) ? (serverSuccess ? "注册成功" : "注册失败") : serverMessage,
-                    Data = responseData
-                };
-            }
-            catch (Exception ex)
-            {
-                return new RaceApiResult { Success = false, Message = $"注册失败: {ex.Message}" };
-            }
-        }
-
-        /// <summary>
-        /// 用户登录
-        /// </summary>
-        public async Task<RaceApiResult> LoginAsync(string username, string password)
-        {
-            try
-            {
-                if (cryptoClient == null)
-                {
-                    bool initialized = await InitializeAsync();
-                    if (!initialized)
-                        return new RaceApiResult { Success = false, Message = "初始化加密客户端失败" };
-                }
-
-                var loginData = new
-                {
-                    username = username,
-                    password = password,
-                    client_public_key = cryptoClient.GetClientPublicKeyPem()
-                };
-
-                string encryptedData = cryptoClient.Encrypt(loginData);
-
-                var response = await apiClient.PostAsync("/api/race/login", new { encrypted_data = encryptedData });
-
-                if (!response.IsSuccess && string.IsNullOrWhiteSpace(response.EncryptedData))
-                {
-                    return new RaceApiResult
-                    {
-                        Success = false,
-                        Message = $"登录失败: {response.Msg}"
-                    };
-                }
-
-                // 处理加密响应
-                JObject responseData;
-                if (!string.IsNullOrWhiteSpace(response.EncryptedData))
-                {
-                    responseData = await DecryptAuthenticatedWithRetry(response.EncryptedData);
-                }
-                else if (response.RawJson != null)
-                {
-                    responseData = response.RawJson;
-                }
-                else
-                {
-                    return new RaceApiResult { Success = false, Message = "登录失败: 服务器返回内容无法解析" };
-                }
-
-                bool serverSuccess = responseData["success"]?.ToObject<bool>() ?? true;
-                string serverMessage = responseData["msg"]?.ToString() ?? "";
-
-                return new RaceApiResult
-                {
-                    Success = serverSuccess,
-                    Message = string.IsNullOrEmpty(serverMessage) ? (serverSuccess ? "登录成功" : "登录失败") : serverMessage,
-                    Data = responseData
-                };
-            }
-            catch (Exception ex)
-            {
-                return new RaceApiResult { Success = false, Message = $"登录失败: {ex.Message}" };
-            }
-        }
+        // ==================== 赛文列表 ====================
 
         /// <summary>
         /// 获取赛文列表
@@ -351,117 +88,34 @@ namespace TypeSunny.Net
         {
             try
             {
-                if (cryptoClient == null)
-                {
-                    bool initialized = await InitializeAsync();
-                    if (!initialized)
-                        return new RaceApiResult { Success = false, Message = "初始化加密客户端失败" };
-                }
-
-                // 新 API 路径：/api/race/configs
                 var response = await apiClient.GetAsync("/api/race/configs");
-
-                // 如果新路径返回 404，回退到旧路径
                 if (response.Code == 404)
-                {
                     response = await apiClient.GetAsync("/api/race/list");
-                }
 
                 if (!response.IsSuccess)
-                {
-                    return new RaceApiResult
-                    {
-                        Success = false,
-                        Message = $"获取赛文列表失败: {response.Msg}"
-                    };
-                }
+                    return new RaceApiResult { Success = false, Message = $"获取赛文列表失败: {response.Msg}" };
 
-                // 构造兼容的返回格式
                 JObject resultData = response.RawJson ?? new JObject();
                 if (response.RawData != null && resultData["data"] == null)
-                {
                     resultData["data"] = response.RawData;
-                }
 
-                return new RaceApiResult
-                {
-                    Success = true,
-                    Message = "获取赛文列表成功",
-                    Data = resultData
-                };
+                return new RaceApiResult { Success = true, Message = "获取赛文列表成功", Data = resultData };
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"获取赛文列表异常: {ex.Message}");
                 return new RaceApiResult { Success = false, Message = $"获取赛文列表失败: {ex.Message}" };
             }
         }
 
+        // ==================== 载文（init） ====================
+
         /// <summary>
-        /// 获取赛文信息
+        /// 获取每日赛文（新版：解密加密 envelope，返回文章 + serverPublicKey + keyId + sessionNonce）
         /// </summary>
-        public async Task<RaceApiResult> GetRaceInfoAsync(int raceId)
+        public async Task<RaceInitResult> GetDailyArticleAsync(int raceId)
         {
             try
             {
-                if (cryptoClient == null)
-                {
-                    bool initialized = await InitializeAsync();
-                    if (!initialized)
-                        return new RaceApiResult { Success = false, Message = "初始化加密客户端失败" };
-                }
-
-                var queryParams = new Dictionary<string, string>
-                {
-                    ["raceId"] = raceId.ToString()
-                };
-
-                var response = await apiClient.GetAsync("/api/race/info", queryParams);
-
-                // 旧格式回退
-                if (response.Code == 404)
-                {
-                    var oldParams = new Dictionary<string, string> { ["race_id"] = raceId.ToString() };
-                    response = await apiClient.GetAsync("/api/race/info", oldParams);
-                }
-
-                if (!response.IsSuccess)
-                {
-                    return new RaceApiResult
-                    {
-                        Success = false,
-                        Message = $"获取赛文信息失败: {response.Msg}"
-                    };
-                }
-
-                return new RaceApiResult
-                {
-                    Success = true,
-                    Message = "获取赛文信息成功",
-                    Data = response.RawJson ?? new JObject()
-                };
-            }
-            catch (Exception ex)
-            {
-                return new RaceApiResult { Success = false, Message = $"获取赛文信息失败: {ex.Message}" };
-            }
-        }
-
-        /// <summary>
-        /// 获取每日赛文
-        /// </summary>
-        public async Task<RaceApiResult> GetDailyArticleAsync(int raceId, int userId)
-        {
-            try
-            {
-                if (cryptoClient == null)
-                {
-                    bool initialized = await InitializeAsync();
-                    if (!initialized)
-                        return new RaceApiResult { Success = false, Message = "初始化加密客户端失败" };
-                }
-
-                // 新 API：/api/race/init?raceId=
                 var queryParams = new Dictionary<string, string>
                 {
                     ["raceId"] = raceId.ToString()
@@ -469,166 +123,105 @@ namespace TypeSunny.Net
 
                 var response = await apiClient.GetAsync("/api/race/init", queryParams);
 
-                // 旧路径回退
-                if (response.Code == 404)
-                {
-                    var oldParams = new Dictionary<string, string>
-                    {
-                        ["race_id"] = raceId.ToString(),
-                        ["user_id"] = userId.ToString()
-                    };
-                    response = await apiClient.GetAsync("/api/race/daily_article", oldParams);
-                }
+                if (!response.IsSuccess)
+                    return new RaceInitResult { Success = false, Message = $"获取赛文失败: {response.Msg}" };
 
-                if (!response.IsSuccess && string.IsNullOrWhiteSpace(response.EncryptedData))
-                {
-                    return new RaceApiResult
-                    {
-                        Success = false,
-                        Message = $"获取赛文失败: {response.Msg}"
-                    };
-                }
+                // 检查 data 是否是加密 envelope
+                JObject data = response.RawData as JObject;
+                if (data == null)
+                    return new RaceInitResult { Success = false, Message = "获取赛文失败: 服务器返回数据为空" };
 
-                // 处理加密响应
-                JObject responseData;
-                if (!string.IsNullOrWhiteSpace(response.EncryptedData))
+                JObject decrypted;
+                if (data["encryptedKey"] != null && data["iv"] != null && data["encryptedData"] != null)
                 {
-                    responseData = await DecryptAuthenticatedWithRetry(response.EncryptedData);
-                }
-                else if (response.RawJson != null)
-                {
-                    responseData = response.RawJson;
-                    // 如果 data 在 RawData 中，合并到 responseData
-                    if (response.RawData != null && responseData["article"] == null && response.RawData["article"] != null)
-                    {
-                        responseData = response.RawData as JObject ?? responseData;
-                    }
+                    // 新格式：加密 envelope，需要解密
+                    decrypted = cryptoClient.DecryptInitResponse(data);
                 }
                 else
                 {
-                    return new RaceApiResult { Success = false, Message = "获取赛文失败: 服务器返回内容无法解析" };
+                    // 未加密（兼容）
+                    decrypted = data;
                 }
 
-                bool serverSuccess = responseData["success"]?.ToObject<bool>() ?? true;
-                string serverMessage = responseData["msg"]?.ToString() ?? "";
+                // 提取关键字段
+                string serverPublicKey = decrypted["serverPublicKey"]?.ToString() ?? "";
+                string keyId = decrypted["keyId"]?.ToString() ?? "";
+                string sessionNonce = decrypted["sessionNonce"]?.ToString() ?? "";
 
-                if (!serverSuccess)
-                {
-                    return new RaceApiResult
-                    {
-                        Success = false,
-                        Message = string.IsNullOrEmpty(serverMessage) ? "获取赛文失败" : serverMessage,
-                        Data = responseData
-                    };
-                }
-
-                return new RaceApiResult
+                return new RaceInitResult
                 {
                     Success = true,
-                    Message = string.IsNullOrEmpty(serverMessage) ? "获取赛文成功" : serverMessage,
-                    Data = responseData
+                    Message = "获取赛文成功",
+                    Data = decrypted,
+                    ServerPublicKey = serverPublicKey,
+                    KeyId = keyId,
+                    SessionNonce = sessionNonce
                 };
             }
             catch (Exception ex)
             {
-                return new RaceApiResult { Success = false, Message = $"获取赛文失败: {ex.Message}" };
+                return new RaceInitResult { Success = false, Message = $"获取赛文失败: {ex.Message}" };
             }
         }
 
+        // ==================== 提交成绩 ====================
+
         /// <summary>
-        /// 提交成绩
+        /// 提交成绩（新版：RSA-OAEP-SHA256 加密 + RSA-SHA256 签名）
         /// </summary>
-        public async Task<RaceApiResult> SubmitScoreAsync(RaceScoreData scoreData)
+        public async Task<RaceApiResult> SubmitScoreAsync(RaceSubmitData submitData, string serverPublicKey, string keyId)
         {
             try
             {
-                if (cryptoClient == null)
+                // 1. 构造要加密和签名的 payload JSON
+                var payloadObj = new JObject
                 {
-                    bool initialized = await InitializeAsync();
-                    if (!initialized)
-                        return new RaceApiResult { Success = false, Message = "初始化加密客户端失败" };
-                }
-
-                // 生成签名
-                var signData = new JObject();
-                signData["race_id"] = scoreData.RaceId;
-                signData["user_id"] = scoreData.UserId;
-                signData["username"] = scoreData.Username;
-                signData["article_id"] = scoreData.ArticleId;
-                signData["date"] = scoreData.Date;
-                signData["speed"] = Math.Round(scoreData.Speed, 5);
-                signData["time_cost"] = scoreData.TimeCost;
-                signData["char_count"] = scoreData.CharCount;
-                signData["keystroke"] = Math.Round(scoreData.Keystroke, 5);
-                signData["code_length"] = Math.Round(scoreData.CodeLength, 5);
-                signData["backspace_count"] = scoreData.BackspaceCount;
-                signData["key_count"] = scoreData.KeyCount;
-                signData["key_accuracy"] = Math.Round(scoreData.KeyAccuracy, 5);
-                signData["word_rate"] = Math.Round(scoreData.WordRate, 5);
-                signData["input_method"] = scoreData.InputMethod;
-
-                string signature = RaceCryptoClient.GenerateSignature(signData);
-
-                var submitData = new
-                {
-                    race_id = scoreData.RaceId,
-                    user_id = scoreData.UserId,
-                    username = scoreData.Username,
-                    article_id = scoreData.ArticleId,
-                    date = scoreData.Date,
-                    speed = Math.Round(scoreData.Speed, 5),
-                    time_cost = scoreData.TimeCost,
-                    char_count = scoreData.CharCount,
-                    signature = signature,
-                    keystroke = Math.Round(scoreData.Keystroke, 5),
-                    code_length = Math.Round(scoreData.CodeLength, 5),
-                    backspace_count = scoreData.BackspaceCount,
-                    key_count = scoreData.KeyCount,
-                    key_accuracy = Math.Round(scoreData.KeyAccuracy, 5),
-                    word_rate = Math.Round(scoreData.WordRate, 5),
-                    input_method = scoreData.InputMethod
+                    ["raceId"] = submitData.RaceId,
+                    ["articleId"] = submitData.ArticleId,
+                    ["speed"] = Math.Round(submitData.Speed, 5),
+                    ["timeCost"] = submitData.TimeCost,
+                    ["charCount"] = submitData.CharCount,
+                    ["keystroke"] = Math.Round(submitData.Keystroke, 5),
+                    ["codeLength"] = Math.Round(submitData.CodeLength, 5),
+                    ["backspaceCount"] = submitData.BackspaceCount,
+                    ["keyCount"] = submitData.KeyCount,
+                    ["keyAccuracy"] = Math.Round(submitData.KeyAccuracy, 5),
+                    ["wordRate"] = Math.Round(submitData.WordRate, 5),
+                    ["inputMethod"] = submitData.InputMethod,
+                    ["sessionNonce"] = submitData.SessionNonce,
+                    ["clientTs"] = submitData.ClientTs
                 };
 
-                System.Diagnostics.Debug.WriteLine("=== 提交成绩数据 ===");
-                System.Diagnostics.Debug.WriteLine($"race_id: {submitData.race_id}, user_id: {submitData.user_id}, username: {submitData.username}");
-                System.Diagnostics.Debug.WriteLine("===================");
+                string payloadJson = payloadObj.ToString(Formatting.None);
 
-                string encryptedData = cryptoClient.Encrypt(submitData);
+                // 2. 用服务器公钥加密
+                JObject encryptedEnvelope = cryptoClient.EncryptForServer(payloadJson, serverPublicKey);
 
-                var response = await apiClient.PostAsync("/api/race/submit", new { encrypted_data = encryptedData });
+                // 3. 用客户端私钥签名
+                string signature = cryptoClient.SignPayload(payloadJson);
 
-                if (!response.IsSuccess && string.IsNullOrWhiteSpace(response.EncryptedData))
+                // 4. 构造提交请求
+                var submitRequest = new
                 {
-                    return new RaceApiResult
-                    {
-                        Success = false,
-                        Message = $"提交成绩失败: {response.Msg}"
-                    };
-                }
+                    raceId = submitData.RaceId,
+                    encryptedData = encryptedEnvelope.ToString(Formatting.None),
+                    signature = signature,
+                    clientTs = submitData.ClientTs,
+                    keyId = keyId
+                };
 
-                // 处理加密响应
-                JObject responseData;
-                if (!string.IsNullOrWhiteSpace(response.EncryptedData))
-                {
-                    responseData = await DecryptAuthenticatedWithRetry(response.EncryptedData);
-                }
-                else if (response.RawJson != null)
-                {
-                    responseData = response.RawJson;
-                }
-                else
-                {
-                    return new RaceApiResult { Success = false, Message = "提交成绩失败: 服务器返回内容无法解析" };
-                }
+                System.Diagnostics.Debug.WriteLine($"[赛文] 提交成绩: raceId={submitData.RaceId}, keyId={keyId}");
 
-                bool serverSuccess = responseData["success"]?.ToObject<bool>() ?? true;
-                string serverMessage = responseData["msg"]?.ToString() ?? "";
+                var response = await apiClient.PostAsync("/api/race/submit", submitRequest);
+
+                if (!response.IsSuccess)
+                    return new RaceApiResult { Success = false, Message = $"提交成绩失败: {response.Msg}" };
 
                 return new RaceApiResult
                 {
-                    Success = serverSuccess,
-                    Message = string.IsNullOrEmpty(serverMessage) ? (serverSuccess ? "提交成绩成功" : "提交成绩失败") : serverMessage,
-                    Data = responseData
+                    Success = true,
+                    Message = response.RawData?["msg"]?.ToString() ?? "提交成绩成功",
+                    Data = response.RawJson ?? new JObject()
                 };
             }
             catch (Exception ex)
@@ -637,58 +230,23 @@ namespace TypeSunny.Net
             }
         }
 
-        /// <summary>
-        /// 获取历史数据
-        /// </summary>
-        public async Task<RaceApiResult> GetHistoryAsync(int raceId, string username, int limit = 30)
+        // ==================== 历史 / 排行榜 ====================
+
+        public async Task<RaceApiResult> GetHistoryAsync(int raceId, int limit = 30)
         {
             try
             {
-                if (cryptoClient == null)
-                {
-                    bool initialized = await InitializeAsync();
-                    if (!initialized)
-                        return new RaceApiResult { Success = false, Message = "初始化加密客户端失败" };
-                }
-
                 var queryParams = new Dictionary<string, string>
                 {
                     ["raceId"] = raceId.ToString(),
                     ["limit"] = limit.ToString()
                 };
-                // 新 API 用 JWT 自动识别用户，但仍传 username 以兼容旧 API
-                if (!string.IsNullOrWhiteSpace(username))
-                    queryParams["username"] = username;
 
                 var response = await apiClient.GetAsync("/api/race/history", queryParams);
-
-                // 旧格式回退
-                if (response.Code == 404)
-                {
-                    var oldParams = new Dictionary<string, string>
-                    {
-                        ["race_id"] = raceId.ToString(),
-                        ["username"] = username,
-                        ["limit"] = limit.ToString()
-                    };
-                    response = await apiClient.GetAsync("/api/race/history", oldParams);
-                }
-
                 if (!response.IsSuccess)
-                {
-                    return new RaceApiResult
-                    {
-                        Success = false,
-                        Message = $"获取历史数据失败: {response.Msg}"
-                    };
-                }
+                    return new RaceApiResult { Success = false, Message = $"获取历史数据失败: {response.Msg}" };
 
-                return new RaceApiResult
-                {
-                    Success = true,
-                    Message = "获取历史数据成功",
-                    Data = response.RawJson ?? new JObject()
-                };
+                return new RaceApiResult { Success = true, Message = "获取历史数据成功", Data = response.RawJson ?? new JObject() };
             }
             catch (Exception ex)
             {
@@ -696,20 +254,10 @@ namespace TypeSunny.Net
             }
         }
 
-        /// <summary>
-        /// 获取排行榜
-        /// </summary>
         public async Task<RaceApiResult> GetLeaderboardAsync(int raceId, string date = null, int limit = 100)
         {
             try
             {
-                if (cryptoClient == null)
-                {
-                    bool initialized = await InitializeAsync();
-                    if (!initialized)
-                        return new RaceApiResult { Success = false, Message = "初始化加密客户端失败" };
-                }
-
                 var queryParams = new Dictionary<string, string>
                 {
                     ["raceId"] = raceId.ToString(),
@@ -719,36 +267,10 @@ namespace TypeSunny.Net
                     queryParams["dateStr"] = date;
 
                 var response = await apiClient.GetAsync("/api/race/leaderboard", queryParams);
-
-                // 旧格式回退
-                if (response.Code == 404)
-                {
-                    var oldParams = new Dictionary<string, string>
-                    {
-                        ["race_id"] = raceId.ToString(),
-                        ["limit"] = limit.ToString()
-                    };
-                    if (!string.IsNullOrEmpty(date))
-                        oldParams["date_str"] = date;
-
-                    response = await apiClient.GetAsync("/api/race/leaderboard", oldParams);
-                }
-
                 if (!response.IsSuccess)
-                {
-                    return new RaceApiResult
-                    {
-                        Success = false,
-                        Message = $"获取排行榜失败: {response.Msg}"
-                    };
-                }
+                    return new RaceApiResult { Success = false, Message = $"获取排行榜失败: {response.Msg}" };
 
-                return new RaceApiResult
-                {
-                    Success = true,
-                    Message = "获取排行榜成功",
-                    Data = response.RawJson ?? new JObject()
-                };
+                return new RaceApiResult { Success = true, Message = "获取排行榜成功", Data = response.RawJson ?? new JObject() };
             }
             catch (Exception ex)
             {
@@ -757,9 +279,8 @@ namespace TypeSunny.Net
         }
     }
 
-    /// <summary>
-    /// API调用结果
-    /// </summary>
+    // ==================== 数据类 ====================
+
     public class RaceApiResult
     {
         public bool Success { get; set; }
@@ -768,7 +289,38 @@ namespace TypeSunny.Net
     }
 
     /// <summary>
-    /// 赛文成绩数据
+    /// 赛文 init 结果（包含解密后的数据 + 服务器公钥等元信息）
+    /// </summary>
+    public class RaceInitResult : RaceApiResult
+    {
+        public string ServerPublicKey { get; set; }
+        public string KeyId { get; set; }
+        public string SessionNonce { get; set; }
+    }
+
+    /// <summary>
+    /// 赛文提交数据（新版）
+    /// </summary>
+    public class RaceSubmitData
+    {
+        public int RaceId { get; set; }
+        public int ArticleId { get; set; }
+        public double Speed { get; set; }
+        public int TimeCost { get; set; }
+        public int CharCount { get; set; }
+        public double Keystroke { get; set; }
+        public double CodeLength { get; set; }
+        public int BackspaceCount { get; set; }
+        public int KeyCount { get; set; }
+        public double KeyAccuracy { get; set; }
+        public double WordRate { get; set; }
+        public string InputMethod { get; set; }
+        public string SessionNonce { get; set; }
+        public long ClientTs { get; set; }
+    }
+
+    /// <summary>
+    /// 旧版赛文成绩数据（保留兼容）
     /// </summary>
     public class RaceScoreData
     {

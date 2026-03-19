@@ -163,15 +163,6 @@ namespace TypeSunny.Net.Http
             return await SendAsync(request);
         }
 
-        /// <summary>
-        /// 发送原始 HttpRequestMessage（用于需要自定义请求的场景）
-        /// </summary>
-        public async Task<HttpResponseMessage> SendRawAsync(HttpRequestMessage request)
-        {
-            authProvider?.ApplyAuth(request);
-            return await httpClient.SendAsync(request);
-        }
-
         // =============== 内部方法 ===============
 
         /// <summary>

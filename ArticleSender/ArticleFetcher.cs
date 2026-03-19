@@ -18,13 +18,24 @@ namespace TypeSunny.ArticleSender
     }
 
     /// <summary>
+    /// 分类信息类
+    /// </summary>
+    public class CategoryInfo
+    {
+        public string Code { get; set; }
+        public string Name { get; set; }
+    }
+
+    /// <summary>
     /// 文章获取器，通过 ApiClient 获取文章
     /// </summary>
     public class ArticleFetcher
     {
         private static ApiClient apiClient;
         private static List<DifficultyInfo> cachedDifficulties = null;
+        private static List<CategoryInfo> cachedCategories = null;
         private static DateTime cacheTime = DateTime.MinValue;
+        private static DateTime categoryCacheTime = DateTime.MinValue;
         private static readonly TimeSpan CACHE_EXPIRATION = TimeSpan.FromMinutes(5);
 
         // ========== 安全取值工具方法 ==========
@@ -69,7 +80,21 @@ namespace TypeSunny.ArticleSender
         private static ApiClient EnsureClient()
         {
             if (apiClient != null)
+            {
+                // 如果已有 client 但没有认证，尝试补上 JWT
+                if (apiClient.AuthProvider == null || string.IsNullOrWhiteSpace((apiClient.AuthProvider as JwtAuthProvider)?.AccessToken))
+                {
+                    var acctMgr = new TypeSunny.Net.AccountSystemManager();
+                    var acct = acctMgr.GetAccount("文来");
+                    if (acct != null && !string.IsNullOrWhiteSpace(acct.JwtToken))
+                    {
+                        var jwtAuth = new JwtAuthProvider(acct.JwtToken);
+                        apiClient = new ApiClient(apiClient.BaseUrl, jwtAuth);
+                        System.Diagnostics.Debug.WriteLine("[ArticleFetcher] 已补充 JWT 认证");
+                    }
+                }
                 return apiClient;
+            }
 
             string apiUrl = Config.GetString("文来接口地址");
             if (string.IsNullOrWhiteSpace(apiUrl))
@@ -79,7 +104,18 @@ namespace TypeSunny.ArticleSender
             if (apiUrl.EndsWith("/api/get_text"))
                 apiUrl = apiUrl.Substring(0, apiUrl.Length - "/api/get_text".Length);
 
-            apiClient = new ApiClient(apiUrl);
+            // 从账号管理器获取 JWT token，确保请求带认证
+            var accountManager = new TypeSunny.Net.AccountSystemManager();
+            var account = accountManager.GetAccount("文来");
+            if (account != null && !string.IsNullOrWhiteSpace(account.JwtToken))
+            {
+                var jwtAuth = new JwtAuthProvider(account.JwtToken);
+                apiClient = new ApiClient(apiUrl, jwtAuth);
+            }
+            else
+            {
+                apiClient = new ApiClient(apiUrl);
+            }
             System.Diagnostics.Debug.WriteLine($"[ArticleFetcher] 自动创建 ApiClient，baseUrl: {apiUrl}");
             return apiClient;
         }
@@ -185,6 +221,71 @@ namespace TypeSunny.ArticleSender
         {
             cachedDifficulties = null;
             cacheTime = DateTime.MinValue;
+        }
+
+        /// <summary>
+        /// 获取分类列表（只返回缓存）
+        /// </summary>
+        public static List<CategoryInfo> GetCategories()
+        {
+            if (cachedCategories != null && DateTime.Now - categoryCacheTime > CACHE_EXPIRATION)
+            {
+                cachedCategories = null;
+                categoryCacheTime = DateTime.MinValue;
+            }
+            return cachedCategories ?? new List<CategoryInfo>();
+        }
+
+        /// <summary>
+        /// 异步获取分类列表
+        /// </summary>
+        public static async Task<List<CategoryInfo>> GetCategoriesAsync()
+        {
+            if (cachedCategories != null)
+                return cachedCategories;
+
+            try
+            {
+                var client = EnsureClient();
+                if (client == null)
+                    return new List<CategoryInfo>();
+
+                var response = await client.GetAsync("/api/categories");
+                if (!response.IsSuccess || response.RawData == null)
+                    return new List<CategoryInfo>();
+
+                var categories = new List<CategoryInfo>();
+                if (response.RawData.Type == JTokenType.Array)
+                {
+                    foreach (var item in response.RawData)
+                    {
+                        bool isActive = item["isActive"]?.ToObject<bool>() ?? true;
+                        if (!isActive) continue;
+                        categories.Add(new CategoryInfo
+                        {
+                            Code = item["code"]?.ToString() ?? "",
+                            Name = item["name"]?.ToString() ?? ""
+                        });
+                    }
+                }
+
+                cachedCategories = categories;
+                categoryCacheTime = DateTime.Now;
+                return categories;
+            }
+            catch (Exception)
+            {
+                return new List<CategoryInfo>();
+            }
+        }
+
+        /// <summary>
+        /// 清除分类缓存
+        /// </summary>
+        public static void ClearCategoryCache()
+        {
+            cachedCategories = null;
+            categoryCacheTime = DateTime.MinValue;
         }
 
         // ========== 兼容性方法（过渡期保留） ==========
@@ -295,6 +396,7 @@ namespace TypeSunny.ArticleSender
             // 新字段
             int endSortNum = SafeInt(dataObj["endSortNum"]);
             string endChars = SafeString(dataObj["endChars"]);
+            string startChars = SafeString(dataObj["startChars"]);
             string category = SafeString(dataObj["category"]);
 
             // 应用字符过滤规则
@@ -314,6 +416,7 @@ namespace TypeSunny.ArticleSender
                 DifficultyId = difficultyId,
                 EndSortNum = endSortNum,
                 EndChars = endChars,
+                StartChars = startChars,
                 Category = category,
                 DifficultyLevel = difficultyLevel,
                 DifficultyLabel = difficultyLabel,
@@ -357,6 +460,11 @@ namespace TypeSunny.ArticleSender
                     bool strictLength = (lengthMode == "精确字数");
                     queryParams["strictLength"] = strictLength.ToString().ToLower();
                 }
+
+                // 分类
+                string configCategory = Config.GetString("文来分类");
+                if (!string.IsNullOrWhiteSpace(configCategory))
+                    queryParams["category"] = configCategory;
 
                 System.Diagnostics.Debug.WriteLine($"[文来] 正在请求随机文章，参数: {string.Join(", ", queryParams)}");
 
@@ -411,9 +519,10 @@ namespace TypeSunny.ArticleSender
         /// <param name="pageType">页面类型：1=下一段(next)，0=上一段(prev)</param>
         /// <param name="category">分类代码（必需）</param>
         /// <param name="endSortNum">上一段结果的最后段序号</param>
-        /// <param name="endChars">上一段结果的尾部字符</param>
+        /// <param name="endChars">上一段结果的尾部字符（后翻时使用）</param>
+        /// <param name="startChars">上一段结果的开头字符（前翻时使用）</param>
         public static async Task<ArticleData> FetchSegmentAsync(int bookId, int sortNum, int pageType,
-            string category, int endSortNum = 0, string endChars = null)
+            string category, int endSortNum = 0, string endChars = null, string startChars = null)
         {
             try
             {
@@ -442,6 +551,8 @@ namespace TypeSunny.ArticleSender
                     queryParams["endSortNum"] = endSortNum.ToString();
                 if (!string.IsNullOrWhiteSpace(endChars))
                     queryParams["endChars"] = endChars;
+                if (!string.IsNullOrWhiteSpace(startChars))
+                    queryParams["startChars"] = startChars;
 
                 // 读取字数和模式配置
                 int configLength = Config.GetInt("文来字数");
@@ -489,9 +600,9 @@ namespace TypeSunny.ArticleSender
         /// 获取下一段/上一段（同步版本）
         /// </summary>
         public static ArticleData FetchSegment(int bookId, int sortNum, int pageType,
-            string category, int endSortNum = 0, string endChars = null)
+            string category, int endSortNum = 0, string endChars = null, string startChars = null)
         {
-            return FetchSegmentAsync(bookId, sortNum, pageType, category, endSortNum, endChars).GetAwaiter().GetResult();
+            return FetchSegmentAsync(bookId, sortNum, pageType, category, endSortNum, endChars, startChars).GetAwaiter().GetResult();
         }
 
         /// <summary>
@@ -509,49 +620,24 @@ namespace TypeSunny.ArticleSender
         /// <returns>格式化的难度文本，如 "普(1.23)"，失败返回空字符串</returns>
         public static async Task<string> CalcDifficultyFromApiAsync(string content)
         {
+            if (string.IsNullOrWhiteSpace(content))
+                return "";
+
             try
             {
                 var client = EnsureClient();
                 if (client == null)
                     return "";
 
-                // 新 API 路径：/api/texts/calcDifficulty
-                // 使用短超时的独立请求
-                var payload = new { content = content };
+                var response = await client.PostAsync("/api/texts/calcDifficulty", new { text = content });
 
-                using (var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(2)))
+                if (response.IsSuccess && response.RawData != null)
                 {
-                    // 直接通过 SendRawAsync 发送带超时的请求
-                    string url = client.BaseUrl + "/api/texts/calcDifficulty";
-                    var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url);
-                    string json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-                    request.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-                    client.AuthProvider?.ApplyAuth(request);
-
-                    // 注意：SendRawAsync 不支持 CancellationToken，但短超时场景下可接受
-                    var httpResponse = await client.SendRawAsync(request);
-                    string responseBody = await httpResponse.Content.ReadAsStringAsync();
-
-                    var result = JObject.Parse(responseBody);
-
-                    // 新格式：{ code: 200, data: { difficultyLevel, difficultyLabel, difficultyScore } }
-                    if (result["code"]?.ToObject<int>() == 200)
-                    {
-                        var data = result["data"];
-                        double score = data["difficultyScore"]?.ToObject<double>() ?? 0;
-                        string label = data["difficultyLabel"]?.ToString() ?? "";
+                    var data = response.RawData;
+                    double score = data["difficultyScore"]?.ToObject<double>() ?? 0;
+                    string label = data["difficultyLabel"]?.ToString() ?? "";
+                    if (!string.IsNullOrEmpty(label))
                         return $"{label}({score:F2})";
-                    }
-
-                    // 旧格式：{ success: true, data: { score, level } }
-                    if (result["success"]?.ToObject<bool>() == true)
-                    {
-                        var data = result["data"];
-                        double score = data["score"]?.ToObject<double>() ?? 0;
-                        string level = data["level"]?.ToString() ?? "";
-                        return $"{level}({score:F2})";
-                    }
                 }
             }
             catch (Exception ex)
@@ -579,6 +665,7 @@ namespace TypeSunny.ArticleSender
         // 新字段
         public int EndSortNum { get; set; }
         public string EndChars { get; set; }
+        public string StartChars { get; set; }
         public string Category { get; set; }
         public int DifficultyLevel { get; set; }
         public string DifficultyLabel { get; set; }
