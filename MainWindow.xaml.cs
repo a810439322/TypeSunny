@@ -4274,12 +4274,9 @@ public async Task SendArticle()
 
             StateManager.TextInput = false;
 
-            // 文来模式：强制清空Blocks，确保重新渲染（修复显示不更新的bug）
-            if (source == TxtSource.articlesender)
-            {
-                Dispatcher.Invoke(() => TbDispay.Children.Clear());
-                TextInfo.Blocks.Clear();
-            }
+            // 强制清空Blocks，确保重新渲染（修复本地发文翻页时显示不更新、索引越界的bug）
+            Dispatcher.Invoke(() => TbDispay.Children.Clear());
+            TextInfo.Blocks.Clear();
 
 
 
