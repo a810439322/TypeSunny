@@ -327,8 +327,8 @@ namespace TypeSunny
                 //计算页码
                 // int nextToType = TextInfo.wordStates.IndexOf(WordStates.NO_TYPE);
                 int nextToType = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
-                if (nextToType >= TextInfo.Words.Count)
-                    nextToType = TextInfo.Words.Count - 1;
+                if (nextToType > TextInfo.Words.Count)
+                    nextToType = TextInfo.Words.Count;
 
                 // 更新进度条（所有模式）
                 int totalWords = TextInfo.Words.Count;
@@ -350,6 +350,10 @@ namespace TypeSunny
                     SnakeModeUpdate(nextToType);
                     return;
                 }
+
+                // 非贪吃蛇模式下，打完最后一个字时不需要翻页和滚动，只需更新背景色
+                if (nextToType >= TextInfo.Words.Count)
+                    nextToType = TextInfo.Words.Count - 1;
 
                 /*
                 if (nextToType == -1)
@@ -2339,21 +2343,39 @@ namespace TypeSunny
                 int totalHits = todayRecords.Sum(r => r.TotalHit);
                 double totalTime = todayRecords.Sum(r => r.TotalSeconds);
 
-                // 根据屏蔽配置显示
+                // 根据配置顺序显示
                 var dayStats = new List<string>();
 
-                if (Config.GetBool("显示_字数"))
-                    dayStats.Add($"今日{totalWords}字");
-                if (Config.GetBool("显示_速度"))
-                    dayStats.Add($"均速{avgSpeed:F1}");
-                if (Config.GetBool("显示_击键"))
-                    dayStats.Add($"均击{avgHitRate:F1}");
-                if (Config.GetBool("显示_键准"))
-                    dayStats.Add($"均键准{avgAccuracy:P1}");
-                if (Config.GetBool("显示_总键数"))
-                    dayStats.Add($"总键{totalHits}");
-                if (Config.GetBool("显示_用时"))
-                    dayStats.Add($"用时{Score.FormatTime(totalTime)}");
+                foreach (string item in Core.Score.GetScoreOrder())
+                {
+                    switch (item)
+                    {
+                        case "字数":
+                            if (Config.GetBool("显示_字数"))
+                                dayStats.Add($"今日{totalWords}字");
+                            break;
+                        case "速度":
+                            if (Config.GetBool("显示_速度"))
+                                dayStats.Add($"均速{avgSpeed:F1}");
+                            break;
+                        case "击键":
+                            if (Config.GetBool("显示_击键"))
+                                dayStats.Add($"均击{avgHitRate:F1}");
+                            break;
+                        case "键准":
+                            if (Config.GetBool("显示_键准"))
+                                dayStats.Add($"均键准{avgAccuracy:P1}");
+                            break;
+                        case "总键数":
+                            if (Config.GetBool("显示_总键数"))
+                                dayStats.Add($"总键{totalHits}");
+                            break;
+                        case "用时":
+                            if (Config.GetBool("显示_用时"))
+                                dayStats.Add($"用时{Score.FormatTime(totalTime)}");
+                            break;
+                    }
+                }
                 dayStats.Add($"打文{todayRecords.Count}篇");
 
                 sb.Append(string.Join("  ", dayStats));
@@ -2565,7 +2587,7 @@ namespace TypeSunny
                         $"[锦标赛] 读取到的输入法: [{inputMethod}], 是否为空: {string.IsNullOrWhiteSpace(inputMethod)}");
                     if (string.IsNullOrWhiteSpace(inputMethod))
                     {
-                        MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK,
+                        MessageBox.Show("请先填写赛文输入法名称\n（设置 → 赛文 → 赛文输入法）", "提示", MessageBoxButton.OK,
                             MessageBoxImage.Warning);
                         return;
                     }
@@ -2597,7 +2619,7 @@ namespace TypeSunny
                         $"[极速杯] 读取到的输入法: [{inputMethod}], 是否为空: {string.IsNullOrWhiteSpace(inputMethod)}");
                     if (string.IsNullOrWhiteSpace(inputMethod))
                     {
-                        MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK,
+                        MessageBox.Show("请先填写赛文输入法名称\n（设置 → 赛文 → 赛文输入法）", "提示", MessageBoxButton.OK,
                             MessageBoxImage.Warning);
                         return;
                     }
@@ -2630,7 +2652,7 @@ namespace TypeSunny
                         $"[赛文API] 读取到的输入法: [{inputMethod}], 是否为空: {string.IsNullOrWhiteSpace(inputMethod)}");
                     if (string.IsNullOrWhiteSpace(inputMethod))
                     {
-                        MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK,
+                        MessageBox.Show("请先填写赛文输入法名称\n（设置 → 赛文 → 赛文输入法）", "提示", MessageBoxButton.OK,
                             MessageBoxImage.Warning);
                         return;
                     }
@@ -4209,6 +4231,7 @@ public async Task SendArticle()
                 Score.Paragraph = 0;
                 Score.ParagraphString = "";
                 Score.ArticleMark = "";  // 清空文来标记
+                Score.DifficultyText = "";
             }
             else if (retypeType == RetypeType.shuffle || retypeType == RetypeType.retype)
             {
@@ -4220,18 +4243,6 @@ public async Task SendArticle()
                 Score.Paragraph = rt.Item2;
                 TextInfo.Paragraph = rt.Item2;
                 Score.ParagraphString = rt.Item3;
-
-                // 如果是文来模式，获取并设置ArticleMark
-                if (source == TxtSource.articlesender && articleCache.HasArticle())
-                {
-                    Score.ArticleMark = articleCache.GetCurrentMark();
-                    Score.ParagraphString = "";  // 文来模式使用ArticleMark，清空ParagraphString
-                }
-                else
-                {
-                    Score.ArticleMark = "";  // 其他模式清空ArticleMark
-                }
-
             }
 
 
@@ -4320,6 +4331,22 @@ public async Task SendArticle()
                 if (timerProgress != null)
                     timerProgress.Dispose();
                 Score.Reset();
+
+                if (retypeType == RetypeType.first)
+                {
+                    if (source == TxtSource.articlesender && articleCache.HasArticle())
+                    {
+                        Score.ArticleMark = articleCache.GetCurrentMark();
+                        Score.DifficultyText = articleCache.GetCurrentDifficulty();
+                        Score.ParagraphString = "";  // 文来模式使用ArticleMark，清空ParagraphString
+                    }
+                    else
+                    {
+                        Score.ArticleMark = "";
+                        Score.DifficultyText = currentDifficultyText.StartsWith("难度：") ? currentDifficultyText.Substring(3) :
+                            currentDifficultyText.StartsWith("难度:") ? currentDifficultyText.Substring(3) : currentDifficultyText;
+                    }
+                }
 
 
                 Dispatcher.BeginInvoke(new Action(() =>
@@ -6723,7 +6750,7 @@ public async Task SendArticle()
             string inputMethod = Config.GetString("赛文输入法");
             if (string.IsNullOrWhiteSpace(inputMethod))
             {
-                MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("请先填写赛文输入法名称\n（设置 → 赛文 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -6779,7 +6806,7 @@ public async Task SendArticle()
             string inputMethod = Config.GetString("赛文输入法");
             if (string.IsNullOrWhiteSpace(inputMethod))
             {
-                MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("请先填写赛文输入法名称\n（设置 → 赛文 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -6974,7 +7001,7 @@ public async Task SendArticle()
             string inputMethod = Config.GetString("赛文输入法");
             if (string.IsNullOrWhiteSpace(inputMethod))
             {
-                MessageBox.Show("请先填写赛文输入法名称\n（设置 →文来 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("请先填写赛文输入法名称\n（设置 → 赛文 → 赛文输入法）", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 

@@ -10,6 +10,8 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Documents;
+using System.Windows.Shapes;
 using System.Windows.Markup;
 using TypeSunny.ArticleSender;
 using TypeSunny.Net;
@@ -175,9 +177,24 @@ namespace TypeSunny
                         "文来难度",
                         "文来分类",
                         "文来换段模式",
-                        "字数模式",
+                        "字数模式"
+                    }
+                },
+                new ConfigCategory
+                {
+                    Title = "赛文",
+                    Items = new[]
+                    {
                         "赛文服务器地址",
                         "赛文输入法"
+                    }
+                },
+                new ConfigCategory
+                {
+                    Title = "成绩",
+                    Items = new[]
+                    {
+                        "成绩签名"
                     }
                 },
                 new ConfigCategory
@@ -187,8 +204,6 @@ namespace TypeSunny
                     {
                         "当前版本",
                         "最新版本",
-                        "成绩签名",
-                        "成绩显示项",
                         "软件更新Q群",
                         "作者邮箱QQ"
                     }
@@ -477,6 +492,12 @@ namespace TypeSunny
                 }
 
                 currentRow++;
+            }
+
+            // 如果是"成绩"分类，在常规项后面内嵌成绩显示项拖拽列表
+            if (category.Title == "成绩")
+            {
+                AppendScoreItemsList(currentRow);
             }
         }
 
@@ -835,20 +856,6 @@ namespace TypeSunny
                 valueControl = loadingPanel;
 
                 _ = LoadCategoryDataAsync(loadingPanel, itemValue);
-            }
-            else if (itemKey == "成绩显示项")
-            {
-                // 创建一个按钮，点击后打开成绩显示项配置窗口
-                var btn = new Button
-                {
-                    Content = "配置成绩显示项",
-                    Width = 150,
-                    Height = 30,
-                    HorizontalAlignment = HorizontalAlignment.Left,
-                    Margin = new Thickness(0, 5, 0, 5)
-                };
-                btn.Click += (s, e) => ShowScoreBlockConfig();
-                valueControl = btn;
             }
             else if (itemKey == "当前版本")
             {
@@ -1651,160 +1658,234 @@ namespace TypeSunny
             window.ShowDialog();
         }
 
-        // 显示成绩显示项配置窗口
-        private void ShowScoreBlockConfig()
+        // 强制显示的成绩项（勾选不可取消，但可参与排序）
+        private static readonly HashSet<string> ForceShowItems = new HashSet<string> { "速度", "击键", "字数", "键准" };
+
+        /// <summary>
+        /// 在成绩分类页面内嵌成绩显示项拖拽排序列表
+        /// </summary>
+        private void AppendScoreItemsList(int startRow)
         {
-            // 创建窗口
-            var window = new Window
-            {
-                Title = "成绩显示项配置",
-                Width = 400,
-                Height = 500,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Owner = this,
-                ResizeMode = ResizeMode.NoResize
-            };
-
-            // 创建主面板
-            var mainPanel = new StackPanel
-            {
-                Margin = new Thickness(20)
-            };
-
-            // 标题
-            var title = new TextBlock
-            {
-                Text = "选择要显示的成绩项",
-                FontSize = 16,
-                FontWeight = FontWeights.Bold,
-                Margin = new Thickness(0, 0, 0, 15)
-            };
-            mainPanel.Children.Add(title);
-
-            // 强制显示项（不可取消）
-            var forceTitle = new TextBlock
-            {
-                Text = "强制显示（不可取消）",
-                FontSize = 12,
-                Foreground = new SolidColorBrush(Color.FromRgb(100, 150, 200)),
-                Margin = new Thickness(0, 0, 0, 5)
-            };
-            mainPanel.Children.Add(forceTitle);
-
-            var forcePanel = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };
-            foreach (var item in new[] { "字数", "速度", "击键", "键准", "段号" })
-            {
-                var chk = new CheckBox
-                {
-                    Content = item,
-                    Margin = new Thickness(5),
-                    IsChecked = true,
-                    IsEnabled = false  // 强制显示，不可取消
-                };
-                forcePanel.Children.Add(chk);
-            }
-            mainPanel.Children.Add(forcePanel);
-
-            // 可选项
+            // 小标题
             var optTitle = new TextBlock
             {
-                Text = "可选显示项",
-                FontSize = 12,
+                Text = "成绩显示项（拖拽调整顺序，勾选控制显隐）",
+                FontSize = 13,
                 Foreground = new SolidColorBrush(Color.FromRgb(100, 150, 200)),
-                Margin = new Thickness(0, 0, 0, 5)
+                Margin = new Thickness(0, 10, 0, 5)
             };
-            mainPanel.Children.Add(optTitle);
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(optTitle, startRow);
+            Grid.SetColumnSpan(optTitle, 2);
+            ContentPanel.Children.Add(optTitle);
 
-            // 成绩项列表（去掉看打相关）
-            var scoreItems = new[]
+            // 读取当前顺序
+            var currentOrder = Core.Score.GetScoreOrder();
+
+            // 单列可拖拽 ListBox
+            var listBox = new ListBox
             {
-                "码长", "重打", "总键数", "键法", "回改", "退格",
-                "废码", "打词率", "选重", "标顶", "用时", "错字",
-                "盲打正确率", "盲打模式", "签名"
+                MinHeight = 200,
+                MaxHeight = 500,
+                AllowDrop = true,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Margin = new Thickness(0, 5, 0, 0)
             };
 
             var checkboxes = new Dictionary<string, CheckBox>();
 
-            // 创建两列布局
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            int row = 0;
-            int col = 0;
-            foreach (var item in scoreItems)
+            foreach (var item in currentOrder)
             {
-                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                bool isForced = ForceShowItems.Contains(item);
 
+                var sp = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(2) };
+                var dragHandle = new TextBlock
+                {
+                    Text = "☰",
+                    FontSize = 14,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 8, 0),
+                    Cursor = System.Windows.Input.Cursors.SizeAll
+                };
                 var chk = new CheckBox
                 {
                     Content = item,
-                    Margin = new Thickness(5),
-                    IsChecked = Config.GetBool("显示_" + item)  // true=显示，false=不显示
+                    IsChecked = isForced || Config.GetBool("显示_" + item),
+                    IsEnabled = !isForced,  // 强制项不可取消勾选
+                    VerticalAlignment = VerticalAlignment.Center
                 };
-                Grid.SetRow(chk, row);
-                Grid.SetColumn(chk, col);
-                grid.Children.Add(chk);
                 checkboxes[item] = chk;
+                sp.Children.Add(dragHandle);
+                sp.Children.Add(chk);
 
-                row++;
-                if (row >= 8) // 每列8项
+                var lbi = new ListBoxItem
                 {
-                    row = 0;
-                    col = 1;
-                }
+                    Content = sp,
+                    Tag = item,
+                    AllowDrop = true,
+                    Padding = new Thickness(4, 2, 4, 2)
+                };
+                listBox.Items.Add(lbi);
             }
 
-            mainPanel.Children.Add(grid);
-
-            // 按钮面板
-            var buttonPanel = new StackPanel
+            // 保存当前配置的 lambda
+            Action saveConfig = () =>
             {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 20, 0, 0)
-            };
-
-            var saveBtn = new Button
-            {
-                Content = "保存",
-                Width = 80,
-                Height = 30,
-                Margin = new Thickness(0, 0, 10, 0)
-            };
-            saveBtn.Click += (s, e) =>
-            {
-                // 保存配置（强制显示项始终显示）
-                Config.Set("显示_字数", true);
-                Config.Set("显示_速度", true);
-                Config.Set("显示_击键", true);
-                Config.Set("显示_键准", true);
-                // 段号（ArticleMark）始终显示，没有对应的配置项
-
-                // 可选项根据勾选状态保存
-                foreach (var kvp in checkboxes)
+                var orderItems = new List<string>();
+                foreach (ListBoxItem lbi in listBox.Items)
                 {
-                    // 勾选=显示=true，不勾选=不显示=false
-                    Config.Set("显示_" + kvp.Key, kvp.Value.IsChecked == true);
+                    string itemName = lbi.Tag as string;
+                    if (itemName != null && checkboxes.ContainsKey(itemName))
+                    {
+                        bool isForced = ForceShowItems.Contains(itemName);
+                        Config.Set("显示_" + itemName, isForced || checkboxes[itemName].IsChecked == true);
+                        orderItems.Add(itemName);
+                    }
+                }
+                Config.Set("成绩显示顺序", string.Join(",", orderItems));
+            };
+
+            // CheckBox 勾选变化时自动保存
+            foreach (var chk in checkboxes.Values)
+            {
+                chk.Checked += (s, e) => saveConfig();
+                chk.Unchecked += (s, e) => saveConfig();
+            }
+
+            // 拖拽排序逻辑（带浮动效果和插入线提示）
+            ListBoxItem draggedItem = null;
+            Point dragStartPoint = default;
+            DragAdorner currentAdorner = null;
+            InsertionLineAdorner insertionAdorner = null;
+
+            listBox.PreviewMouseLeftButtonDown += (s, e) =>
+            {
+                dragStartPoint = e.GetPosition(listBox);
+                var hitItem = FindAncestor<ListBoxItem>((DependencyObject)e.OriginalSource);
+                if (hitItem != null)
+                    draggedItem = hitItem;
+            };
+
+            listBox.PreviewMouseMove += (s, e) =>
+            {
+                if (draggedItem == null || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
+                    return;
+                Point pos = e.GetPosition(listBox);
+                if (Math.Abs(pos.X - dragStartPoint.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                    Math.Abs(pos.Y - dragStartPoint.Y) > SystemParameters.MinimumVerticalDragDistance)
+                {
+                    // 创建浮动装饰层
+                    var adornerLayer = AdornerLayer.GetAdornerLayer(listBox);
+                    if (adornerLayer != null)
+                    {
+                        currentAdorner = new DragAdorner(listBox, draggedItem, 0.6);
+                        adornerLayer.Add(currentAdorner);
+                    }
+
+                    draggedItem.Opacity = 0.3;
+                    DragDrop.DoDragDrop(listBox, draggedItem, DragDropEffects.Move);
+
+                    // 清理
+                    draggedItem.Opacity = 1.0;
+                    if (currentAdorner != null && adornerLayer != null)
+                    {
+                        adornerLayer.Remove(currentAdorner);
+                        currentAdorner = null;
+                    }
+                    if (insertionAdorner != null && adornerLayer != null)
+                    {
+                        adornerLayer.Remove(insertionAdorner);
+                        insertionAdorner = null;
+                    }
+                    draggedItem = null;
+                }
+            };
+
+            listBox.DragOver += (s, e) =>
+            {
+                e.Effects = DragDropEffects.Move;
+                e.Handled = true;
+
+                // 更新浮动装饰层位置
+                if (currentAdorner != null)
+                {
+                    currentAdorner.UpdatePosition(e.GetPosition(listBox));
                 }
 
-                window.Close();
+                // 更新插入线位置
+                var adornerLayer = AdornerLayer.GetAdornerLayer(listBox);
+                if (adornerLayer != null)
+                {
+                    if (insertionAdorner != null)
+                    {
+                        adornerLayer.Remove(insertionAdorner);
+                        insertionAdorner = null;
+                    }
+
+                    var targetItem = FindAncestor<ListBoxItem>((DependencyObject)e.OriginalSource);
+                    if (targetItem != null)
+                    {
+                        Point posInTarget = e.GetPosition(targetItem);
+                        bool insertBefore = posInTarget.Y < targetItem.ActualHeight / 2;
+                        insertionAdorner = new InsertionLineAdorner(listBox, targetItem, insertBefore);
+                        adornerLayer.Add(insertionAdorner);
+                    }
+                }
             };
 
-            var cancelBtn = new Button
+            listBox.DragLeave += (s, e) =>
             {
-                Content = "取消",
-                Width = 80,
-                Height = 30
+                var adornerLayer = AdornerLayer.GetAdornerLayer(listBox);
+                if (insertionAdorner != null && adornerLayer != null)
+                {
+                    adornerLayer.Remove(insertionAdorner);
+                    insertionAdorner = null;
+                }
             };
-            cancelBtn.Click += (s, e) => window.Close();
 
-            buttonPanel.Children.Add(saveBtn);
-            buttonPanel.Children.Add(cancelBtn);
-            mainPanel.Children.Add(buttonPanel);
+            listBox.Drop += (s, e) =>
+            {
+                var source = e.Data.GetData(typeof(ListBoxItem)) as ListBoxItem;
+                if (source == null) return;
 
-            window.Content = mainPanel;
-            window.ShowDialog();
+                var targetItem = FindAncestor<ListBoxItem>((DependencyObject)e.OriginalSource);
+                if (targetItem == null || targetItem == source) return;
+
+                int sourceIndex = listBox.Items.IndexOf(source);
+                int targetIndex = listBox.Items.IndexOf(targetItem);
+                if (sourceIndex < 0 || targetIndex < 0) return;
+
+                // 根据鼠标在目标项的上半/下半决定插入位置
+                Point posInTarget = e.GetPosition(targetItem);
+                bool insertBefore = posInTarget.Y < targetItem.ActualHeight / 2;
+
+                listBox.Items.RemoveAt(sourceIndex);
+                int finalIndex = listBox.Items.IndexOf(targetItem);
+                if (!insertBefore) finalIndex++;
+                listBox.Items.Insert(finalIndex, source);
+
+                // 拖拽完成后自动保存顺序
+                saveConfig();
+            };
+
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            Grid.SetRow(listBox, startRow + 1);
+            Grid.SetColumnSpan(listBox, 2);
+            ContentPanel.Children.Add(listBox);
+        }
+
+        /// <summary>
+        /// 向上查找指定类型的可视树祖先
+        /// </summary>
+        private static T FindAncestor<T>(DependencyObject current) where T : DependencyObject
+        {
+            while (current != null)
+            {
+                if (current is T t)
+                    return t;
+                current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+            }
+            return null;
         }
 
         // 刷新主题界面
@@ -2444,6 +2525,94 @@ namespace TypeSunny
             {
                 System.Diagnostics.Debug.WriteLine($"[WinConfig] 应用Logo失败: {ex.Message}");
             }
+        }
+    }
+
+    /// <summary>
+    /// 拖拽浮动装饰层：在鼠标位置显示被拖拽项的半透明副本
+    /// </summary>
+    internal class DragAdorner : Adorner
+    {
+        private readonly VisualBrush _brush;
+        private readonly double _opacity;
+        private Point _position;
+        private readonly Size _itemSize;
+
+        public DragAdorner(UIElement adornedElement, ListBoxItem draggedItem, double opacity)
+            : base(adornedElement)
+        {
+            _opacity = opacity;
+            _itemSize = new Size(draggedItem.ActualWidth, draggedItem.ActualHeight);
+            _brush = new VisualBrush(draggedItem)
+            {
+                Opacity = _opacity
+            };
+            IsHitTestVisible = false;
+        }
+
+        public void UpdatePosition(Point pos)
+        {
+            _position = pos;
+            InvalidateVisual();
+        }
+
+        protected override void OnRender(DrawingContext drawingContext)
+        {
+            var rect = new Rect(
+                _position.X - _itemSize.Width / 2,
+                _position.Y - _itemSize.Height / 2,
+                _itemSize.Width,
+                _itemSize.Height);
+            drawingContext.DrawRectangle(_brush, null, rect);
+        }
+    }
+
+    /// <summary>
+    /// 插入线装饰层：在目标项的上方或下方绘制一条蓝色水平线
+    /// </summary>
+    internal class InsertionLineAdorner : Adorner
+    {
+        private readonly ListBoxItem _targetItem;
+        private readonly bool _insertBefore;
+
+        public InsertionLineAdorner(UIElement adornedElement, ListBoxItem targetItem, bool insertBefore)
+            : base(adornedElement)
+        {
+            _targetItem = targetItem;
+            _insertBefore = insertBefore;
+            IsHitTestVisible = false;
+        }
+
+        protected override void OnRender(DrawingContext drawingContext)
+        {
+            var transform = _targetItem.TransformToAncestor(AdornedElement);
+            var itemPos = transform.Transform(new Point(0, 0));
+
+            double y = _insertBefore ? itemPos.Y : itemPos.Y + _targetItem.ActualHeight;
+
+            var pen = new Pen(Brushes.DodgerBlue, 2);
+            drawingContext.DrawLine(pen, new Point(itemPos.X, y), new Point(itemPos.X + _targetItem.ActualWidth, y));
+
+            // 左右两端画小三角指示
+            double triangleSize = 4;
+            var leftTriangle = new StreamGeometry();
+            using (var ctx = leftTriangle.Open())
+            {
+                ctx.BeginFigure(new Point(itemPos.X, y), true, true);
+                ctx.LineTo(new Point(itemPos.X + triangleSize * 2, y - triangleSize), false, false);
+                ctx.LineTo(new Point(itemPos.X + triangleSize * 2, y + triangleSize), false, false);
+            }
+            drawingContext.DrawGeometry(Brushes.DodgerBlue, null, leftTriangle);
+
+            var rightTriangle = new StreamGeometry();
+            double rightX = itemPos.X + _targetItem.ActualWidth;
+            using (var ctx = rightTriangle.Open())
+            {
+                ctx.BeginFigure(new Point(rightX, y), true, true);
+                ctx.LineTo(new Point(rightX - triangleSize * 2, y - triangleSize), false, false);
+                ctx.LineTo(new Point(rightX - triangleSize * 2, y + triangleSize), false, false);
+            }
+            drawingContext.DrawGeometry(Brushes.DodgerBlue, null, rightTriangle);
         }
     }
 }

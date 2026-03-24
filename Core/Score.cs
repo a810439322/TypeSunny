@@ -38,6 +38,7 @@ static internal class Score
         public static int Paragraph = 0;
         public static string ParagraphString = "";  // 原始段号字符串（如 "tdu"）
         public static string ArticleMark = "";  // 文来接口的mark字段（如 "1-34112"）
+        public static string DifficultyText = "";  // 当前文章难度文本（如 "普(1.84)"）
         public static int Correction = 0;
         public static double LRRatio = 0;
 
@@ -199,6 +200,7 @@ static internal class Score
             BimeBacks = 0;
             BimeCorrection = 0;
             LRRatio = 0;
+            DifficultyText = "";
             ZiciStack.Clear();
             WasteCodes = 0;
             IsComposing = false;
@@ -235,6 +237,41 @@ static internal class Score
 
             return r.ToString();
         }
+        /// <summary>
+        /// 解析成绩显示顺序配置，返回规范化后的项目列表
+        /// </summary>
+        private static readonly string DefaultOrder = "难度,速度,击键,码长,字数,重打,总键数,键法,回改,退格,键准,废码,打词率,选重,标顶,用时,错字,盲打正确率,看打正确率,盲打模式,看打模式,签名";
+        private static readonly HashSet<string> ValidItems = new HashSet<string>(DefaultOrder.Split(','));
+
+        public static List<string> GetScoreOrder()
+        {
+            string raw = Config.GetString("成绩显示顺序");
+            if (string.IsNullOrWhiteSpace(raw))
+                raw = DefaultOrder;
+
+            var result = new List<string>();
+            var seen = new HashSet<string>();
+            foreach (string item in raw.Split(','))
+            {
+                string trimmed = item.Trim();
+                if (trimmed.Length > 0 && ValidItems.Contains(trimmed) && !seen.Contains(trimmed))
+                {
+                    result.Add(trimmed);
+                    seen.Add(trimmed);
+                }
+            }
+            // 补尾：默认顺序中有、但用户配置中缺失的项
+            foreach (string item in DefaultOrder.Split(','))
+            {
+                if (!seen.Contains(item))
+                {
+                    result.Add(item);
+                    seen.Add(item);
+                }
+            }
+            return result;
+        }
+
         public static string Report()
         {
             List<string> report = new List<string>();
@@ -257,9 +294,7 @@ static internal class Score
             bool isBime =  BimeHit > 0;
             bool notBime = !isBime;
 
-            // 如果有ArticleMark，直接显示 "段2-12743" 格式
-            // 否则如果有ParagraphString，显示 "第tdu段"
-            // 最后才使用数字 Paragraph 显示 "第0段"
+            // === 固定头部：段号 ===
             if (!string.IsNullOrEmpty(ArticleMark))
             {
                 report.Add("段" + ArticleMark);
@@ -272,149 +307,149 @@ static internal class Score
             {
                 report.Add("第" + Paragraph + "段");
             }
-            if (Config.GetBool("显示_速度"))
-                report.Add("速度" + SpeedReport);
-            if (Config.GetBool("显示_击键"))
+
+            int TypeCount = RetypeCounter.Get(TextInfo.TextMD5);
+
+            // === 按配置顺序输出成绩项 ===
+            foreach (string item in GetScoreOrder())
             {
-                report.Add("击键" + HitRate.ToString("F2"));
-            }
-
-            if (StateManager.txtSource == TxtSource.trainer)
-            {
-                report.Add("/" + WinTrainer.TargetHit.ToString("F2"));
-            }
-
-            if (Config.GetBool("显示_码长"))
-            {
-                report.Add("码长" + Score.KPW.ToString("F2"));
-            }
-
-
-
-            if (Config.GetBool("显示_字数"))
-                report.Add("字数"+TotalWordCount.ToString());
-
-            int TypeCount  = RetypeCounter.Get(TextInfo.TextMD5);
-            if (Config.GetBool("显示_重打"))
-            {
-                if (TypeCount > 1)
-                    report.Add("重打" + (TypeCount -1).ToString());
-            }
-            if (Config.GetBool("显示_总键数"))
-            {
-                report.Add("总键数" +  GetHit().ToString("F0"));
-            }
-
-
-            if (Config.GetBool("显示_键法"))
-                if (BimeHit == 0)
+                switch (item)
                 {
-
-                    if (RightCount == 0)
-                        LRRatio = 1;
-                    else
-                        LRRatio =(double) LeftCount / (double)RightCount;
-
-
-                    report.Add("键法" + LRRatio.ToString("p2")+ " (左" + LeftCount + "右" + RightCount + "空格" + SpaceCount + ")");
-
+                    case "难度":
+                        if (Config.GetBool("显示_难度") && !string.IsNullOrWhiteSpace(DifficultyText))
+                            report.Add("难度" + DifficultyText);
+                        break;
+                    case "速度":
+                        if (Config.GetBool("显示_速度"))
+                            report.Add("速度" + SpeedReport);
+                        break;
+                    case "击键":
+                        if (Config.GetBool("显示_击键"))
+                        {
+                            report.Add("击键" + HitRate.ToString("F2"));
+                            if (StateManager.txtSource == TxtSource.trainer)
+                                report.Add("/" + WinTrainer.TargetHit.ToString("F2"));
+                        }
+                        break;
+                    case "码长":
+                        if (Config.GetBool("显示_码长"))
+                            report.Add("码长" + Score.KPW.ToString("F2"));
+                        break;
+                    case "字数":
+                        if (Config.GetBool("显示_字数"))
+                            report.Add("字数" + TotalWordCount.ToString());
+                        break;
+                    case "重打":
+                        if (Config.GetBool("显示_重打") && TypeCount > 1)
+                            report.Add("重打" + (TypeCount - 1).ToString());
+                        break;
+                    case "总键数":
+                        if (Config.GetBool("显示_总键数"))
+                            report.Add("总键数" + GetHit().ToString("F0"));
+                        break;
+                    case "键法":
+                        if (Config.GetBool("显示_键法") && BimeHit == 0)
+                        {
+                            if (RightCount == 0)
+                                LRRatio = 1;
+                            else
+                                LRRatio = (double)LeftCount / (double)RightCount;
+                            report.Add("键法" + LRRatio.ToString("p2") + " (左" + LeftCount + "右" + RightCount + "空格" + SpaceCount + ")");
+                        }
+                        break;
+                    case "回改":
+                        if (Config.GetBool("显示_回改"))
+                            report.Add("回改" + Score.GetCorrection().ToString("F0"));
+                        break;
+                    case "退格":
+                        if (Config.GetBool("显示_退格"))
+                            report.Add("退格" + GetBacks().ToString("F0"));
+                        break;
+                    case "键准":
+                        if (Config.GetBool("显示_键准"))
+                            report.Add("键准" + GetAccuracy().ToString("P2"));
+                        break;
+                    case "废码":
+                        if (Config.GetBool("显示_废码") && notBime && WasteCodes > 0)
+                            report.Add("废码" + WasteCodes.ToString());
+                        break;
+                    case "打词率":
+                        if (Config.GetBool("显示_打词率") && notBime)
+                            report.Add("打词率" + GetCiRatio().ToString("P2"));
+                        break;
+                    case "选重":
+                        if (Config.GetBool("显示_选重") && notBime)
+                            report.Add("选重" + GetChoose().ToString());
+                        break;
+                    case "标顶":
+                        if (Config.GetBool("显示_标顶") && notBime)
+                            report.Add("标顶" + GetBiaoDing().ToString());
+                        break;
+                    case "用时":
+                        if (Config.GetBool("显示_用时"))
+                        {
+                            string t = Score.Time.ToString();
+                            int semi = t.LastIndexOf(":");
+                            if (t.Length > semi + 6)
+                                t = t.Substring(0, semi + 6);
+                            if (t.Length > 3 && t.Substring(0, 3) == "00:")
+                                t = t.Substring(3);
+                            report.Add("用时" + t);
+                        }
+                        break;
+                    case "错字":
+                        if (Config.GetBool("显示_错字"))
+                        {
+                            if (Config.GetBool("看打模式"))
+                            {
+                                if (Less > 0 && More > 0)
+                                    report.Add("少" + Less + "多" + More);
+                                else if (More > 0)
+                                    report.Add("多" + More);
+                                else if (Less > 0)
+                                    report.Add("少" + Less);
+                            }
+                            else
+                            {
+                                if (Wrong > 0)
+                                    report.Add("错字" + Wrong);
+                            }
+                        }
+                        break;
+                    case "盲打正确率":
+                        if (Config.GetBool("显示_盲打正确率") && Config.GetBool("盲打模式"))
+                        {
+                            int wr = Math.Max(More, Less);
+                            double ratio = Math.Round((double)(TotalWordCount - wr) / (double)TotalWordCount, 4);
+                            report.Add("盲打正确率" + ratio.ToString("P2"));
+                        }
+                        break;
+                    case "看打正确率":
+                        if (Config.GetBool("显示_看打正确率") && Config.GetBool("看打模式") && !Config.GetBool("盲打模式"))
+                        {
+                            int wr = Math.Max(More, Less);
+                            double ratio = Math.Round((double)(TotalWordCount - wr) / (double)TotalWordCount, 4);
+                            report.Add("看打正确率" + ratio.ToString("P2"));
+                        }
+                        break;
+                    case "盲打模式":
+                        if (Config.GetBool("显示_盲打模式") && Config.GetBool("盲打模式"))
+                            report.Add("【盲打模式】");
+                        break;
+                    case "看打模式":
+                        if (Config.GetBool("显示_看打模式") && Config.GetBool("看打模式") && !Config.GetBool("盲打模式"))
+                            report.Add("【看打模式】");
+                        break;
+                    case "签名":
+                        if (Config.GetBool("显示_签名"))
+                            report.Add(Config.GetString("成绩签名"));
+                        break;
                 }
-
-            if (Config.GetBool("显示_回改"))
-                report.Add("回改" + Score.GetCorrection().ToString("F0"));
-            if (Config.GetBool("显示_退格"))
-                report.Add("退格" + GetBacks().ToString("F0"));
-            if (Config.GetBool("显示_键准"))
-                report.Add("键准" + GetAccuracy().ToString("P2"));
-            if (Config.GetBool("显示_废码") && notBime)
-            {
-                if (WasteCodes > 0)
-                    report.Add("废码" + WasteCodes.ToString());
-            }
-            if (Config.GetBool("显示_打词率") && notBime)
-            {
-                report.Add("打词率" + GetCiRatio().ToString("P2"));
             }
 
-            if (Config.GetBool("显示_选重") && notBime)
-                report.Add("选重" + GetChoose().ToString());
-
-            if (Config.GetBool("显示_标顶") && notBime)
-                report.Add("标顶" + GetBiaoDing().ToString());
-            if (Config.GetBool("显示_用时"))
-            {
-                string t = Score.Time.ToString();
-                int semi = t.LastIndexOf(":");
-                if (t.Length > semi + 6)
-                    t = t.Substring(0,semi + 6);
-
-                if (t.Length > 3 && t.Substring(0, 3) == "00:")
-                    t = t.Substring(3);
-                report.Add("用时" + t);//(@"hh\:mm\:ss"))
-            }
-
-
-
-            if (Config.GetBool("显示_错字"))
-            {
-
-
-                if (Config.GetBool("看打模式"))
-                {
-                    if (Less > 0 && More > 0)
-                        report.Add("少" + Less + "多" + More);
-                    else if (More > 0)
-                        report.Add("多" + More);
-                    else if (Less > 0)
-                        report.Add("少" + Less);
-                }
-                else
-
-
-                {
-                    if (Wrong > 0)
-                        report.Add("错字" + Wrong);
-                }
-            }
-
-            if (Config.GetBool("显示_盲打正确率") && Config.GetBool("盲打模式"))
-            {
-                int wr = Math.Max(More, Less);
-                double ratio;
-
-                ratio = Math.Round((double)(TotalWordCount - wr) / (double)TotalWordCount, 4);
-                report.Add("盲打正确率" + ratio.ToString("P2"));
-            }
-
-
-            if (Config.GetBool("显示_看打正确率") && Config.GetBool("看打模式") && !Config.GetBool("盲打模式"))
-            {
-                int wr = Math.Max(More, Less);
-                double ratio;
-
-                ratio = Math.Round((double)(TotalWordCount - wr) / (double)TotalWordCount, 4);
-                report.Add("看打正确率" + ratio.ToString("P2"));
-            }
-
-            if (Config.GetBool("显示_重打"))
-            {
-                if (TypeCount <=1)
-                    report.Add("【首打认证】");
-            }
-
-
-            if (Config.GetBool("显示_盲打模式") && Config.GetBool("盲打模式"))
-                report.Add("【盲打模式】");
-
-            if (Config.GetBool("显示_看打模式") && Config.GetBool("看打模式") && !Config.GetBool("盲打模式"))
-                    report.Add("【看打模式】");
-
-            if (Config.GetBool("显示_签名"))
-            {
-
-                    report.Add(Config.GetString("成绩签名"));
-            }
-
+            // === 固定尾部 ===
+            if (Config.GetBool("显示_重打") && TypeCount <= 1)
+                report.Add("【首打认证】");
 
             report.Add(StateManager.Version);
             return string.Join(" ",report);
