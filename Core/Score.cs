@@ -240,7 +240,7 @@ static internal class Score
         /// <summary>
         /// 解析成绩显示顺序配置，返回规范化后的项目列表
         /// </summary>
-        private static readonly string DefaultOrder = "难度,速度,击键,码长,字数,重打,总键数,键法,回改,退格,键准,废码,打词率,选重,标顶,用时,错字,盲打正确率,看打正确率,盲打模式,看打模式,签名";
+        private static readonly string DefaultOrder = "速度,击键,键准,字数,难度,打词率,标顶,重打,码长,总键数,键法,回改,退格,废码,选重,用时,错字,盲打正确率,看打正确率,盲打模式,看打模式,签名";
         private static readonly HashSet<string> ValidItems = new HashSet<string>(DefaultOrder.Split(','));
 
         public static List<string> GetScoreOrder()
@@ -317,7 +317,7 @@ static internal class Score
                 {
                     case "难度":
                         if (Config.GetBool("显示_难度") && !string.IsNullOrWhiteSpace(DifficultyText))
-                            report.Add("难度" + DifficultyText);
+                            report.Add(DifficultyText);
                         break;
                     case "速度":
                         if (Config.GetBool("显示_速度"))
@@ -340,8 +340,13 @@ static internal class Score
                             report.Add("字数" + TotalWordCount.ToString());
                         break;
                     case "重打":
-                        if (Config.GetBool("显示_重打") && TypeCount > 1)
-                            report.Add("重打" + (TypeCount - 1).ToString());
+                        if (Config.GetBool("显示_重打"))
+                        {
+                            if (TypeCount > 1)
+                                report.Add("重打" + (TypeCount - 1).ToString());
+                            else
+                                report.Add("首打");
+                        }
                         break;
                     case "总键数":
                         if (Config.GetBool("显示_总键数"))
@@ -448,9 +453,6 @@ static internal class Score
             }
 
             // === 固定尾部 ===
-            if (Config.GetBool("显示_重打") && TypeCount <= 1)
-                report.Add("【首打认证】");
-
             report.Add(StateManager.Version);
             return string.Join(" ",report);
         }

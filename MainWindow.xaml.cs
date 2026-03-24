@@ -4343,8 +4343,8 @@ public async Task SendArticle()
                     else
                     {
                         Score.ArticleMark = "";
-                        Score.DifficultyText = currentDifficultyText.StartsWith("难度：") ? currentDifficultyText.Substring(3) :
-                            currentDifficultyText.StartsWith("难度:") ? currentDifficultyText.Substring(3) : currentDifficultyText;
+                        // Score.DifficultyText 已在 Score.Reset() 中清空
+                        // currentDifficultyText 保留给标题显示，异步回调会更新它和 Score.DifficultyText
                     }
                 }
 
@@ -4375,6 +4375,7 @@ public async Task SendArticle()
                         {
                             // 使用文来返回的难度
                             currentDifficultyText = "难度：" + wenlaiDifficulty;
+                            Score.DifficultyText = wenlaiDifficulty;
                             UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
                         }
                         else
@@ -4389,6 +4390,7 @@ public async Task SendArticle()
                                     if (!string.IsNullOrEmpty(difficulty))
                                     {
                                         currentDifficultyText = "难度：" + difficulty;
+                                        Score.DifficultyText = difficulty;
                                         UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
                                     }
                                 });
@@ -4407,6 +4409,7 @@ public async Task SendArticle()
                                 if (!string.IsNullOrEmpty(difficulty))
                                 {
                                     currentDifficultyText = "难度：" + difficulty;
+                                    Score.DifficultyText = difficulty;
                                     UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
                                 }
                             });

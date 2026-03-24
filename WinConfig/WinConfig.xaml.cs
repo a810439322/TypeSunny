@@ -1709,7 +1709,7 @@ namespace TypeSunny
                 };
                 var chk = new CheckBox
                 {
-                    Content = item,
+                    Content = item == "重打" ? "重打/首打" : item,
                     IsChecked = isForced || Config.GetBool("显示_" + item),
                     IsEnabled = !isForced,  // 强制项不可取消勾选
                     VerticalAlignment = VerticalAlignment.Center
