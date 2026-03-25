@@ -504,7 +504,7 @@
                     </Button.ContextMenu>
                 </Button>
 
-                <Button x:Name="BtnTrainer" DockPanel.Dock="Left" Content="练单器" HorizontalAlignment="Left" Click="BtnTrainer_Click" VerticalAlignment="Center" Padding="6,3,6,3">
+                <Button x:Name="BtnTrainer" DockPanel.Dock="Left" Content="晴练单" HorizontalAlignment="Left" Click="BtnTrainer_Click" VerticalAlignment="Center" Padding="6,3,6,3">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
                             <Border Background="{TemplateBinding Background}" BorderBrush="#ADADAD" BorderThickness="1" Padding="{TemplateBinding Padding}" CornerRadius="0,5,5,0">

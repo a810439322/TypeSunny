@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TypeSunny"
         mc:Ignorable="d"
-        Title="练单器"
+        Title="晴练单"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResizeWithGrip"
         Background="Transparent"
@@ -192,7 +192,7 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
                             <Image Source="/Resources/ico/sunny.ico" Width="14" Height="14" Margin="0,0,6,0"/>
-                            <TextBlock Text="练单器" FontSize="11" Foreground="{DynamicResource TextForeground}"/>
+                            <TextBlock Text="晴练单" FontSize="11" Foreground="{DynamicResource TextForeground}"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
                             <Button x:Name="BtnMinimize" Content="━" Click="BtnMinimize_Click" Style="{StaticResource TitleBarButtonStyle}"/>
@@ -243,6 +243,7 @@
                         <ColumnDefinition Width="auto"/>
                         <ColumnDefinition Width="auto"/>
                         <ColumnDefinition Width="auto"/>
+                        <ColumnDefinition Width="auto"/>
                     </Grid.ColumnDefinitions>
 
                     <!-- 击键速度 -->
@@ -265,8 +266,29 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- 换段键准 -->
+                    <Border Grid.Column="1" Background="{DynamicResource ToolbarBackground}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,0,4,0">
+                        <StackPanel>
+                            <TextBlock Text="换段键准" Foreground="{DynamicResource TextForeground}" FontSize="11" Margin="0,0,0,6"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="auto"/>
+                                    <ColumnDefinition Width="50"/>
+                                    <ColumnDefinition Width="auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="≥" FontSize="14" Foreground="{DynamicResource TextForeground}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <TextBox x:Name="accuracyDisplay" Grid.Column="1" Text="100" Style="{StaticResource NumberInputStyle}" InputMethod.IsInputMethodEnabled="False" TextChanged="AccuracyDisplay_TextChanged"/>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="4,0,0,0">
+                                    <Button Content="▲" Click="AccuracyUp" Style="{StaticResource NumberButtonStyle}" Margin="0,0,2,0"/>
+                                    <Button Content="▼" Click="AccuracyDown" Style="{StaticResource NumberButtonStyle}" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Text="%" Foreground="{DynamicResource TextForeground}" FontSize="10" HorizontalAlignment="Center" Margin="0,4,0,0" Opacity="0.7"/>
+                        </StackPanel>
+                    </Border>
+
                     <!-- 字一组 -->
-                    <Border Grid.Column="1" Background="{DynamicResource ToolbarBackground}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="4,0,4,0">
+                    <Border Grid.Column="2" Background="{DynamicResource ToolbarBackground}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="4,0,4,0">
                         <StackPanel>
                             <TextBlock Text="每组字数" Foreground="{DynamicResource TextForeground}" FontSize="11" Margin="0,0,0,6"/>
                             <Grid>
@@ -285,7 +307,7 @@
                     </Border>
 
                     <!-- 每轮降击 -->
-                    <Border Grid.Column="2" Background="{DynamicResource ToolbarBackground}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="4,0,0,0">
+                    <Border Grid.Column="3" Background="{DynamicResource ToolbarBackground}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="4,0,0,0">
                         <StackPanel>
                             <TextBlock Text="每轮降击" Foreground="{DynamicResource TextForeground}" FontSize="11" Margin="0,0,0,6"/>
                             <Grid>

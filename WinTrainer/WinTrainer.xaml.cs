@@ -88,6 +88,7 @@ namespace TypeSunny
             {"换段击键", "6" },
              {"每轮降击","0.05" },
             {"每组字数", "10" },
+            {"换段键准", "100" },
 
 
 
@@ -96,7 +97,7 @@ namespace TypeSunny
              {"上次的段数", "0" },
              // 新增配置项：字体大小和窗口状态
              {"练单器字体大小", "24" },
-             {"练单器窗口宽度", "500" },
+             {"练单器窗口宽度", "620" },
              {"练单器窗口高度", "450" },
              {"练单器窗口左边", "0" },
              {"练单器窗口顶边", "0" },
@@ -237,7 +238,7 @@ namespace TypeSunny
             SliderInit = true;
         }
 
-        private void ReadTxt() //从文件重新读取码表
+        private void ReadTxt(bool forceReload = false) //从文件重新读取码表
         {
             // 保存当前文章的统计数据（如果不是第一次加载）
             if (!string.IsNullOrEmpty(TxtFile))
@@ -261,7 +262,9 @@ namespace TypeSunny
             LoadArticleStatistics(TxtFile);
 
             // 如果已经有保存的 DisplayRoot（包括乱序状态），跳过文章解析
-            if (articleStatisticsDict.ContainsKey(TxtFile) &&
+            // forceReload 时强制从文件重新读取
+            if (!forceReload &&
+                articleStatisticsDict.ContainsKey(TxtFile) &&
                 articleStatisticsDict[TxtFile].DisplayRoot != null &&
                 articleStatisticsDict[TxtFile].DisplayRoot.Count > 0)
             {
@@ -554,9 +557,10 @@ namespace TypeSunny
             roundCorrectWords += (int)(Score.InputWordCount * accuracy);
             roundTotalTime += Score.Time.TotalSeconds;
 
-            WriteDebugLog($"[GetNextRound] 条件判断 accuracy={accuracy:F4}, hitRate={hitrate:F2}, TargetHit={TargetHit:F2}, wrong={wrong}");
+            double targetAccuracy = Convert.ToDouble(cfg["换段键准"]) / 100.0;
+            WriteDebugLog($"[GetNextRound] 条件判断 accuracy={accuracy:F4}, hitRate={hitrate:F2}, TargetHit={TargetHit:F2}, targetAccuracy={targetAccuracy:F4}, wrong={wrong}");
 
-            if (accuracy >= 0.9999 && hitrate >= TargetHit && wrong == 0)
+            if (accuracy >= targetAccuracy && hitrate >= TargetHit)
             {
                 WriteDebugLog("[GetNextRound] 进入 if 分支");
 
@@ -832,7 +836,7 @@ namespace TypeSunny
         {
             if (!Directory.Exists(Folder))
             {
-                MessageBox.Show($"练单器目录不存在: {Folder}\n请确保该目录存在并包含练习文件。", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"晴练单目录不存在: {Folder}\n请确保该目录存在并包含练习文件。", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
@@ -943,6 +947,10 @@ namespace TypeSunny
             WriteDebugLog("[AutoNextGroup] sld.Value 设置完成");
 
 
+            // 新段重置重打次数和最高击键率
+            RetypeCount = 0;
+            MaxHitRate = 0;
+
             WriteDebugLog("[AutoNextGroup] 调用 InitGroup 前");
             InitGroup();
             WriteDebugLog("[AutoNextGroup] InitGroup 完成");
@@ -963,6 +971,8 @@ namespace TypeSunny
             roundHitRates.Clear();
             roundSpeeds.Clear();
             hasStartedPractice = false;
+            RetypeCount = 0;
+            MaxHitRate = 0;
 
             // 清空练单器窗口内的成绩显示
             stattxt2.Text = "";
@@ -1342,7 +1352,7 @@ namespace TypeSunny
             sb.Append(new StringInfo(txt).LengthInTextElements);
             sb.Append("字 ");
 
-            sb.Append("练单器");
+            sb.Append("晴练单");
             return sb.ToString();
         }
 
@@ -1621,7 +1631,7 @@ namespace TypeSunny
 
         private void norm_Click(object sender, RoutedEventArgs e)
         {
-            ReadTxt();
+            ReadTxt(true);
         }
 
 
@@ -1685,6 +1695,7 @@ namespace TypeSunny
             speedDisplay.Text = cfg["换段击键"];
             numDisplay.Text = cfg["每组字数"];
             hitDecreaseDisplay.Text = cfg["每轮降击"];
+            accuracyDisplay.Text = cfg["换段键准"];
 
             // 恢复字体大小
             if (double.TryParse(cfg["练单器字体大小"], out double savedFtsize) && savedFtsize >= 10 && savedFtsize <= 72)
@@ -1744,12 +1755,12 @@ namespace TypeSunny
                 }
                 sr.Flush();
                 sr.Close();
-                System.Diagnostics.Debug.WriteLine($"练单器配置已保存到: {Path.GetFullPath(configPath)}");
+                System.Diagnostics.Debug.WriteLine($"晴练单配置已保存到: {Path.GetFullPath(configPath)}");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"保存练单器配置失败: {ex.Message}");
-                MessageBox.Show($"保存练单器配置失败: {ex.Message}\n\n请检查程序目录是否有写入权限。\n\n当前目录: {Environment.CurrentDirectory}", "配置保存错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Diagnostics.Debug.WriteLine($"保存晴练单配置失败: {ex.Message}");
+                MessageBox.Show($"保存晴练单配置失败: {ex.Message}\n\n请检查程序目录是否有写入权限。\n\n当前目录: {Environment.CurrentDirectory}", "配置保存错误", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
 
         }
@@ -1822,14 +1833,14 @@ namespace TypeSunny
 
         private void LoadText()
         {
-            
             MainWindow.Current.LoadText(GetMatchText(), RetypeType.first, TxtSource.trainer, false,true);
         }
 
         private void BtnSend_Click(object sender, RoutedEventArgs e)
         {
-            MainWindow.Current.LoadText(GetMatchText(), RetypeType.first, TxtSource.trainer, false, true);
-            QQHelper.SendQQMessage(MainWindow.Current.QQGroupName, GetMatchText(), 150, MainWindow.Current);
+            string matchText = GetMatchText();
+            MainWindow.Current.LoadText(matchText, RetypeType.first, TxtSource.trainer, false, true);
+            QQHelper.SendQQMessage(MainWindow.Current.QQGroupName, matchText, 150, MainWindow.Current);
         }
 
         /// <summary>
@@ -1841,6 +1852,11 @@ namespace TypeSunny
             if (result == MessageBoxResult.Yes)
             {
                 ResetRoundStatistics();
+
+                // 重置段号到第一段
+                cfg["上次的段数"] = "0";
+                sld.Value = 1;
+                InitGroup();
             }
         }
 
@@ -2049,9 +2065,7 @@ namespace TypeSunny
 
                 if (DisplayRoot != null)
                 {
-                    ReadTxt();
-                    ShowWords();
-                    LoadText();
+                    ReadTxt(true);
                 }
                 WriteCfg();
             }
@@ -2068,9 +2082,7 @@ namespace TypeSunny
 
                 if (DisplayRoot != null)
                 {
-                    ReadTxt();
-                    ShowWords();
-                    LoadText();
+                    ReadTxt(true);
                 }
                 WriteCfg();
             }
@@ -2089,9 +2101,7 @@ namespace TypeSunny
 
                     if (DisplayRoot != null)
                     {
-                        ReadTxt();
-                        ShowWords();
-                        LoadText();
+                        ReadTxt(true);
                     }
                     WriteCfg();
                 }
@@ -2180,6 +2190,45 @@ namespace TypeSunny
                 if (DisplayRoot != null)
                     InitGroup();
                 WriteCfg();
+            }
+        }
+
+        // 换段键准调节
+        private void AccuracyUp(object sender, RoutedEventArgs e)
+        {
+            if (CfgInit && int.TryParse(accuracyDisplay.Text, out int value))
+            {
+                value += 1;
+                if (value > 100) value = 100;
+                accuracyDisplay.Text = value.ToString();
+                cfg["换段键准"] = value.ToString();
+                WriteCfg();
+            }
+        }
+
+        private void AccuracyDown(object sender, RoutedEventArgs e)
+        {
+            if (CfgInit && int.TryParse(accuracyDisplay.Text, out int value))
+            {
+                value -= 1;
+                if (value < 0) value = 0;
+                accuracyDisplay.Text = value.ToString();
+                cfg["换段键准"] = value.ToString();
+                WriteCfg();
+            }
+        }
+
+        private void AccuracyDisplay_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (CfgInit && accuracyDisplay.Text.Length > 0)
+            {
+                if (int.TryParse(accuracyDisplay.Text, out int value))
+                {
+                    if (value < 0) value = 0;
+                    if (value > 100) value = 100;
+                    cfg["换段键准"] = value.ToString();
+                    WriteCfg();
+                }
             }
         }
 

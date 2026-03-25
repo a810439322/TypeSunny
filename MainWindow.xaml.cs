@@ -7907,21 +7907,17 @@ public async Task SendArticle()
         private async void BtnPrev_Click(object sender, RoutedEventArgs e)
         {
             ArticleManager.PrevSection();
-            LoadText(await ArticleManager.GetFormattedCurrentSection(), RetypeType.first, TxtSource.book, false);
-            TbxInput.Focus();
-
+            string content = await ArticleManager.GetFormattedCurrentSection();
+            LoadText(content, RetypeType.first, TxtSource.book, false);
+            SendContentToClipboardOrQQ(content);
         }
 
         private async void BtnNext_Click(object sender, RoutedEventArgs e)
         {
-
             ArticleManager.NextSection();
-
-
-
-            LoadText(await ArticleManager.GetFormattedCurrentSection(), RetypeType.first, TxtSource.book, false);
-            TbxInput.Focus();
-
+            string content = await ArticleManager.GetFormattedCurrentSection();
+            LoadText(content, RetypeType.first, TxtSource.book, false);
+            SendContentToClipboardOrQQ(content);
         }
 
 
