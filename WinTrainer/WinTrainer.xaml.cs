@@ -133,10 +133,35 @@ namespace TypeSunny
 
         string TxtFile;
 
+        // 显示名 → 实际文件名（不含.txt）的映射
+        Dictionary<string, string> displayToFileName = new Dictionary<string, string>();
+
+        /// <summary>
+        /// 去掉文件名开头的排序序号（如 "01." "2." "10."），返回显示名
+        /// </summary>
+        private string GetDisplayName(string fileNameWithoutExt)
+        {
+            // 匹配开头的数字+点，如 "01." "2." "10."
+            var match = System.Text.RegularExpressions.Regex.Match(fileNameWithoutExt, @"^\d+\.\s*");
+            if (match.Success)
+                return fileNameWithoutExt.Substring(match.Length);
+            return fileNameWithoutExt;
+        }
+
+        /// <summary>
+        /// 从显示名获取实际文件名（不含.txt）
+        /// </summary>
+        private string GetActualFileName(string displayName)
+        {
+            if (displayToFileName.ContainsKey(displayName))
+                return displayToFileName[displayName];
+            return displayName; // 没有映射时直接返回（兼容无序号的文件）
+        }
+
         // 本轮练习统计数据
-        private int roundTotalWords = 0;      // 本轮总字数（不重复计算）
+        private int roundTotalWords = 0;      // 本轮总字数（训练文总字数，开始时计算一次）
         private int roundActualWords = 0;     // 本轮实际字数（包括所有重打的输入）
-        private int roundCorrectWords = 0;    // 本轮打对字数
+        private double roundCorrectWords = 0;    // 本轮打对字数
         private double roundTotalTime = 0;    // 本轮总用时（秒）
         private int roundCompletedGroups = 0; // 本轮完成段数
         private List<double> roundHitRates = new List<double>();   // 本轮每段击键率
@@ -154,7 +179,7 @@ namespace TypeSunny
         {
             public int RoundTotalWords { get; set; }
             public int RoundActualWords { get; set; }
-            public int RoundCorrectWords { get; set; }
+            public double RoundCorrectWords { get; set; }
             public double RoundTotalTime { get; set; }
             public int RoundCompletedGroups { get; set; }
             public List<double> RoundHitRates { get; set; }
@@ -246,7 +271,7 @@ namespace TypeSunny
                 SaveCurrentArticleStatistics();
             }
 
-            TxtFile = FileSelector.SelectedItem.ToString();
+            TxtFile = GetActualFileName(FileSelector.SelectedItem.ToString());
             string filename = Folder + TxtFile + ".txt";
             if (CfgInit)
             {
@@ -263,12 +288,29 @@ namespace TypeSunny
 
             // 如果已经有保存的 DisplayRoot（包括乱序状态），跳过文章解析
             // forceReload 时强制从文件重新读取
-            if (!forceReload &&
+            // 如果每组字数发生了变化，也需要重新读取
+            bool groupSizeChanged = false;
+            if (articleStatisticsDict.ContainsKey(TxtFile) &&
+                articleStatisticsDict[TxtFile].DisplayRoot != null &&
+                articleStatisticsDict[TxtFile].DisplayRoot.Count > 1)
+            {
+                int cachedFirstGroupSize = articleStatisticsDict[TxtFile].DisplayRoot[0].Count;
+                int currentGroupSize = Convert.ToInt32(cfg["每组字数"]);
+                // fixed模式：每段字数应等于每组字数（最后一段除外，所以检查第一段）
+                if (cachedFirstGroupSize != currentGroupSize)
+                {
+                    groupSizeChanged = true;
+                }
+            }
+
+            if (!forceReload && !groupSizeChanged &&
                 articleStatisticsDict.ContainsKey(TxtFile) &&
                 articleStatisticsDict[TxtFile].DisplayRoot != null &&
                 articleStatisticsDict[TxtFile].DisplayRoot.Count > 0)
             {
                 // DisplayRoot 已在 LoadArticleStatistics 中恢复
+                // 过滤掉空段（防止历史缓存中的空段）
+                DisplayRoot.RemoveAll(g => string.IsNullOrWhiteSpace(string.Join("", g)));
                 // 重新计算 TotalGroup
                 TotalGroup = DisplayRoot.Count;
             }
@@ -348,11 +390,10 @@ namespace TypeSunny
                     }
 
 
-                    TotalGroup = (RootList.Count + Convert.ToInt32(cfg["每组字数"]) - 1) / Convert.ToInt32(cfg["每组字数"]);
+                    int groupSize = Convert.ToInt32(cfg["每组字数"]);
+                    TotalGroup = (RootList.Count + groupSize - 1) / groupSize;
 
-
-
-                    MaxGroupSize = Convert.ToInt32(cfg["每组字数"]);
+                    MaxGroupSize = groupSize;
 
                     int k = 0;
 
@@ -363,19 +404,22 @@ namespace TypeSunny
                         int jmax;
                         if (i < TotalGroup - 1)
                         {
-                            jmax = Convert.ToInt32(cfg["每组字数"]);
+                            jmax = groupSize;
                         }
                         else
                         {
-                            jmax = RootList.Count - Convert.ToInt32(cfg["每组字数"]) * (TotalGroup - 1);
+                            jmax = RootList.Count - groupSize * (TotalGroup - 1);
                         }
                         for (int j = 0; j < jmax; j++)
                         {
                             DisplayRoot[i].Add(RootList[k]);
-
                             k++;
                         }
                     }
+
+                // 过滤掉空段（内容为空或纯空白的段）
+                DisplayRoot.RemoveAll(g => string.IsNullOrWhiteSpace(string.Join("", g)));
+                TotalGroup = DisplayRoot.Count;
                 }
             }
 
@@ -383,16 +427,32 @@ namespace TypeSunny
             // LoadArticleStatistics() 已经恢复了段号，InitSlider() 和 InitGroup() 会使用它
 
             // RetypeCount 和 MaxHitRate 已在 LoadArticleStatistics 中恢复或初始化，不要重置
+
+            // 确保段数索引不超出 DisplayRoot 范围
+            if (DisplayRoot.Count > 0)
+            {
+                int savedIndex = Convert.ToInt32(cfg["上次的段数"]);
+                if (savedIndex >= DisplayRoot.Count)
+                {
+                    cfg["上次的段数"] = (DisplayRoot.Count - 1).ToString();
+                }
+            }
+            else
+            {
+                cfg["上次的段数"] = "0";
+            }
+
             InitSlider();
 
-            InitGroup();
+            if (DisplayRoot.Count > 0)
+                InitGroup();
 
 
         }
 
         private void ReadTxt_old() //从文件重新读取码表
         {
-            TxtFile = FileSelector.SelectedItem.ToString();
+            TxtFile = GetActualFileName(FileSelector.SelectedItem.ToString());
             string filename = Folder  + TxtFile + ".txt";
             if (CfgInit)
             {
@@ -552,10 +612,11 @@ namespace TypeSunny
         {
             WriteDebugLog("[GetNextRound] 方法开始");
 
-            // 累加统计数据（在主线程）
-            roundActualWords += Score.InputWordCount;
-            roundCorrectWords += (int)(Score.InputWordCount * accuracy);
+            // 累加用时和字数（无论通过与否都记录）
+            // 实际字数 = 输入的字 + 退格删掉的字 = 所有实际敲入的字符总数
             roundTotalTime += Score.Time.TotalSeconds;
+            roundActualWords += Score.InputWordCount + (int)Score.GetBacks();
+            roundCorrectWords += Score.TotalWordCount * accuracy;
 
             double targetAccuracy = Convert.ToDouble(cfg["换段键准"]) / 100.0;
             WriteDebugLog($"[GetNextRound] 条件判断 accuracy={accuracy:F4}, hitRate={hitrate:F2}, TargetHit={TargetHit:F2}, targetAccuracy={targetAccuracy:F4}, wrong={wrong}");
@@ -564,14 +625,24 @@ namespace TypeSunny
             {
                 WriteDebugLog("[GetNextRound] 进入 if 分支");
 
-                // 通过条件：累加本组统计
-                roundTotalWords += Score.TotalWordCount;
+                // 通过条件：累加段数、击键、速度
                 roundCompletedGroups++;
                 roundHitRates.Add(hitrate);
                 roundSpeeds.Add(Score.Speed);
                 WriteDebugLog("[GetNextRound] 累加统计完成");
 
                 bool wasNotStarted = !hasStartedPractice;
+                if (wasNotStarted)
+                {
+                    // 首次通过时，计算训练文总字数（只算一次，不随重打累加）
+                    roundTotalWords = 0;
+                    foreach (var g in DisplayRoot)
+                    {
+                        string groupText = string.Join("", g);
+                        roundTotalWords += new System.Globalization.StringInfo(groupText).LengthInTextElements;
+                    }
+                    WriteDebugLog($"[GetNextRound] 训练文总字数={roundTotalWords}");
+                }
                 hasStartedPractice = true;
                 WriteDebugLog($"[GetNextRound] wasNotStarted={wasNotStarted}");
 
@@ -634,23 +705,47 @@ namespace TypeSunny
                 this.Dispatcher.Invoke(new Action(() =>
                 {
                     WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 AutoNextGroup");
-                    AutoNextGroup();
+                    string roundRecord;
+                    bool roundCompleted = AutoNextGroup(out roundRecord);
                     WriteDebugLog("[GetNextRound] AutoNextGroup 完成");
 
-                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 GetMatchText");
-                    string matchText = GetMatchText(fileName);
-                    WriteDebugLog($"[GetNextRound] GetMatchText 完成，长度={matchText?.Length ?? 0}");
+                    if (roundCompleted)
+                    {
+                        // 一轮完成：用SendQQMessageD一次性发最后一段成绩+总成绩
+                        if (!string.IsNullOrEmpty(roundRecord))
+                        {
+                            QQHelper.SendQQMessageD(MainWindow.Current.QQGroupName, result, roundRecord, 150, MainWindow.Current);
+                        }
+                        else
+                        {
+                            QQHelper.SendQQMessage(MainWindow.Current.QQGroupName, result, 150, MainWindow.Current);
+                        }
+                        MainWindow.Current.UpdateTopStatusText("本轮练习完成，请手动发文开始下一轮");
 
-                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 LoadText");
-                    MainWindow.Current.LoadText(matchText, RetypeType.first, TxtSource.trainer, false, true);
-                    WriteDebugLog("[GetNextRound] LoadText 完成");
+                        // 弹窗放在QQ发送之后（弹窗会阻塞但不影响发送）
+                        if (!string.IsNullOrEmpty(roundRecord))
+                        {
+                            MessageBox.Show(roundRecord, "练习统计", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
+                    }
+                    else
+                    {
+                        // 正常换段：用SendQQMessageD一次性发成绩+新文本（避免剪贴板覆盖）
+                        WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 GetMatchText");
+                        string matchText = GetMatchText(fileName);
+                        WriteDebugLog($"[GetNextRound] GetMatchText 完成，长度={matchText?.Length ?? 0}");
 
-                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 UpdateTopStatusText");
-                    MainWindow.Current.UpdateTopStatusText(t);
+                        WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 LoadText");
+                        MainWindow.Current.LoadText(matchText, RetypeType.first, TxtSource.trainer, false, true);
+                        WriteDebugLog("[GetNextRound] LoadText 完成");
 
-                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 SendQQMessageD");
-                    QQHelper.SendQQMessageD(MainWindow.Current.QQGroupName, result, matchText, 150, MainWindow.Current);
-                    WriteDebugLog("[GetNextRound] SendQQMessageD 完成");
+                        WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 UpdateTopStatusText");
+                        MainWindow.Current.UpdateTopStatusText(t);
+
+                        WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 SendQQMessageD");
+                        QQHelper.SendQQMessageD(MainWindow.Current.QQGroupName, result, matchText, 150, MainWindow.Current);
+                        WriteDebugLog("[GetNextRound] SendQQMessageD 完成");
+                    }
 
                     WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 UpdateRoundStatus");
                     UpdateRoundStatus();
@@ -750,14 +845,12 @@ namespace TypeSunny
         }
 
         /// <summary>
-        /// 记录部分进度（用于F3重打时统计打到一半的数据）
+        /// 记录部分进度（用于F3重打时统计打到一半的用时）
         /// </summary>
         public void RecordPartialProgress(int inputWordCount, double timeSeconds, double accuracy)
         {
-            if (inputWordCount > 0 && timeSeconds > 0)
+            if (timeSeconds > 0)
             {
-                roundActualWords += inputWordCount;
-                roundCorrectWords += (int)(inputWordCount * accuracy);
                 roundTotalTime += timeSeconds;
             }
         }
@@ -840,13 +933,69 @@ namespace TypeSunny
                 return;
             }
 
+            // 记住当前选中的实际文件名，刷新后恢复
+            string previousActualFile = null;
+            if (FileSelector.SelectedItem != null)
+                previousActualFile = GetActualFileName(FileSelector.SelectedItem.ToString());
+
             DirectoryInfo folder = new DirectoryInfo(Folder);
 
-            foreach (FileInfo file in folder.GetFiles("*.txt"))
-                FileSelector.Items.Add(file.Name.Substring(0, file.Name.Length - 4));
+            // 按自然数排序（让 2.xxx 排在 10.xxx 前面）
+            var files = folder.GetFiles("*.txt").OrderBy(f => f.Name, new NaturalStringComparer()).ToArray();
 
-            if (FileSelector.Items.Count > 0)
+            displayToFileName.Clear();
+            FileSelector.Items.Clear();
+            foreach (FileInfo file in files)
+            {
+                string fileNameWithoutExt = file.Name.Substring(0, file.Name.Length - 4);
+                string displayName = GetDisplayName(fileNameWithoutExt);
+
+                // 如果显示名重复，保留原名避免冲突
+                if (displayToFileName.ContainsKey(displayName))
+                    displayName = fileNameWithoutExt;
+
+                displayToFileName[displayName] = fileNameWithoutExt;
+                FileSelector.Items.Add(displayName);
+            }
+
+            // 恢复之前选中的文件
+            bool restored = false;
+            if (previousActualFile != null)
+            {
+                for (int i = 0; i < FileSelector.Items.Count; i++)
+                {
+                    if (GetActualFileName(FileSelector.Items[i].ToString()) == previousActualFile)
+                    {
+                        FileSelector.SelectedIndex = i;
+                        restored = true;
+                        break;
+                    }
+                }
+            }
+            if (!restored && FileSelector.Items.Count > 0)
                 FileSelector.SelectedIndex = 0;
+        }
+
+        /// <summary>
+        /// 刷新文件列表（供外部调用，如每次显示窗口时）
+        /// </summary>
+        public void RefreshFileList()
+        {
+            UpdateFileList();
+        }
+
+        /// <summary>
+        /// 自然排序比较器，让 "2.xxx" 排在 "10.xxx" 前面
+        /// </summary>
+        private class NaturalStringComparer : IComparer<string>
+        {
+            [System.Runtime.InteropServices.DllImport("shlwapi.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+            private static extern int StrCmpLogicalW(string x, string y);
+
+            public int Compare(string x, string y)
+            {
+                return StrCmpLogicalW(x, y);
+            }
         }
 
         private void RetypeGroup(bool rand, bool count) //重打本组
@@ -882,6 +1031,10 @@ namespace TypeSunny
             // RetypeCount = 0;  // 已移除
             // MaxHitRate = 0;    // 已移除
 
+            int section = Convert.ToInt32(cfg["上次的段数"]);
+            // 防御：如果当前段为空或不存在，跳过载文
+            if (section >= DisplayRoot.Count || DisplayRoot[section].Count == 0)
+                return;
 
             InGroupRand();
             ShowWords();
@@ -913,9 +1066,13 @@ namespace TypeSunny
 
 
 
-        public void AutoNextGroup()
+        /// <summary>
+        /// 自动前进到下一段，返回 true 表示一整轮已完成（需要停下来）
+        /// </summary>
+        public bool AutoNextGroup(out string roundResultRecord)
         {
             WriteDebugLog("[AutoNextGroup] 方法开始");
+            roundResultRecord = null;
 
             cfg["上次的段数"] = (Convert.ToInt32(cfg["上次的段数"]) + 1).ToString();
             WriteDebugLog("[AutoNextGroup] 段号更新完成");
@@ -928,24 +1085,45 @@ namespace TypeSunny
             // 检查是否完成一整轮
             if (Convert.ToInt32(cfg["上次的段数"]) == TotalGroup)
             {
-                WriteDebugLog("[AutoNextGroup] 完成一轮");
-                // 完成一轮，显示统计并记录日志
-                ShowRoundStatistics();
+                WriteDebugLog("[AutoNextGroup] 完成一轮，停下来等待用户操作");
+                // 完成一轮，获取总成绩（不弹窗、不发QQ，由调用方处理）
+                roundResultRecord = ShowRoundStatistics();
                 RecordRoundLog();
 
+                // 重置段号到第一段，但不自动开始
                 cfg["上次的段数"] = "0";
-
-                // 重置统计数据，准备下一轮
                 ResetRoundStatistics();
-                // 清空统计显示
                 UpdateRoundStatus();
-                WriteDebugLog("[AutoNextGroup] 一轮处理完成");
+
+                SliderInit = false; // 防止触发 Slider_ValueChanged 导致自动加载
+                sld.Value = 1;
+                SliderInit = true;
+
+                // 重置重打次数
+                RetypeCount = 0;
+                MaxHitRate = 0;
+
+                // 初始化第一段的显示（但不加载到主窗口打字区）
+                InGroupRand();
+                ShowWords();
+                WriteCfg();
+                TargetHit = Convert.ToDouble(cfg["换段击键"]) - Convert.ToDouble(cfg["每轮降击"]) * (RetypeCount);
+                if (mode == "varible")
+                    TargetHit = Math.Round((float)(TargetHit * Math.Pow(AverageGroupSize / (double)DisplayRoot[Convert.ToInt32(cfg["上次的段数"])].Count, 0.35)), 2);
+                if (TargetHit < 0.01)
+                    TargetHit = 0.01;
+                DisplayHit();
+                stattxt.Text = "第 " + (Convert.ToInt32(cfg["上次的段数"]) + 1) + "/" + TotalGroup + " 段";
+                UpdateRoundStatus();
+                UpdateUIState();
+
+                WriteDebugLog("[AutoNextGroup] 一轮处理完成，等待用户手动发文");
+                return true; // 一轮完成
             }
 
             WriteDebugLog("[AutoNextGroup] 设置 sld.Value 前");
             sld.Value = Convert.ToInt32(cfg["上次的段数"]) + 1;
             WriteDebugLog("[AutoNextGroup] sld.Value 设置完成");
-
 
             // 新段重置重打次数和最高击键率
             RetypeCount = 0;
@@ -956,6 +1134,7 @@ namespace TypeSunny
             WriteDebugLog("[AutoNextGroup] InitGroup 完成");
 
             WriteDebugLog("[AutoNextGroup] 方法结束");
+            return false; // 继续下一段
         }
 
         /// <summary>
@@ -1194,7 +1373,7 @@ namespace TypeSunny
                                 {
                                     RoundTotalWords = int.TryParse(parts[1], out int totalWords) ? totalWords : 0,
                                     RoundActualWords = int.TryParse(parts[2], out int actualWords) ? actualWords : 0,
-                                    RoundCorrectWords = int.TryParse(parts[3], out int correctWords) ? correctWords : 0,
+                                    RoundCorrectWords = double.TryParse(parts[3], out double correctWords) ? correctWords : 0,
                                     RoundTotalTime = double.TryParse(parts[4], out double totalTime) ? totalTime : 0,
                                     RoundCompletedGroups = int.TryParse(parts[5], out int completedGroups) ? completedGroups : 0,
                                     HasStartedPractice = bool.TryParse(parts[6], out bool started) ? started : false,
@@ -1216,10 +1395,13 @@ namespace TypeSunny
         /// <summary>
         /// 显示本轮统计弹窗
         /// </summary>
-        private void ShowRoundStatistics()
+        /// <summary>
+        /// 计算本轮练习统计，返回总成绩字符串和弹窗内容（不发QQ、不弹窗）
+        /// </summary>
+        private string ShowRoundStatistics()
         {
             if (roundCompletedGroups == 0)
-                return;
+                return null;
 
             double avgHitRate = 0;
             double avgSpeed = 0;
@@ -1234,32 +1416,15 @@ namespace TypeSunny
             if (roundActualWords > 0)
                 avgAccuracy = (double)roundCorrectWords / roundActualWords * 100;
 
-            StringBuilder sb = new StringBuilder();
-            sb.AppendLine("【本轮练习完成】");
-            sb.AppendLine();
-            sb.AppendLine($"练习项：{TxtFile}");
-            sb.AppendLine($"总字数：{roundTotalWords}");
-            sb.AppendLine($"实际字数：{roundActualWords}");
-            sb.AppendLine($"平均击键：{avgHitRate:F2}");
-            sb.AppendLine($"平均速度：{avgSpeed:F2}");
-            sb.AppendLine($"总键准：{avgAccuracy:F2}%");
-            sb.AppendLine($"总用时：{Score.FormatTime(roundTotalTime)}");
-
-            MessageBox.Show(sb.ToString(), "练习统计", MessageBoxButton.OK, MessageBoxImage.Information);
-
             // 生成成绩记录格式，添加到主窗口成绩区
-            string resultRecord = string.Format("[练单] {0} 击键{1:F2} 速度{2:F2} 字数{3} 实际{4} 键准{5:F2}% 用时{6}",
+            string resultRecord = string.Format("[晴练单] {0} 击键{1:F2} 速度{2:F2} 字数{3} 实际{4} 键准{5:F2}% 用时{6}",
                 TxtFile, avgHitRate, avgSpeed, roundTotalWords, roundActualWords, avgAccuracy, Score.FormatTime(roundTotalTime));
             if (MainWindow.Current != null)
             {
                 MainWindow.Current.UpdateTypingStat(resultRecord);
             }
 
-            // 根据"自动发送成绩"开关决定是否复制成绩到剪贴板
-            if (Config.GetBool("自动发送成绩"))
-            {
-                MainWindow.Win32SetText(resultRecord);
-            }
+            return resultRecord;
         }
 
         /// <summary>
@@ -1293,7 +1458,7 @@ namespace TypeSunny
                 Speed = avgSpeed,
                 HitRate = avgHitRate,
                 Accuracy = avgAccuracy / 100,  // 转换为小数形式
-                Wrong = roundActualWords - roundCorrectWords,  // 错字数 = 实际字数 - 打对字数
+                Wrong = (int)(roundActualWords - roundCorrectWords),  // 错字数 = 实际字数 - 打对字数
                 Backs = 0,  // 打单器不跟踪退格
                 Correction = 0,  // 打单器不跟踪回改
                 KPW = avgSpeed > 0 ? avgHitRate / avgSpeed * 60 : 0,  // 码长 = 击键/速度*60
@@ -1320,6 +1485,15 @@ namespace TypeSunny
         string GetMatchText(string fileName)
         {
             // 重载方法：使用传入的文件名（用于后台线程调用）
+            int section = Convert.ToInt32(cfg["上次的段数"]);
+            if (section >= DisplayRoot.Count)
+                return "";
+
+            string txt = string.Join("", DisplayRoot[section]);
+            // 如果实际文本内容为空，不生成载文文本
+            if (string.IsNullOrWhiteSpace(txt))
+                return "";
+
             StringBuilder sb = new StringBuilder();
             string name = fileName + " " + "目标" + Convert.ToDouble(cfg["换段击键"]).ToString("F2");
 
@@ -1327,7 +1501,6 @@ namespace TypeSunny
                 name += "-" + Convert.ToDouble(cfg["每轮降击"]).ToString("F2");
             sb.Append(name);
             sb.AppendLine();
-            string txt = string.Join("", DisplayRoot[Convert.ToInt32(cfg["上次的段数"])]); 
             sb.Append(txt);
             sb.AppendLine();
             sb.Append("-----第");
@@ -1472,6 +1645,13 @@ namespace TypeSunny
             // 获取当前段号，只对剩余段乱序
             int currentSection = Convert.ToInt32(cfg["上次的段数"]);
 
+            if (DisplayRoot.Count == 0)
+                return;
+
+            // 防止段号超出范围
+            if (currentSection >= DisplayRoot.Count)
+                currentSection = 0;
+
             if (mode == "fixed")
             {
                 List<string> RootList = new List<string>();
@@ -1547,26 +1727,32 @@ namespace TypeSunny
                 }
 
                 // 添加乱序后的剩余段
-                for (int i = currentSection; i < TotalGroup; i++)
+                int groupSize = Convert.ToInt32(cfg["每组字数"]);
+                int remainingGroups = (count + groupSize - 1) / groupSize;
+                for (int i = 0; i < remainingGroups; i++)
                 {
                     DisplayRoot.Add(new List<string>());
 
                     int jmax;
-                    if (i < TotalGroup - 1)
+                    if (i < remainingGroups - 1)
                     {
-                        jmax = Convert.ToInt32(cfg["每组字数"]);
+                        jmax = groupSize;
                     }
                     else
                     {
-                        jmax = count - Convert.ToInt32(cfg["每组字数"]) * (TotalGroup - 1 - currentSection);
+                        jmax = count - groupSize * (remainingGroups - 1);
                     }
-                    for (int j = 0; j < jmax; j++)
+                    for (int j = 0; j < jmax && k < RootList.Count; j++)
                     {
-                        DisplayRoot[i].Add(RootList[k]);
+                        DisplayRoot[currentSection + i].Add(RootList[k]);
 
                         k++;
                     }
                 }
+
+                // 过滤掉空段
+                DisplayRoot.RemoveAll(g => string.IsNullOrWhiteSpace(string.Join("", g)));
+                TotalGroup = DisplayRoot.Count;
                 InitGroup();
                 InitSlider();
 
@@ -1685,7 +1871,7 @@ namespace TypeSunny
 
             for (int i = 0; i < FileSelector.Items.Count; i++)
             {
-                if (cfg["上次打开的文件"] == FileSelector.Items[i].ToString() + ".txt")
+                if (cfg["上次打开的文件"] == GetActualFileName(FileSelector.Items[i].ToString()) + ".txt")
                 {
                     FileSelector.SelectedIndex = i;
                 }

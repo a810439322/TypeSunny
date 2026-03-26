@@ -4199,7 +4199,7 @@ public async Task SendArticle()
 
             var rt = ExtractRawTxt(rawTxt);
 
-            if (rt.Item1 == "")
+            if (string.IsNullOrWhiteSpace(rt.Item1))
             {
                 return;
             }
@@ -4464,10 +4464,8 @@ public async Task SendArticle()
                 }
             }
 
-            if (index >= 2) //赛文格式
+            if (index >= 0) //找到了赛文尾行 -----第X段
             {
-                head = lines[index - 2];
-                content = lines[index - 1];
                 tail = lines[index];
 
                 var m = Regex.Match(tail, "第(\\w+)段");
@@ -4477,8 +4475,26 @@ public async Task SendArticle()
                 else
                     paragraph = 0;
 
-                if (head.Length >= 3 && head.Substring(0, 3) == "皇叔 ")
-                    content = UnicodeBias(content);
+                if (index >= 2)
+                {
+                    // 标准三行格式：head + content + tail
+                    head = lines[index - 2];
+                    content = lines[index - 1];
+
+                    if (head.Length >= 3 && head.Substring(0, 3) == "皇叔 ")
+                        content = UnicodeBias(content);
+                }
+                else if (index == 1)
+                {
+                    // 两行：可能是 head + tail（空段，content被RemoveEmptyEntries吞了）
+                    // 此时 lines[0] 是标题行，content 为空
+                    content = "";
+                }
+                else
+                {
+                    // 只有尾行
+                    content = "";
+                }
             }
             else //非赛文格式
             {
@@ -8382,6 +8398,7 @@ public async Task SendArticle()
 
             if (WinTrainer.Current != null)
             {
+                WinTrainer.Current.RefreshFileList();
                 WinTrainer.Current.Show();
                 WinTrainer.Current.Focus();
                 WinTrainer.Current.Activate();
