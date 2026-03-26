@@ -2562,7 +2562,7 @@ namespace TypeSunny
                 string typingStatReport = Score.Report(); // 提前计算，避免异步竞争
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    if (savedRetypeType != RetypeType.wrongRetype)
+                    if (savedRetypeType != RetypeType.wrongRetype && savedRetypeType != RetypeType.slowRetype)
                         UpdateTypingStat(typingStatReport);
                     else
                         UpdateTypingStat();
@@ -2576,6 +2576,7 @@ namespace TypeSunny
 
 
                 //自动发送成绩&&加载下一段
+                bool articleSenderResultSent = false;
 
 
 
@@ -2792,9 +2793,11 @@ namespace TypeSunny
                 }
                 else if (StateManager.txtSource == TxtSource.articlesender) //文来
                 {
-                    // 独立的 if：处理错字重打的成绩发送（正文且非慢字重打）
-                    if (Config.GetBool("错字重打") && StateManager.retypeType != RetypeType.slowRetype &&
-                        StateManager.retypeType != RetypeType.wrongRetype && TextInfo.WrongRec.Count > 0)
+                    // 独立的 if：处理错字/慢字重打前的成绩发送（首打时）
+                    if ((Config.GetBool("错字重打") || Config.GetBool("慢字重打")) &&
+                        StateManager.retypeType != RetypeType.slowRetype &&
+                        StateManager.retypeType != RetypeType.wrongRetype &&
+                        (Config.GetBool("错字重打") && TextInfo.WrongRec.Count > 0))
                     {
                         if (Config.GetBool("自动发送成绩"))
                         {
@@ -2807,6 +2810,7 @@ namespace TypeSunny
                             {
                                 Win32SetText(result);
                             }
+                            articleSenderResultSent = true;
                         }
                         // 发送成绩后继续执行，让后续的错字重打逻辑处理
                     }
@@ -2867,7 +2871,7 @@ namespace TypeSunny
                 else // 其他模式（群载文等）
                 {
                     // 群载文模式：只有开启"自动发送成绩"且不是重打模式时才发送成绩
-                    if (StateManager.retypeType != RetypeType.wrongRetype && Config.GetBool("自动发送成绩"))
+                    if (StateManager.retypeType != RetypeType.wrongRetype && StateManager.retypeType != RetypeType.slowRetype && Config.GetBool("自动发送成绩"))
                     {
                         QQHelper.SendQQMessage(qqGroupName, result, 0, this);
                     }
@@ -2938,6 +2942,26 @@ namespace TypeSunny
                             // 不慢，跳过这一组
                             textPos += charCount;
                         }
+                    }
+                }
+
+                // 晴发文模式：慢字检测完成后，如果有慢字且首打成绩未发过，补发成绩
+                if (savedTxtSource == TxtSource.articlesender && !articleSenderResultSent &&
+                    StateManager.retypeType != RetypeType.slowRetype &&
+                    StateManager.retypeType != RetypeType.wrongRetype &&
+                    Config.GetBool("慢字重打") && TextInfo.SlowRec.Count > 0)
+                {
+                    if (Config.GetBool("自动发送成绩"))
+                    {
+                        if (qqGroupName != "")
+                        {
+                            QQHelper.SendQQMessage(qqGroupName, result, 250, this);
+                        }
+                        else
+                        {
+                            Win32SetText(result);
+                        }
+                        articleSenderResultSent = true;
                     }
                 }
 
