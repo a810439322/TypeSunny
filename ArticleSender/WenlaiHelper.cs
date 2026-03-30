@@ -488,6 +488,7 @@ namespace TypeSunny.ArticleSender
             // 清空 ApiClient 实例，下次使用时会重新创建
             apiClient = null;
             jwtAuthProvider = null;
+            ArticleFetcher.Initialize(null);  // 清掉 ArticleFetcher 的旧客户端，避免退出后复用失效连接
 
             System.Diagnostics.Debug.WriteLine("✓ 文来已退出登录");
         }
@@ -679,14 +680,26 @@ namespace TypeSunny.ArticleSender
                 Content = "登录",
                 Width = 80,
                 Height = 30,
-                Margin = new Thickness(0, 0, 10, 0)
+                Margin = new Thickness(0, 0, 10, 0),
+                IsDefault = true  // Enter 键自动触发登录
             };
 
             var btnCancel = new Button
             {
                 Content = "取消",
                 Width = 80,
-                Height = 30
+                Height = 30,
+                IsCancel = true  // Esc 键自动取消
+            };
+
+            // 用户名框按回车跳到密码框
+            txtUsername.KeyDown += (s, args) =>
+            {
+                if (args.Key == System.Windows.Input.Key.Enter)
+                {
+                    args.Handled = true;
+                    txtPassword.Focus();
+                }
             };
 
             btnLogin.Click += async (s, args) =>

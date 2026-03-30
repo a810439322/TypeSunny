@@ -71,7 +71,7 @@ namespace TypeSunny.ArticleSender
         public static void Initialize(ApiClient client)
         {
             apiClient = client;
-            System.Diagnostics.Debug.WriteLine($"[ArticleFetcher] 已初始化 ApiClient，baseUrl: {client.BaseUrl}");
+            System.Diagnostics.Debug.WriteLine($"[ArticleFetcher] 已初始化 ApiClient，baseUrl: {client?.BaseUrl ?? "(null)"}");
         }
 
         /// <summary>

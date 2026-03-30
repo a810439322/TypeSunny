@@ -7567,6 +7567,76 @@ public async Task SendArticle()
 
             try
             {
+                // 先检查登录状态，未登录直接弹登录/注册窗口，不发网络请求
+                if (!wenlaiHelper.IsLoggedIn())
+                {
+                    bool shouldRetry = false;
+
+                    var dialog = new Window
+                    {
+                        Title = "需要登录",
+                        Width = 360,
+                        Height = 180,
+                        WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                        Owner = this,
+                        ResizeMode = ResizeMode.NoResize
+                    };
+
+                    var grid = new Grid();
+                    grid.Margin = new Thickness(20);
+                    grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                    grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(20) });
+                    grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+                    var message = new TextBlock
+                    {
+                        Text = "请先登录文来账号",
+                        TextWrapping = TextWrapping.Wrap,
+                        FontSize = 14
+                    };
+                    Grid.SetRow(message, 0);
+                    grid.Children.Add(message);
+
+                    var btnPanel = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Center
+                    };
+                    Grid.SetRow(btnPanel, 2);
+
+                    var btnLogin = new Button { Content = "🔑 登录", Width = 90, Height = 32, Margin = new Thickness(0, 0, 10, 0), FontSize = 14 };
+                    var btnRegister = new Button { Content = "📝 注册", Width = 90, Height = 32, Margin = new Thickness(0, 0, 10, 0), FontSize = 14 };
+                    var btnCancel = new Button { Content = "取消", Width = 90, Height = 32, FontSize = 14 };
+
+                    btnLogin.Click += (s, args) =>
+                    {
+                        dialog.Close();
+                        wenlaiHelper.ShowLoginDialog(this);
+                        shouldRetry = wenlaiHelper.IsLoggedIn();
+                        if (shouldRetry) { InitializeWenlaiMenu(); InitializeRaceMenu(); }
+                    };
+                    btnRegister.Click += (s, args) =>
+                    {
+                        dialog.Close();
+                        wenlaiHelper.ShowRegisterDialog(this);
+                        shouldRetry = wenlaiHelper.IsLoggedIn();
+                        if (shouldRetry) { InitializeWenlaiMenu(); InitializeRaceMenu(); }
+                    };
+                    btnCancel.Click += (s, args) => { dialog.Close(); };
+
+                    btnPanel.Children.Add(btnLogin);
+                    btnPanel.Children.Add(btnRegister);
+                    btnPanel.Children.Add(btnCancel);
+                    grid.Children.Add(btnPanel);
+                    dialog.Content = grid;
+                    dialog.ShowDialog();
+
+                    if (shouldRetry)
+                    {
+                        await LoadRandomArticleAsync(autoSend, lastResult);
+                    }
+                    return;
+                }
 
                 // ✅ 关键修复：在载文前加载登录Cookie
                 string wenlaiServerUrl = Config.GetString("文来接口地址");

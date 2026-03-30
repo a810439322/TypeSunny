@@ -63,6 +63,15 @@ namespace TypeSunny.Net.Http
                 Timeout = TimeSpan.FromSeconds(30)
             };
 
+            // 防止 .NET Framework 连接池复用已被服务端关闭的 TCP 连接（"基础连接已经关闭"）
+            // ConnectionLeaseTimeout 让连接池定期丢弃旧连接，避免用死连接发请求
+            try
+            {
+                var sp = ServicePointManager.FindServicePoint(new Uri(this.baseUrl));
+                sp.ConnectionLeaseTimeout = 60 * 1000;  // 60秒
+            }
+            catch { }
+
             // 浏览器 User-Agent
             this.httpClient.DefaultRequestHeaders.Add("User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
@@ -218,10 +227,25 @@ namespace TypeSunny.Net.Http
             }
             catch
             {
+                // JSON 解析失败，根据 HTTP 状态码给出友好提示
+                string friendlyMsg;
+                switch (httpStatusCode)
+                {
+                    case 502: friendlyMsg = "服务器网关错误，后端服务可能未启动"; break;
+                    case 503: friendlyMsg = "服务器暂时不可用，请稍后再试"; break;
+                    case 504: friendlyMsg = "服务器网关超时，后端服务响应过慢"; break;
+                    default:
+                        friendlyMsg = httpStatusCode >= 500
+                            ? $"服务器错误 (HTTP {httpStatusCode})"
+                            : httpStatusCode >= 400
+                                ? $"请求错误 (HTTP {httpStatusCode})"
+                                : $"服务器返回了非JSON内容 (HTTP {httpStatusCode})";
+                        break;
+                }
                 return new ApiResponse
                 {
-                    Code = 500,
-                    Msg = "服务器返回内容无法解析为JSON"
+                    Code = httpStatusCode,
+                    Msg = friendlyMsg
                 };
             }
 
@@ -255,36 +279,99 @@ namespace TypeSunny.Net.Http
         /// </summary>
         private async Task<ApiResponse> SendAsync(HttpRequestMessage request)
         {
-            try
+            // 保存请求信息用于重试（HttpRequestMessage 发送后会被 dispose，不能直接复用）
+            var method = request.Method;
+            var uri = request.RequestUri;
+            string bodyContent = null;
+            if (request.Content != null)
             {
-                // 应用认证
-                authProvider?.ApplyAuth(request);
+                bodyContent = await request.Content.ReadAsStringAsync();
+            }
 
-                var response = await httpClient.SendAsync(request);
-                string body = await response.Content.ReadAsStringAsync();
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                try
+                {
+                    HttpRequestMessage req;
+                    HttpClient client;
 
-                System.Diagnostics.Debug.WriteLine($"[ApiClient] {request.Method} {request.RequestUri} → {(int)response.StatusCode}");
+                    if (attempt == 0)
+                    {
+                        req = request;
+                        client = httpClient;
+                    }
+                    else
+                    {
+                        // 重试：用全新的 Handler + HttpClient，彻底绕过旧连接池
+                        var retryHandler = new HttpClientHandler
+                        {
+                            CookieContainer = this.cookieContainer,
+                            UseCookies = true,
+                            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+                            AllowAutoRedirect = true
+                        };
+                        client = new HttpClient(retryHandler) { Timeout = TimeSpan.FromSeconds(30) };
 
-                return ParseResponse(body, (int)response.StatusCode);
+                        req = new HttpRequestMessage(method, uri);
+                        if (bodyContent != null)
+                            req.Content = new StringContent(bodyContent, Encoding.UTF8, "application/json");
+                    }
+
+                    // 应用认证
+                    authProvider?.ApplyAuth(req);
+
+                    var response = await client.SendAsync(req);
+                    string body = await response.Content.ReadAsStringAsync();
+
+                    System.Diagnostics.Debug.WriteLine($"[ApiClient] {req.Method} {req.RequestUri} → {(int)response.StatusCode}");
+
+                    // 重试用的临时 client 用完即弃
+                    if (attempt > 0) client.Dispose();
+
+                    return ParseResponse(body, (int)response.StatusCode);
+                }
+                catch (HttpRequestException ex) when (
+                    attempt == 0 && IsConnectionClosedError(ex))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ApiClient] 连接已关闭，正在重试: {ex.InnerException?.Message}");
+                    continue;
+                }
+                catch (TaskCanceledException)
+                {
+                    return new ApiResponse { Code = 408, Msg = "请求超时，请检查网络连接" };
+                }
+                catch (HttpRequestException ex)
+                {
+                    string detail = ex.InnerException != null
+                        ? $"{ex.Message}，{ex.InnerException.GetType().Name}： {ex.InnerException.Message}"
+                        : ex.Message;
+                    return new ApiResponse { Code = 0, Msg = $"网络请求失败: {detail}" };
+                }
+                catch (Exception ex)
+                {
+                    string detail = ex.InnerException != null
+                        ? $"{ex.Message} → {ex.InnerException.GetType().Name}: {ex.InnerException.Message}"
+                        : ex.Message;
+                    return new ApiResponse { Code = 0, Msg = $"请求异常: {detail}" };
+                }
             }
-            catch (TaskCanceledException)
-            {
-                return new ApiResponse { Code = 408, Msg = "请求超时，请检查网络连接" };
-            }
-            catch (HttpRequestException ex)
-            {
-                string detail = ex.InnerException != null
-                    ? $"{ex.Message}，{ex.InnerException.GetType().Name}： {ex.InnerException.Message}"
-                    : ex.Message;
-                return new ApiResponse { Code = 0, Msg = $"网络请求失败: {detail}" };
-            }
-            catch (Exception ex)
-            {
-                string detail = ex.InnerException != null
-                    ? $"{ex.Message} → {ex.InnerException.GetType().Name}: {ex.InnerException.Message}"
-                    : ex.Message;
-                return new ApiResponse { Code = 0, Msg = $"请求异常: {detail}" };
-            }
+
+            return new ApiResponse { Code = 0, Msg = "网络请求失败: 重试后仍无法连接" };
+        }
+
+        /// <summary>
+        /// 判断是否为"基础连接已关闭"类错误（服务端关闭了 TCP 连接）
+        /// </summary>
+        private static bool IsConnectionClosedError(HttpRequestException ex)
+        {
+            var inner = ex.InnerException;
+            if (inner == null) return false;
+            string msg = inner.Message ?? "";
+            // 中文系统："基础连接已经关闭"  英文系统："The underlying connection was closed"
+            return msg.Contains("基础连接已经关闭")
+                || msg.Contains("基础连接已关闭")
+                || msg.Contains("underlying connection was closed")
+                || inner is System.IO.IOException;
         }
 
         /// <summary>
