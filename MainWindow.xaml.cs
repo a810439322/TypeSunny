@@ -3459,6 +3459,18 @@ namespace TypeSunny
         }
 
         /// <summary>
+        /// 文来模式：格式化文章内容并发送到QQ群或剪切板
+        /// </summary>
+        private void SendFormattedArticle(string content)
+        {
+            string title = articleCache.GetCurrentTitle();
+            string mark = articleCache.GetCurrentMark();
+            string difficultyText = articleCache.GetCurrentDifficulty();
+            string formattedContent = FormatArticleSenderContent(title, content, mark, difficultyText);
+            SendContentToClipboardOrQQ(formattedContent);
+        }
+
+        /// <summary>
         /// 通用发送方法（发送到剪切板或QQ群）
         /// </summary>
         private void SendContentToClipboardOrQQ(string content, bool focus = false)
@@ -7924,6 +7936,9 @@ public async Task SendArticle()
             // 加载下一段
             LoadText(segmentData.Content, RetypeType.first, TxtSource.articlesender, switchBack: false);
 
+            // 格式化后发送到QQ群
+            SendFormattedArticle(segmentData.Content);
+
             // 重置进度条
             if (Config.GetBool("显示进度条"))
                 TitleProgressBar.Width = 0;
@@ -7957,6 +7972,9 @@ public async Task SendArticle()
 
             // 加载上一段
             LoadText(segmentData.Content, RetypeType.first, TxtSource.articlesender, switchBack: false);
+
+            // 格式化后发送到QQ群
+            SendFormattedArticle(segmentData.Content);
 
             // 重置进度条
             if (Config.GetBool("显示进度条"))
