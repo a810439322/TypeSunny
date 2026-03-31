@@ -616,7 +616,6 @@ namespace TypeSunny
             // 实际字数 = 输入的字 + 退格删掉的字 = 所有实际敲入的字符总数
             roundTotalTime += Score.Time.TotalSeconds;
             roundActualWords += Score.InputWordCount + (int)Score.GetBacks();
-            roundCorrectWords += Score.TotalWordCount * accuracy;
 
             double targetAccuracy = Convert.ToDouble(cfg["换段键准"]) / 100.0;
             WriteDebugLog($"[GetNextRound] 条件判断 accuracy={accuracy:F4}, hitRate={hitrate:F2}, TargetHit={TargetHit:F2}, targetAccuracy={targetAccuracy:F4}, wrong={wrong}");
@@ -625,10 +624,11 @@ namespace TypeSunny
             {
                 WriteDebugLog("[GetNextRound] 进入 if 分支");
 
-                // 通过条件：累加段数、击键、速度
+                // 通过条件：累加段数、击键、速度、打对字数
                 roundCompletedGroups++;
                 roundHitRates.Add(hitrate);
                 roundSpeeds.Add(Score.Speed);
+                roundCorrectWords += Score.TotalWordCount * accuracy;
                 WriteDebugLog("[GetNextRound] 累加统计完成");
 
                 bool wasNotStarted = !hasStartedPractice;
@@ -827,10 +827,8 @@ namespace TypeSunny
                     WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 UpdateTopStatusText");
                     MainWindow.Current.UpdateTopStatusText(t);
 
-                    if (hitrate >= MaxHitRate && accuracy >= 0.9999 && wrong == 0)
+                    if (hitrate >= MaxHitRate)
                     {
-                        WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，发送QQ消息");
-                        QQHelper.SendQQMessage(MainWindow.Current.QQGroupName, result, 150, MainWindow.Current);
                         MaxHitRate = hitrate;
                     }
 
@@ -1412,9 +1410,9 @@ namespace TypeSunny
             if (roundSpeeds.Count > 0)
                 avgSpeed = roundSpeeds.Average();
 
-            // 总键准 = 打对字数 / 实际字数（包括所有重打）
-            if (roundActualWords > 0)
-                avgAccuracy = (double)roundCorrectWords / roundActualWords * 100;
+            // 总键准 = 打对字数 / 目标总字数（加权平均各段键准）
+            if (roundTotalWords > 0)
+                avgAccuracy = (double)roundCorrectWords / roundTotalWords * 100;
 
             // 生成成绩记录格式，添加到主窗口成绩区
             string resultRecord = string.Format("[晴练单] {0} 击键{1:F2} 速度{2:F2} 字数{3} 实际{4} 键准{5:F2}% 用时{6}",
@@ -1444,9 +1442,9 @@ namespace TypeSunny
             if (roundSpeeds.Count > 0)
                 avgSpeed = roundSpeeds.Average();
 
-            // 总键准 = 打对字数 / 实际字数（包括所有重打）
-            if (roundActualWords > 0)
-                avgAccuracy = (double)roundCorrectWords / roundActualWords * 100;
+            // 总键准 = 打对字数 / 目标总字数（加权平均各段键准）
+            if (roundTotalWords > 0)
+                avgAccuracy = (double)roundCorrectWords / roundTotalWords * 100;
 
             // 使用与文章日志相同的 ArticleRecord 格式
             ArticleLog.ArticleRecord record = new ArticleLog.ArticleRecord
@@ -1584,7 +1582,7 @@ namespace TypeSunny
 
         private void FileSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (CfgInit)
+            if (CfgInit && FileSelector.SelectedItem != null)
                 ReadTxt();
 
         }
