@@ -3530,19 +3530,27 @@ public async Task SendArticle()
 
         private void InputBox_TextInput(object sender, TextCompositionEventArgs e)
         {
-            // 成功上屏，清除 composing 标记
-            if (Score.IsComposing)
-            {
-                Score.IsComposing = false;
-            }
-
             if (e.Text == "")
             {
+                // 编码被取消（ESC/空码空格等），没有字上屏
+                if (Score.IsComposing)
+                {
+                    int wasteHits = Score.Hit - Score.CompositionStartHit;
+                    Score.Backs += wasteHits;
+                    Score.WasteCodes++;
+                    Score.IsComposing = false;
+                }
 
                 LogBack();
 
 
                 return;
+            }
+
+            // 成功上屏，清除 composing 标记
+            if (Score.IsComposing)
+            {
+                Score.IsComposing = false;
             }
 
             if (e.Text != "" && e.Text != "\r")
@@ -3849,6 +3857,15 @@ public async Task SendArticle()
                             {
                                 LogBack();
                                 Score.Backs++;
+                            }
+                            else
+                            {
+                                // 非退格的IME按键，标记进入编码状态
+                                if (!Score.IsComposing)
+                                {
+                                    Score.IsComposing = true;
+                                    Score.CompositionStartHit = Score.Hit;
+                                }
                             }
                             break;
                     }

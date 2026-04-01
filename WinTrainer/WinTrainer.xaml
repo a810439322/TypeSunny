@@ -11,7 +11,7 @@
         Background="Transparent"
         Icon="/Resources/ico/sunny.ico"
         xml:lang="zh-CN"
-        Width="500" Height="450"
+        Width="620" Height="450"
         SizeToContent="Manual"
         Closing="Window_Closing"
         IsVisibleChanged="Window_IsVisibleChanged">

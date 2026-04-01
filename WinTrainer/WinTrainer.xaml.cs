@@ -263,7 +263,7 @@ namespace TypeSunny
             SliderInit = true;
         }
 
-        private void ReadTxt(bool forceReload = false) //从文件重新读取码表
+        private void ReadTxt(bool forceReload = false, bool skipInGroupRand = false) //从文件重新读取码表
         {
             // 保存当前文章的统计数据（如果不是第一次加载）
             if (!string.IsNullOrEmpty(TxtFile))
@@ -445,7 +445,7 @@ namespace TypeSunny
             InitSlider();
 
             if (DisplayRoot.Count > 0)
-                InitGroup();
+                InitGroup(skipInGroupRand);
 
 
         }
@@ -1023,7 +1023,7 @@ namespace TypeSunny
             // 更新本轮统计显示
             UpdateRoundStatus();
         }
-        private void InitGroup() //初始化组
+        private void InitGroup(bool skipInGroupRand = false) //初始化组
         {
             // 不要重置 RetypeCount 和 MaxHitRate，因为 LoadArticleStatistics() 可能已经恢复了它们
             // RetypeCount = 0;  // 已移除
@@ -1034,7 +1034,8 @@ namespace TypeSunny
             if (section >= DisplayRoot.Count || DisplayRoot[section].Count == 0)
                 return;
 
-            InGroupRand();
+            if (!skipInGroupRand)
+                InGroupRand();
             ShowWords();
             LoadText();
 
@@ -1815,7 +1816,7 @@ namespace TypeSunny
 
         private void norm_Click(object sender, RoutedEventArgs e)
         {
-            ReadTxt(true);
+            ReadTxt(true, skipInGroupRand: true);
         }
 
 
@@ -1888,7 +1889,7 @@ namespace TypeSunny
             }
 
             // 恢复窗口大小和位置
-            if (double.TryParse(cfg["练单器窗口宽度"], out double width) && width >= 300)
+            if (double.TryParse(cfg["练单器窗口宽度"], out double width) && width >= 620)
                 this.Width = width;
             if (double.TryParse(cfg["练单器窗口高度"], out double height) && height >= 200)
                 this.Height = height;
