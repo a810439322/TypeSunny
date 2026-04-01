@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -28,6 +28,7 @@ using System.Reflection;
 using Interop.UIAutomationClient;
 
 using Net;
+using Colors = TypeSunny.Utils.Colors;
 using CorePage = TypeSunny.Core.Page;
 using TypeSunny.Core;
 using TypeSunny.Logs;
@@ -38,7 +39,7 @@ using TypeSunny.ArticleSender;
 
 
 
-namespace TypeSunny
+namespace TypeSunny.UI
 {
     /// <summary>
     /// Interaction logic for MainWindow.xaml

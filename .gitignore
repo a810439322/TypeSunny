@@ -48,6 +48,7 @@ $RECYCLE.BIN/
 # Backup files
 *.bak
 *.tmp
+TypeSunny_*_wpftmp.csproj
 *.swp
 *~
 

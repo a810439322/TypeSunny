@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using static TypeSunny.MainWindow;
+using static TypeSunny.UI.MainWindow;
 
 
 

@@ -9,6 +9,7 @@ using System.Windows.Data;
 using System.Text.RegularExpressions;
 using TypeSunny.Difficulty;
 using TypeSunny.ArticleSender;
+using TypeSunny.UI;
 
 // EPUB支持（需要VersOne.Epub包）
 // 如果编译错误，请在Visual Studio中还原NuGet包

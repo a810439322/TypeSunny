@@ -8,7 +8,7 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
 using Interop.UIAutomationClient;
-using static TypeSunny.MainWindow;
+using static TypeSunny.UI.MainWindow;
 
 namespace TypeSunny.Utils
 {
@@ -876,7 +876,7 @@ namespace TypeSunny.Utils
                         // debugLog.AppendLine($"========== QQ消息发送成功 ==========");
                         // SaveDebugInfo(debugLog.ToString(), "QQ发送");
                         caller.Dispatcher.Invoke(() => {
-                            MainWindow.Current.FocusInput();
+                            Current?.FocusInput();
                         });
                         // 恢复鼠标位置
                         Win32.RestoreCursorPos();
@@ -1263,7 +1263,7 @@ namespace TypeSunny.Utils
 
                         // Win32.Delay(50);  // 等待所有操作完成再切换焦点
                         caller.Dispatcher.Invoke(() => {
-                            MainWindow.Current.FocusInput();
+                            Current?.FocusInput();
                         });
                         // 恢复鼠标位置
                         Win32.RestoreCursorPos();

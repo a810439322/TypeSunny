@@ -18,7 +18,9 @@ using System.Windows.Interop;
 using CoreTextInfo = TypeSunny.Core.TextInfo;
 using TypeSunny.Core;
 using TypeSunny.Logs;
+using TypeSunny.UI;
 using TypeSunny.Utils;
+using Colors = TypeSunny.Utils.Colors;
 
 
 namespace TypeSunny
