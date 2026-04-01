@@ -170,6 +170,12 @@ namespace TypeSunny
         private List<double> roundSpeeds = new List<double>();     // 本轮每段速度
         private bool hasStartedPractice = false;  // 是否已经开始练习（有有效成绩）
 
+        // 本轮键准累计数据
+        private int roundTotalHit = 0;         // 本轮累计总击键
+        private int roundTotalBacks = 0;       // 本轮累计退格
+        private int roundTotalCorrection = 0;  // 本轮累计回改
+        private int roundAccWordCount = 0;     // 本轮累计字数（用于键准公式）
+
         // 文章独立统计数据
         private Dictionary<string, ArticleStatisticsData> articleStatisticsDict = new Dictionary<string, ArticleStatisticsData>();
 
@@ -191,6 +197,10 @@ namespace TypeSunny
             public int RetypeCount { get; set; }  // 重打次数
             public double MaxHitRate { get; set; }  // 最高击键率
             public List<List<string>> DisplayRoot { get; set; }  // 乱序后的文章内容
+            public int RoundTotalHit { get; set; }
+            public int RoundTotalBacks { get; set; }
+            public int RoundTotalCorrection { get; set; }
+            public int RoundAccWordCount { get; set; }
 
             public ArticleStatisticsData()
             {
@@ -619,6 +629,13 @@ namespace TypeSunny
             roundTotalTime += Score.Time.TotalSeconds;
             roundActualWords += Score.InputWordCount + (int)Score.GetBacks();
 
+            // 累加键准相关数据（无论通过与否）
+            roundTotalHit += Score.Hit;
+            roundTotalBacks += Score.Backs;
+            roundTotalCorrection += Score.Correction;
+            roundAccWordCount += Score.TotalWordCount;
+            roundCorrectWords += Score.TotalWordCount * accuracy;
+
             double targetAccuracy = Convert.ToDouble(cfg["换段键准"]) / 100.0;
             WriteDebugLog($"[GetNextRound] 条件判断 accuracy={accuracy:F4}, hitRate={hitrate:F2}, TargetHit={TargetHit:F2}, targetAccuracy={targetAccuracy:F4}, wrong={wrong}");
 
@@ -626,11 +643,10 @@ namespace TypeSunny
             {
                 WriteDebugLog("[GetNextRound] 进入 if 分支");
 
-                // 通过条件：累加段数、击键、速度、打对字数
+                // 通过条件：累加段数、击键、速度
                 roundCompletedGroups++;
                 roundHitRates.Add(hitrate);
                 roundSpeeds.Add(Score.Speed);
-                roundCorrectWords += Score.TotalWordCount * accuracy;
                 WriteDebugLog("[GetNextRound] 累加统计完成");
 
                 bool wasNotStarted = !hasStartedPractice;
@@ -853,6 +869,15 @@ namespace TypeSunny
             {
                 roundTotalTime += timeSeconds;
             }
+            if (inputWordCount > 0)
+            {
+                roundActualWords += inputWordCount;
+            }
+            // 累加键准相关数据
+            roundTotalHit += Score.Hit;
+            roundTotalBacks += Score.Backs;
+            roundTotalCorrection += Score.Correction;
+            roundAccWordCount += inputWordCount;
         }
 
         public void F3()
@@ -885,6 +910,17 @@ namespace TypeSunny
 
         }
 
+        private double GetRoundAccuracy()
+        {
+            if (roundTotalHit <= 0 || roundAccWordCount <= 0)
+                return 1.0;
+            double hit = roundTotalHit;
+            double backs = roundTotalBacks;
+            double correction = roundTotalCorrection;
+            double totalWords = roundAccWordCount;
+            return (hit - correction - backs * 2.0) / (totalWords + correction) * totalWords / hit;
+        }
+
         /// <summary>
         /// 更新本轮统计显示（实时显示均速、均击、字数等）
         /// </summary>
@@ -904,9 +940,8 @@ namespace TypeSunny
                 if (roundSpeeds.Count > 0)
                     avgSpeed = roundSpeeds.Average();
 
-                // 总键准 = 打对字数 / 实际字数（包括所有重打）
-                if (roundActualWords > 0)
-                    avgAccuracy = (double)roundCorrectWords / roundActualWords * 100;
+                // 总键准 = 累计Hit/Backs/Correction代入键准公式
+                avgAccuracy = GetRoundAccuracy() * 100;
 
                 // 进度百分比
                 double progress = (double)roundCompletedGroups / TotalGroup * 100;
@@ -1151,6 +1186,10 @@ namespace TypeSunny
             roundHitRates.Clear();
             roundSpeeds.Clear();
             hasStartedPractice = false;
+            roundTotalHit = 0;
+            roundTotalBacks = 0;
+            roundTotalCorrection = 0;
+            roundAccWordCount = 0;
             RetypeCount = 0;
             MaxHitRate = 0;
 
@@ -1189,6 +1228,10 @@ namespace TypeSunny
                 LastSection = Convert.ToInt32(cfg["上次的段数"]),
                 RetypeCount = RetypeCount,
                 MaxHitRate = MaxHitRate,
+                RoundTotalHit = roundTotalHit,
+                RoundTotalBacks = roundTotalBacks,
+                RoundTotalCorrection = roundTotalCorrection,
+                RoundAccWordCount = roundAccWordCount,
                 // 深拷贝 DisplayRoot
                 DisplayRoot = DisplayRoot.Select(section => new List<string>(section)).ToList()
             };
@@ -1216,6 +1259,10 @@ namespace TypeSunny
                 roundHitRates = new List<double>(data.RoundHitRates);
                 roundSpeeds = new List<double>(data.RoundSpeeds);
                 hasStartedPractice = data.HasStartedPractice;
+                roundTotalHit = data.RoundTotalHit;
+                roundTotalBacks = data.RoundTotalBacks;
+                roundTotalCorrection = data.RoundTotalCorrection;
+                roundAccWordCount = data.RoundAccWordCount;
 
                 // 恢复段号
                 cfg["上次的段数"] = data.LastSection.ToString();
@@ -1243,6 +1290,10 @@ namespace TypeSunny
                 roundHitRates = new List<double>();
                 roundSpeeds = new List<double>();
                 hasStartedPractice = false;
+                roundTotalHit = 0;
+                roundTotalBacks = 0;
+                roundTotalCorrection = 0;
+                roundAccWordCount = 0;
                 RetypeCount = 0;
                 MaxHitRate = 0;
             }
@@ -1413,13 +1464,12 @@ namespace TypeSunny
             if (roundSpeeds.Count > 0)
                 avgSpeed = roundSpeeds.Average();
 
-            // 总键准 = 打对字数 / 目标总字数（加权平均各段键准）
-            if (roundTotalWords > 0)
-                avgAccuracy = (double)roundCorrectWords / roundTotalWords * 100;
+            // 总键准 = 累计Hit/Backs/Correction代入键准公式
+            avgAccuracy = GetRoundAccuracy() * 100;
 
             // 生成成绩记录格式，添加到主窗口成绩区
-            string resultRecord = string.Format("[晴练单] {0} 击键{1:F2} 速度{2:F2} 字数{3} 实际{4} 键准{5:F2}% 用时{6}",
-                TxtFile, avgHitRate, avgSpeed, roundTotalWords, roundActualWords, avgAccuracy, Score.FormatTime(roundTotalTime));
+            string resultRecord = string.Format("[晴练单] {0} 均击{1:F2} 均速{2:F2} 均准{3:F2}% 字数{4} 实际{5} 用时{6}",
+                TxtFile, avgHitRate, avgSpeed, avgAccuracy, roundTotalWords, roundActualWords, Score.FormatTime(roundTotalTime));
             if (MainWindow.Current != null)
             {
                 MainWindow.Current.UpdateTypingStat(resultRecord);
@@ -1445,9 +1495,8 @@ namespace TypeSunny
             if (roundSpeeds.Count > 0)
                 avgSpeed = roundSpeeds.Average();
 
-            // 总键准 = 打对字数 / 目标总字数（加权平均各段键准）
-            if (roundTotalWords > 0)
-                avgAccuracy = (double)roundCorrectWords / roundTotalWords * 100;
+            // 总键准 = 累计Hit/Backs/Correction代入键准公式
+            avgAccuracy = GetRoundAccuracy() * 100;
 
             // 使用与文章日志相同的 ArticleRecord 格式
             ArticleLog.ArticleRecord record = new ArticleLog.ArticleRecord
@@ -1622,6 +1671,10 @@ namespace TypeSunny
                         roundCompletedGroups = 0;
                         roundHitRates.Clear();
                         roundSpeeds.Clear();
+                        roundTotalHit = 0;
+                        roundTotalBacks = 0;
+                        roundTotalCorrection = 0;
+                        roundAccWordCount = 0;
                     }
                 }
 
