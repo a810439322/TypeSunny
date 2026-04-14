@@ -1452,7 +1452,7 @@ namespace TypeSunny
             try
             {
                 System.Diagnostics.Debug.WriteLine($"[WinConfig] NotifyAllWindowsThemeRefresh 开始执行");
-                int statsCount = 0, leaderboardCount = 0, trainerCount = 0;
+                int statsCount = 0, trainerCount = 0;
 
                 // 遍历所有打开的窗口
                 foreach (Window window in Application.Current.Windows)
@@ -1467,16 +1467,6 @@ namespace TypeSunny
                             statsWindow.RefreshTheme();
                         }), System.Windows.Threading.DispatcherPriority.Normal);
                     }
-                    // 如果是排行榜窗口，调用其 RefreshTheme 方法
-                    else if (window is WinRaceLeaderboard leaderboardWindow)
-                    {
-                        leaderboardCount++;
-                        System.Diagnostics.Debug.WriteLine($"[WinConfig] 找到排行榜窗口，调用 RefreshTheme");
-                        leaderboardWindow.Dispatcher.BeginInvoke(new Action(() =>
-                        {
-                            leaderboardWindow.RefreshTheme();
-                        }), System.Windows.Threading.DispatcherPriority.Normal);
-                    }
                     // 如果是练单器窗口，调用其 RefreshTheme 方法
                     else if (window is WinTrainer trainerWindow)
                     {
@@ -1489,7 +1479,7 @@ namespace TypeSunny
                     }
                 }
 
-                System.Diagnostics.Debug.WriteLine($"[WinConfig] 找到 {statsCount} 个成绩统计窗口, {leaderboardCount} 个排行榜窗口, {trainerCount} 个练单器窗口");
+                System.Diagnostics.Debug.WriteLine($"[WinConfig] 找到 {statsCount} 个成绩统计窗口, {trainerCount} 个练单器窗口");
             }
             catch (Exception ex)
             {

@@ -802,6 +802,20 @@ namespace TypeSunny.ArticleSender
             grid.Children.Add(btnPanel);
 
             loginDialog.Content = grid;
+
+            // 窗口加载后设置焦点：有已保存的账号密码则聚焦登录按钮，否则聚焦用户名输入框
+            loginDialog.Loaded += (s, args) =>
+            {
+                if (!string.IsNullOrEmpty(txtUsername.Text) && !string.IsNullOrEmpty(txtPassword.Password))
+                {
+                    btnLogin.Focus();
+                }
+                else
+                {
+                    txtUsername.Focus();
+                }
+            };
+
             return loginDialog.ShowDialog();
         }
     }

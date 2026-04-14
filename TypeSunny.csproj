@@ -160,9 +160,6 @@
     <Compile Include="WinConfig\WinConfig.xaml.cs">
       <DependentUpon>WinConfig.xaml</DependentUpon>
     </Compile>
-    <Compile Include="UI\WinRaceLeaderboard.xaml.cs">
-      <DependentUpon>WinRaceLeaderboard.xaml</DependentUpon>
-    </Compile>
     <Compile Include="UI\WinStatistics.xaml.cs">
       <DependentUpon>WinStatistics.xaml</DependentUpon>
     </Compile>
@@ -192,10 +189,6 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="WinConfig\WinConfig.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="UI\WinRaceLeaderboard.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

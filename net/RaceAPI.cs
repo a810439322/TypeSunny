@@ -167,7 +167,7 @@ namespace TypeSunny.Net
         // ==================== 提交成绩 ====================
 
         /// <summary>
-        /// 提交成绩（新版：RSA-OAEP-SHA256 加密 + RSA-SHA256 签名）
+        /// 提交成绩（AES-256-GCM + RSA-OAEP-SHA256 混合加密 + RSA-SHA256 签名）
         /// </summary>
         public async Task<RaceApiResult> SubmitScoreAsync(RaceSubmitData submitData, string serverPublicKey, string keyId)
         {
@@ -194,13 +194,13 @@ namespace TypeSunny.Net
 
                 string payloadJson = payloadObj.ToString(Formatting.None);
 
-                // 2. 用服务器公钥加密
+                // 2. 用服务器公钥混合加密（AES-GCM + RSA-OAEP）
                 JObject encryptedEnvelope = cryptoClient.EncryptForServer(payloadJson, serverPublicKey);
 
-                // 3. 用客户端私钥签名
+                // 3. 用客户端私钥签名（签名的是明文 payload）
                 string signature = cryptoClient.SignPayload(payloadJson);
 
-                // 4. 构造提交请求
+                // 4. 构造提交请求（encryptedData 是 envelope JSON 字符串）
                 var submitRequest = new
                 {
                     raceId = submitData.RaceId,
@@ -270,7 +270,7 @@ namespace TypeSunny.Net
                 if (!response.IsSuccess)
                     return new RaceApiResult { Success = false, Message = $"获取排行榜失败: {response.Msg}" };
 
-                return new RaceApiResult { Success = true, Message = "获取排行榜成功", Data = response.RawJson ?? new JObject() };
+                return new RaceApiResult { Success = true, Message = "获取排行榜成功", Data = response.RawData as JObject ?? new JObject() };
             }
             catch (Exception ex)
             {

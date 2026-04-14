@@ -146,7 +146,7 @@ namespace TypeSunny.Net
         // ==================== 加密 ====================
 
         /// <summary>
-        /// 用服务器公钥加密提交数据
+        /// 用服务器公钥加密提交数据（AES-256-GCM + RSA-OAEP-SHA256 混合加密）
         /// </summary>
         /// <param name="jsonPayload">要加密的 JSON 字符串</param>
         /// <param name="serverPublicKeyBase64">服务器公钥（Base64 编码的 SPKI）</param>
@@ -170,12 +170,12 @@ namespace TypeSunny.Net
             string aesKeyBase64Str = Convert.ToBase64String(aesKey);
             byte[] aesKeyBase64Bytes = Encoding.UTF8.GetBytes(aesKeyBase64Str);
 
-            using (var serverRsa = new RSACng(2048))
-            {
-                byte[] serverPubBytes = Convert.FromBase64String(serverPublicKeyBase64);
-                RSAParameters serverParams = DecodeX509PublicKey(serverPubBytes);
-                serverRsa.ImportParameters(serverParams);
+            byte[] serverPubBytes = Convert.FromBase64String(serverPublicKeyBase64);
+            RSAParameters serverParams = DecodeX509PublicKey(serverPubBytes);
 
+            using (var serverRsa = new RSACng())
+            {
+                serverRsa.ImportParameters(serverParams);
                 byte[] encryptedKey = serverRsa.Encrypt(aesKeyBase64Bytes, RSAEncryptionPadding.OaepSHA256);
 
                 // 4. 构造 envelope
