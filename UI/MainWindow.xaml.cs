@@ -36,6 +36,7 @@ using TypeSunny.Utils;
 using TypeSunny.UI;
 using TypeSunny.Difficulty;
 using TypeSunny.ArticleSender;
+using TypeSunny.UI.Modes;
 
 
 
@@ -58,7 +59,10 @@ namespace TypeSunny.UI
         /// <summary>
         /// 获取配置的字体大小，如果未配置则返回默认值40
         /// </summary>
-        private static double DisplayFontSize => Config.GetDouble("发文区字体大小") > 0 ? Config.GetDouble("发文区字体大小") : 40.0;
+        internal static double DisplayFontSize => Config.GetDouble("发文区字体大小") > 0 ? Config.GetDouble("发文区字体大小") : 40.0;
+
+        private readonly SnakeMode _snakeMode;
+        internal CopybookMode _copybookMode;
 
         // 线程安全的调试日志锁对象
         private static readonly object _debugLogLock = new object();
@@ -143,7 +147,7 @@ namespace TypeSunny.UI
 
 
 
-        Stopwatch sw = new Stopwatch();
+        internal Stopwatch sw = new Stopwatch();
         DifficultyDict difficultyDict = new DifficultyDict();
 
         // 保存窗口恢复时的位置和大小
@@ -253,6 +257,12 @@ namespace TypeSunny.UI
 
         private void UpdateDisplay(UpdateLevel updateLevel)
         {
+            // 字帖模式切换检查
+            bool copybookEnabled = Config.GetBool("字帖模式");
+            if (copybookEnabled && !_copybookMode.IsActive)
+                _copybookMode.Enable();
+            else if (!copybookEnabled && _copybookMode.IsActive)
+                _copybookMode.Disable();
 
             if (IsLookingType && StateManager.LastType)
             {
@@ -326,8 +336,11 @@ namespace TypeSunny.UI
             void PageProgressUpdate()
             {
                 //计算页码
-                // int nextToType = TextInfo.wordStates.IndexOf(WordStates.NO_TYPE);
-                int nextToType = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
+                int nextToType;
+                if (_copybookMode != null && _copybookMode.IsActive)
+                    nextToType = _copybookMode.CurrentIndex;
+                else
+                    nextToType = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
                 if (nextToType > TextInfo.Words.Count)
                     nextToType = TextInfo.Words.Count;
 
@@ -799,7 +812,7 @@ namespace TypeSunny.UI
         /// <param name="nextToType">当前输入位置的字符索引</param>
         /// <param name="totalCount">总字符数</param>
         /// <returns>目标滚动偏移量</returns>
-        private double CalculateScrollOffset(double currentPosY, int nextToType = -1, int totalCount = -1)
+        internal double CalculateScrollOffset(double currentPosY, int nextToType = -1, int totalCount = -1)
         {
             double fs = DisplayFontSize;
 
@@ -825,7 +838,7 @@ namespace TypeSunny.UI
         /// </summary>
         /// <param name="targetOffset">目标滚动偏移量</param>
         /// <param name="forceScroll">是否强制滚动（例如：换行、起始位置）</param>
-        private void SmoothScrollTo(double targetOffset, bool forceScroll = false)
+        internal void SmoothScrollTo(double targetOffset, bool forceScroll = false)
         {
             double fs = DisplayFontSize;
             double fh = fs * (1.0 + Config.GetDouble("行距"));
@@ -840,7 +853,7 @@ namespace TypeSunny.UI
         /// <summary>
         /// 更新字提显示
         /// </summary>
-        private void UpdateZiTi()
+        internal void UpdateZiTi()
         {
             // 检查是否启用字提功能
             if (!Config.GetBool("启用字提"))
@@ -875,8 +888,14 @@ namespace TypeSunny.UI
             }
 
             // 获取下一个需要打的字
-            System.Globalization.StringInfo si = new System.Globalization.StringInfo(TbxInput.Text);
-            int nextIndex = si.LengthInTextElements;
+            int nextIndex;
+            if (_copybookMode != null && _copybookMode.IsActive)
+                nextIndex = _copybookMode.CurrentIndex;
+            else
+            {
+                System.Globalization.StringInfo si = new System.Globalization.StringInfo(TbxInput.Text);
+                nextIndex = si.LengthInTextElements;
+            }
 
             if (nextIndex >= TextInfo.Words.Count)
             {
@@ -898,191 +917,25 @@ namespace TypeSunny.UI
         }
 
         /// <summary>
-        /// 贪吃蛇模式更新 - 流动式显示前后字符
+        /// 贪吃蛇模式更新 - 委托给 SnakeMode
         /// </summary>
         private void SnakeModeUpdate(int nextToType)
         {
-            // 获取配置（赛文API强制使用前20后30）
-            int preShowCount;
-            int postShowCount;
+            _snakeMode.Update(nextToType);
+        }
 
-            if (StateManager.txtSource == TxtSource.raceApi)
-            {
-                // 赛文API强制使用固定值
-                preShowCount = 20;
-                postShowCount = 30;
-            }
-            else
-            {
-                // 其他模式使用配置
-                preShowCount = Config.GetInt("贪吃蛇前显字数");
-                postShowCount = Config.GetInt("贪吃蛇后显字数");
-            }
-
-            // 如果是第一次进入贪吃蛇模式，需要创建所有TextBlock
-            bool isFirstTime = (TextInfo.Blocks.Count != TextInfo.Words.Count);
-            if (isFirstTime)
-            {
-                // 清空显示区域
-                TbDispay.Children.Clear();
-                ScDisplay.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
-                TextInfo.Blocks.Clear();
-
-                // 获取字体设置
-                var fm = GetCurrentFontFamily();
-                double fs = DisplayFontSize;
-                double height = fs * (1.0 + Config.GetDouble("行距"));
-                double MinWidth = fs * 0.9;
-
-                ScDisplay.FontFamily = fm;
-                ScDisplay.Foreground = Colors.DisplayForeground;
-                ScDisplay.FontSize = fs;
-                TbxInput.FontFamily = fm;
-
-                // 创建所有字符的TextBlock
-                for (int i = 0; i < TextInfo.Words.Count; i++)
-                {
-                    TextBlock tb = new TextBlock();
-                    tb.Text = TextInfo.Words[i];
-                    tb.Height = height;
-
-                    // 引号的特殊处理（保持原逻辑）
-                    if (tb.Text == "\u201c" || tb.Text == "\u2018") // " 和 '
-                    {
-                        tb.MinWidth = MinWidth;
-                        tb.TextAlignment = TextAlignment.Right;
-                    }
-                    else if (tb.Text == "\u201d" || tb.Text == "\u2019") // " 和 '
-                    {
-                        tb.MinWidth = MinWidth;
-                        tb.TextAlignment = TextAlignment.Left;
-                    }
-
-                    TextInfo.Blocks.Add(tb);
-                    TbDispay.Children.Add(tb);
-                }
-            }
-
-            // 更新所有字符的显示状态（背景色和透明度）
-            for (int i = 0; i < TextInfo.Blocks.Count; i++)
-            {
-                TextBlock tb = TextInfo.Blocks[i];
-
-                // 计算透明度
-                double opacity = 1.0;
-                int distance = Math.Abs(i - nextToType);
-
-                if (i < nextToType)
-                {
-                    // 已打字符 - 向前渐变
-                    int distanceFromCurrent = nextToType - i;
-                    if (distanceFromCurrent > preShowCount)
-                    {
-                        // 超出显示范围，完全透明
-                        opacity = 0.0;
-                    }
-                    else if (distanceFromCurrent > preShowCount - 10)
-                    {
-                        // 在渐变区域（最后10个字符）
-                        double fadeDistance = distanceFromCurrent - (preShowCount - 10);
-                        opacity = 1.0 - (fadeDistance / 10.0);
-                    }
-                    else
-                    {
-                        // 核心显示区域
-                        opacity = 1.0;
-                    }
-
-                    // 设置背景色
-                    if (i < TextInfo.wordStates.Count)
-                    {
-                        switch (TextInfo.wordStates[i])
-                        {
-                            case WordStates.WRONG:
-                                // 盲打模式：不显示任何提示
-                                // 跟打模式：错字显示红色
-                                tb.Background = IsBlindType ? null : Colors.IncorrectBackground;
-                                break;
-                            case WordStates.RIGHT:
-                                // 盲打模式：不显示任何提示
-                                // 跟打模式：对的字显示绿色
-                                tb.Background = IsBlindType ? null : Colors.CorrectBackground;
-                                break;
-                            default:
-                                tb.Background = null;
-                                break;
-                        }
-                    }
-
-                    tb.Foreground = Colors.DisplayForeground;
-                }
-                else if (i == nextToType)
-                {
-                    // 当前要打的字符 - 不高亮
-                    opacity = 1.0;
-                    tb.Foreground = Colors.DisplayForeground;
-                    tb.Background = null;
-                }
-                else
-                {
-                    // 未打字符 - 向后渐变
-                    int distanceFromCurrent = i - nextToType;
-                    if (distanceFromCurrent > postShowCount)
-                    {
-                        // 超出显示范围，完全透明
-                        opacity = 0.0;
-                    }
-                    else if (distanceFromCurrent > postShowCount - 10)
-                    {
-                        // 在渐变区域（最后10个字符）
-                        double fadeDistance = distanceFromCurrent - (postShowCount - 10);
-                        opacity = 1.0 - (fadeDistance / 10.0);
-                    }
-                    else
-                    {
-                        // 核心显示区域
-                        opacity = 1.0;
-                    }
-
-                    tb.Foreground = Colors.DisplayForeground;
-                    tb.Background = null;
-                }
-
-                tb.Opacity = opacity;
-            }
-
-            // 滚动到当前字符位置
-            {
-                if (nextToType < TextInfo.Blocks.Count && nextToType >= 0)
-                {
-                    try
-                    {
-                        // 计算当前字符的Y坐标（相对于第一个Block）
-                        double currentPosY =
-                            TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
-                            + TextInfo.Blocks[nextToType].ActualHeight / 2;
-
-                        // 使用统一方法计算目标滚动位置（始终居中显示）
-                        double targetOffset = CalculateScrollOffset(currentPosY);
-
-                        // 贪吃蛇模式：使用条件判断滚动（起始位置强制滚动，避免跳动）
-                        SmoothScrollTo(targetOffset, forceScroll: (nextToType == 0));
-
-                        // 更新速度跟随提示位置
-                        UpdateSpeedFollowHint(nextToType);
-                    }
-                    catch
-                    {
-                        // 忽略布局异常
-                    }
-                }
-            }
+        /// <summary>
+        /// 字帖模式下触发贪吃蛇更新（字符显隐+滚动）
+        /// </summary>
+        internal void SnakeModeUpdateFromCopybook(int nextToType)
+        {
+            _snakeMode.Update(nextToType);
         }
 
         /// <summary>
         /// 更新速度跟随提示位置
         /// </summary>
-        private void UpdateSpeedFollowHint(int nextToType)
+        internal void UpdateSpeedFollowHint(int nextToType)
         {
             bool showSpeed = Config.GetBool("速度跟随提示") && !double.IsNaN(Score.GetValidSpeed()) &&
                              Score.GetValidSpeed() > 0;
@@ -1097,10 +950,20 @@ namespace TypeSunny.UI
                 if (TbAcc.Visibility == Visibility.Hidden)
                     TbAcc.Visibility = Visibility.Visible;
 
-                double AccLeft = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).X +
-                                 TextInfo.Blocks[nextToType].ActualWidth / 3;
+                double AccLeft;
                 double AccTop = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y +
                     TextInfo.Blocks[nextToType].ActualHeight - ScDisplay.VerticalOffset;
+
+                if (_copybookMode != null && _copybookMode.IsActive)
+                {
+                    // 字帖模式：速度提示放在行首左侧，避免和编码文本重叠
+                    AccLeft = 0;
+                }
+                else
+                {
+                    AccLeft = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).X +
+                                     TextInfo.Blocks[nextToType].ActualWidth / 3;
+                }
                 Canvas.SetTop(TbAcc, AccTop);
                 Canvas.SetLeft(TbAcc, AccLeft);
 
@@ -1238,6 +1101,8 @@ namespace TypeSunny.UI
 
             InitializeComponent();
 
+            _snakeMode = new SnakeMode(this);
+            _copybookMode = new CopybookMode(this);
             double left = Config.GetDouble("窗口坐标X");
             double top = Config.GetDouble("窗口坐标Y");
             double width = Config.GetDouble("窗口宽度");
@@ -1646,7 +1511,10 @@ namespace TypeSunny.UI
                         this.Dispatcher.BeginInvoke(new Action(() =>
                         {
                             grid_a.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
-                            grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
+                            if (_copybookMode == null || !_copybookMode.IsActive)
+                            {
+                                grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
+                            }
                         }), System.Windows.Threading.DispatcherPriority.Loaded);
 
                         // 保存展开时的窗口高度
@@ -1715,6 +1583,10 @@ namespace TypeSunny.UI
                     System.Diagnostics.Debug.WriteLine($"强制刷新TopBarGrid背景色: {Config.GetString("窗体背景色")}");
                 }
             }), System.Windows.Threading.DispatcherPriority.Loaded);
+
+            // 启动时检查字帖模式（此时可能还没有文章，Enable 会先隐藏跟打区）
+            if (Config.GetBool("字帖模式") && !_copybookMode.IsActive)
+                _copybookMode.Enable();
         }
 
         private void ReadBlindType()
@@ -1846,7 +1718,10 @@ namespace TypeSunny.UI
                         this.Dispatcher.BeginInvoke(new Action(() =>
                         {
                             grid_a.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
-                            grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
+                            if (_copybookMode == null || !_copybookMode.IsActive)
+                            {
+                                grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
+                            }
                         }), System.Windows.Threading.DispatcherPriority.Loaded);
 
                         // 保存展开时的窗口高度
@@ -2169,6 +2044,15 @@ namespace TypeSunny.UI
             TbDispay.Children.Clear();
             UpdateDisplay(UpdateLevel.Progress);
 
+            // 刷新字帖模式错字框的大小和位置
+            if (_copybookMode != null && _copybookMode.IsActive)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    _copybookMode.RefreshWrongCharHints();
+                }), System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+
             System.Diagnostics.Debug.WriteLine($"发文区字体大小调整: {currentSize} -> {newSize}");
         }
 
@@ -2414,7 +2298,7 @@ namespace TypeSunny.UI
         {
             // 在非UI线程中，提前获取QQGroupName等UI相关属性
             string qqGroupName = "";
-            Dispatcher.Invoke(() =>
+            await Dispatcher.InvokeAsync(() =>
             {
                 qqGroupName = QQGroupName;
             });
@@ -2470,7 +2354,7 @@ namespace TypeSunny.UI
                     savedDifficultyName = "";
                 }
 
-                Dispatcher.Invoke(() => { TbxInput.IsReadOnly = true; });
+                await Dispatcher.InvokeAsync(() => { TbxInput.IsReadOnly = true; });
                 StateManager.typingState = TypingState.end;
                 sw.Stop();
                 // 停止字提定时器
@@ -2481,7 +2365,7 @@ namespace TypeSunny.UI
                 Score.Speed = (double)Score.TotalWordCount / Score.Time.TotalMinutes;
 
                 string tbxInputText = "";
-                Dispatcher.Invoke(() => { tbxInputText = TbxInput.Text; });
+                await Dispatcher.InvokeAsync(() => { tbxInputText = TbxInput.Text; });
                 Score.InputWordCount = new System.Globalization.StringInfo(tbxInputText).LengthInTextElements;
                 savedInputWords = Score.InputWordCount; // 更新保存的输入字数
 
@@ -2497,10 +2381,10 @@ namespace TypeSunny.UI
                         .Replace('’', '\'');
 
                     string t2 = "";
-                    Dispatcher.Invoke(() =>
+                    await Dispatcher.InvokeAsync(() =>
                     {
                         t2 = TbxInput.Text.Replace('”', '\"').Replace('“', '\"').Replace('‘', '\'')
-                            .Replace('’', '\'');
+                        .Replace('’', '\'');
                     });
                     List<DiffRes> diffs = DiffTool.Diff(t1, t2);
 
@@ -2558,7 +2442,7 @@ namespace TypeSunny.UI
                     }
                 }
 
-                Dispatcher.Invoke(() => { TbkStatusTop.Text = Score.Progress(); });
+                await Dispatcher.InvokeAsync(() => { TbkStatusTop.Text = Score.Progress(); });
 
                 string typingStatReport = Score.Report(); // 提前计算，避免异步竞争
                 Dispatcher.BeginInvoke(new Action(() =>
@@ -3142,109 +3026,81 @@ namespace TypeSunny.UI
 
 
             if (IsInputEnd())
-                Stop();
+                StopTyping();
 
 
             UpdateDisplay(UpdateLevel.Progress);
 
             // 更新字提显示
             UpdateZiTi();
+        }
 
-            void Stop()
+        /// <summary>
+        /// 停止跟打，记录成绩
+        /// </summary>
+        internal void StopTyping()
+        {
+            Trace.WriteLine("stop");
+
+            StateManager.LastType = true;
+            Score.TotalWordCount = TextInfo.Words.Count;
+            Score.Time = sw.Elapsed;
+            timerProgress.Dispose();
+            tm1 = new Timer(DelayStop, null, 150, Timeout.Infinite);
+        }
+
+        private bool IsInputEnd()
+        {
+            if (!IsLookingType || TextInfo.Words.Count <= 3)
             {
-                Trace.WriteLine("stop");
+                System.Globalization.StringInfo sb = new System.Globalization.StringInfo(TbxInput.Text);
 
-                StateManager.LastType = true;
-                Score.TotalWordCount = TextInfo.Words.Count;
-                Score.Time = sw.Elapsed;
-                timerProgress.Dispose();
-                tm1 = new Timer(DelayStop, null, 150, Timeout.Infinite);
+                int lenA = TextInfo.Words.Count;
+                int lenB = sb.LengthInTextElements;
 
-
-
-
-
+                return lenA <= lenB && lenA >= 1 &&
+                       TextInfo.Words.Last() == sb.SubstringByTextElements(lenA - 1, 1);
             }
-
-
-
-
-            bool IsInputEnd()
+            else
             {
-                if (!IsLookingType || TextInfo.Words.Count <= 3)
-                {
-                    System.Globalization.StringInfo sb = new System.Globalization.StringInfo(TbxInput.Text);
+                System.Globalization.StringInfo sb = new System.Globalization.StringInfo(TbxInput.Text);
 
-                    int lenA = TextInfo.Words.Count;
-                    int lenB = sb.LengthInTextElements;
+                int lenA = TextInfo.Words.Count;
+                int lenB = sb.LengthInTextElements;
 
-                    return lenA <= lenB && lenA >= 1 &&
-                           TextInfo.Words.Last() == sb.SubstringByTextElements(lenA - 1, 1);
+                int LengthError = lenA / 10 + 1;
 
-                }
-                else
-                {
+                string la = "";
 
-                    System.Globalization.StringInfo sb = new System.Globalization.StringInfo(TbxInput.Text);
+                for (int i = lenA - 3; i <= lenA - 1; i++)
+                    la += TextInfo.Words[i];
 
-                    int lenA = TextInfo.Words.Count;
-                    int lenB = sb.LengthInTextElements;
+                bool LastMatch = lenB > 3 && sb.SubstringByTextElements(lenB - 3, 3).Replace("\u201c", "\u201d") ==
+                    la.Replace("\u201c", "\u201d");
 
-                    int LengthError = lenA / 10 + 1;
+                bool LengthMatch = Math.Abs(lenB - lenA) <= LengthError;
 
-                    string la = "";
-
-                    for (int i = lenA - 3; i <= lenA - 1; i++)
-                        la += TextInfo.Words[i];
-
-                    bool LastMatch = lenB > 3 && sb.SubstringByTextElements(lenB - 3, 3).Replace("”", "“") ==
-                        la.Replace("”", "“");
-
-                    bool LengthMatch = Math.Abs(lenB - lenA) <= LengthError;
-
-                    return LastMatch && LengthMatch;
-                }
-
-
-
-
+                return LastMatch && LengthMatch;
             }
+        }
 
+        internal void CalScore()
+        {
+            Score.TotalWordCount = TextInfo.Words.Count;
+            Score.InputWordCount = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
 
-            void CalScore()
+            Score.Wrong = 0;
+
+            if (!IsLookingType)
             {
-
-
-                Score.TotalWordCount = TextInfo.Words.Count;
-                Score.InputWordCount = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
-
-                Score.Wrong = 0;
-
-                if (!IsLookingType)
+                for (int i = 0; i < TextInfo.wordStates.Count; i++)
                 {
-
-
-
-                    for (int i = 0; i < TextInfo.wordStates.Count; i++)
+                    if (TextInfo.wordStates[i] == WordStates.WRONG)
                     {
-                        if (TextInfo.wordStates[i] == WordStates.WRONG)
-                        {
-                            Score.Wrong++;
-
-                        }
+                        Score.Wrong++;
                     }
-
                 }
-
-
-
-
-
-
             }
-
-
-
         }
 
         CUIAutomation root = new CUIAutomation();
@@ -3529,7 +3385,10 @@ public async Task SendArticle()
 
 
 
-        private void InputBox_TextInput(object sender, TextCompositionEventArgs e)
+        /// <summary>
+        /// 文字上屏统计（从 InputBox_TextInput 抽取，字帖模式复用）
+        /// </summary>
+        internal void HandleTextInputStats(TextCompositionEventArgs e)
         {
             if (e.Text == "")
             {
@@ -3541,22 +3400,17 @@ public async Task SendArticle()
                     Score.WasteCodes++;
                     Score.IsComposing = false;
                 }
-
                 LogBack();
-
-
                 return;
             }
 
             // 成功上屏，清除 composing 标记
             if (Score.IsComposing)
-            {
                 Score.IsComposing = false;
-            }
 
             if (e.Text != "" && e.Text != "\r")
             {
-                //启动 - TextInput 事件中也需触发计时开始（兼容某些输入法）
+                // 启动 - TextInput 事件中也需触发计时开始（兼容某些输入法）
                 if (StateManager.typingState == TypingState.pause || StateManager.typingState == TypingState.ready)
                 {
                     if (StateManager.typingState == TypingState.ready && StateManager.retypeType != RetypeType.wrongRetype)
@@ -3567,20 +3421,19 @@ public async Task SendArticle()
                     timerProgress = new Timer(timerUpdateProgress, null, 0, 250);
                 }
 
-                //分析打词率
+                // 分析打词率
                 Score.AddInputStack(e.Text);
 
-                //记录选重提交时间、字符
+                // 记录选重提交时间、字符
                 System.Globalization.StringInfo si = new System.Globalization.StringInfo(e.Text);
                 string last = si.SubstringByTextElements(si.LengthInTextElements - 1, 1);
 
-
                 Score.CommitTime.Add(sw.ElapsedMilliseconds);
                 Score.CommitStr.Add(last);
-                Score.CommitCharCount.Add(si.LengthInTextElements);  // 记录本次上屏的字符数
-                Score.CommitText.Add(e.Text);                        // 记录本次上屏的完整文本
+                Score.CommitCharCount.Add(si.LengthInTextElements);
+                Score.CommitText.Add(e.Text);
 
-
+                // 标顶提交记录
                 if (si.LengthInTextElements >= 2)
                 {
                     if (last == "…" || last == "—")
@@ -3596,17 +3449,15 @@ public async Task SendArticle()
                         Score.BiaoDingCommitTime.Add(sw.ElapsedMilliseconds);
                         Score.BiaoDingCommitStr.Add(last);
                     }
-
-
                 }
 
-
-
                 StateManager.TextInput = true;
-
             }
+        }
 
-
+        private void InputBox_TextInput(object sender, TextCompositionEventArgs e)
+        {
+            HandleTextInputStats(e);
         }
 
         private void DisplayProgress()
@@ -3623,10 +3474,10 @@ public async Task SendArticle()
 
         }
 
-        Timer timerProgress;
-        private void timerUpdateProgress(object obj)
+        internal Timer timerProgress;
+        internal void timerUpdateProgress(object obj)
         {
-            Dispatcher.Invoke(DisplayProgress);
+            Dispatcher.BeginInvoke(new Action(DisplayProgress));
         }
 
         // 字提定时器（用于赛文5秒限制）
@@ -3670,7 +3521,7 @@ public async Task SendArticle()
         }
 
         // 判断按键是否是有效的输入按键(字母、数字、符号、空格、退格等)
-        private bool IsValidInputKey(Key key)
+        internal bool IsValidInputKey(Key key)
         {
             // 字母键 A-Z
             if (key >= Key.A && key <= Key.Z)
@@ -3707,6 +3558,122 @@ public async Task SendArticle()
             return false;
         }
 
+        /// <summary>
+        /// 按键统计（从 InputBox_PreviewKeyDown 抽取，字帖模式复用）
+        /// </summary>
+        internal void HandleKeyDownStats(KeyEventArgs e)
+        {
+            // 回车暂停
+            if (e.Key == Key.Enter && StateManager.txtSource != TxtSource.changeSheng && StateManager.txtSource != TxtSource.jbs && StateManager.txtSource != TxtSource.jisucup && StateManager.txtSource != TxtSource.raceApi)
+            {
+                if (StateManager.typingState == TypingState.typing)
+                {
+                    StateManager.typingState = TypingState.pause;
+                    TbkStatusTop.Text = "暂停\t" + TbkStatusTop.Text;
+                    sw.Stop();
+                    if (timerProgress != null)
+                        timerProgress.Dispose();
+                }
+                return;
+            }
+
+            // 统计键法
+            if (e.Key == Key.ImeProcessed)
+                Score.SetJianFa(e.ImeProcessedKey);
+            else
+                Score.SetJianFa(e.Key);
+
+            // 打字击键总数记录计数
+            CounterLog.Buffer[1]++;
+
+            // 启动 - 只有按下有效输入键才开始计时
+            if ((StateManager.typingState == TypingState.pause || StateManager.typingState == TypingState.ready) && IsValidInputKey(e.Key))
+            {
+                if (StateManager.typingState == TypingState.ready && StateManager.retypeType != RetypeType.wrongRetype)
+                    RetypeCounter.Add(TextInfo.TextMD5, 1);
+
+                sw.Start();
+                StateManager.typingState = TypingState.typing;
+                timerProgress = new Timer(timerUpdateProgress, null, 0, 250);
+            }
+
+            Score.Hit++;
+
+            switch (e.Key)
+            {
+                case Key.Space:
+                    StateManager.TextInput = true;
+                    Score.AddInputStack(" ");
+                    break;
+                case Key.Back:
+                    LogCorrection();
+                    Score.Correction++;
+                    if (Score.ZiciStack.Count > 0)
+                    {
+                        Score.ZiciStack.Pop();
+                        StateManager.TextInput = true;
+                    }
+                    break;
+
+                // bime hit
+                case Key.F14:
+                    Score.BimeHit++;
+                    break;
+                case Key.F15:
+                    Score.BimeCorrection++;
+                    LogCorrection();
+                    break;
+                case Key.F16:
+                    Score.BimeBacks++;
+                    LogBack();
+                    break;
+
+                case Key.ImeProcessed:
+                    {
+                        // 统计选重
+                        int vkey = KeyInterop.VirtualKeyFromKey(e.ImeProcessedKey);
+                        if (IntStringDict.Selection.ContainsKey(vkey))
+                        {
+                            Score.ImeKeyTime.Add(sw.ElapsedMilliseconds);
+                            Score.ImeKeyValue.Add(vkey);
+                        }
+
+                        if (IntStringDict.BiaoDing.ContainsKey(vkey))
+                        {
+                            Score.BiaoDingImeKeyTime.Add(sw.ElapsedMilliseconds);
+                            Score.BiaoDingImeKeyValue.Add(vkey);
+                        }
+                    }
+
+                    switch (e.ImeProcessedKey)
+                    {
+                        case Key.Back:
+                            LogBack();
+                            Score.Backs++;
+                            break;
+                        default:
+                            if (Win32.GetKeyState(Win32.VK_BACK) < 0)
+                            {
+                                LogBack();
+                                Score.Backs++;
+                            }
+                            else
+                            {
+                                // 非退格的IME按键，标记进入编码状态
+                                if (!Score.IsComposing)
+                                {
+                                    Score.IsComposing = true;
+                                    Score.CompositionStartHit = Score.Hit;
+                                }
+                            }
+                            break;
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+
         private void InputBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             // 禁用Tab键，防止用户用Tab清屏影响键准
@@ -3741,139 +3708,8 @@ public async Task SendArticle()
             }
 
 
-            //回车暂停
-            if (e.Key == Key.Enter && StateManager.txtSource != TxtSource.changeSheng && StateManager.txtSource != TxtSource.jbs && StateManager.txtSource != TxtSource.jisucup && StateManager.txtSource != TxtSource.raceApi)
-            {
-                if (StateManager.typingState == TypingState.typing)
-                {
-                    StateManager.typingState = TypingState.pause;
-                    TbkStatusTop.Text = "暂停\t" + TbkStatusTop.Text;
-                    sw.Stop();
-                    //              Recorder.Stop();
-                    if (timerProgress != null)
-                        timerProgress.Dispose();
-                }
-
-
-                return;
-            }
-
-            //统计键法
-            if (e.Key == Key.ImeProcessed)
-                Score.SetJianFa(e.ImeProcessedKey);
-            else
-                Score.SetJianFa(e.Key);
-
-            //打字击键总数记录计数
-            //       if ( Recorder.State != Recorder.RecorderState.Playing)
-            CounterLog.Buffer[1]++;
-
-
-
-
-
-
-
-
-            //启动 - 只有按下有效输入键才开始计时
-            if ((StateManager.typingState == TypingState.pause || StateManager.typingState == TypingState.ready) && IsValidInputKey(e.Key))
-            {
-                var oldstate = StateManager.typingState;
-                if (StateManager.typingState == TypingState.ready && StateManager.retypeType != RetypeType.wrongRetype)// && Recorder.State != Recorder.RecorderState.Playing)
-                    RetypeCounter.Add(TextInfo.TextMD5, 1);
-
-                sw.Start();
-
-                StateManager.typingState = TypingState.typing;
-                timerProgress = new Timer(timerUpdateProgress, null, 0, 250);
-
-            }
-
-
-            //退格
-            Score.Hit++;
-
-
-
-
-            switch (e.Key)
-            {
-                case Key.Space:
-                    StateManager.TextInput = true;
-                    Score.AddInputStack(" ");
-                    break;
-                case Key.Back:
-                    LogCorrection();
-
-
-                    Score.Correction++;
-                    if (TbxInput.Text.Length > 0 && Score.ZiciStack.Count > 0)
-                    {
-                        Score.ZiciStack.Pop();
-                        StateManager.TextInput = true;
-                    }
-                    break;
-
-                // bime hit
-                case Key.F14:
-                    Score.BimeHit++;
-                    break;
-                case Key.F15:
-                    Score.BimeCorrection++;
-                    LogCorrection();
-                    break;
-                case Key.F16:
-                    Score.BimeBacks++;
-                    LogBack();
-                    break;
-
-
-                case Key.ImeProcessed:
-
-                    {//统计选重
-                        int vkey = KeyInterop.VirtualKeyFromKey(e.ImeProcessedKey);
-                        if (IntStringDict.Selection.ContainsKey(vkey))
-                        {
-                            Score.ImeKeyTime.Add(sw.ElapsedMilliseconds);
-                            Score.ImeKeyValue.Add(vkey);
-                        }
-
-                        if (IntStringDict.BiaoDing.ContainsKey(vkey))
-                        {
-                            Score.BiaoDingImeKeyTime.Add(sw.ElapsedMilliseconds);
-                            Score.BiaoDingImeKeyValue.Add(vkey);
-                        }
-
-                    }
-
-                    switch (e.ImeProcessedKey)
-                    {
-                        case Key.Back:
-
-                            LogBack();
-                            Score.Backs++;
-                            break;
-                        default:
-                            if (Win32.GetKeyState(Win32.VK_BACK) < 0)
-                            {
-                                LogBack();
-                                Score.Backs++;
-                            }
-                            else
-                            {
-                                // 非退格的IME按键，标记进入编码状态
-                                if (!Score.IsComposing)
-                                {
-                                    Score.IsComposing = true;
-                                    Score.CompositionStartHit = Score.Hit;
-                                }
-                            }
-                            break;
-                    }
-                    break;
-                default:
-                    break;
-            }
+            //回车暂停及统计
+            HandleKeyDownStats(e);
 
 
         }
@@ -4386,6 +4222,12 @@ public async Task SendArticle()
                     timerProgress.Dispose();
                 Score.Reset();
 
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    // 字帖模式重置（必须在UI线程，因为操作了_overlay.Children）
+                    if (_copybookMode != null && _copybookMode.IsActive)
+                        _copybookMode.Reset();
+                }));
                 if (retypeType == RetypeType.first)
                 {
                     if (source == TxtSource.articlesender && articleCache.HasArticle())
@@ -4409,6 +4251,10 @@ public async Task SendArticle()
                         TbxInput.IsReadOnly = false;
                     TbxInput.Clear();
                     UpdateDisplay(UpdateLevel.PageArrange);
+
+                    // 字帖模式：布局完成后重新定位光标
+                    if (_copybookMode != null && _copybookMode.IsActive)
+                        _copybookMode.ScheduleUpdatePosition();
                 }));
 
                 // 重置滚动位置到顶部（避免乱序/重打时停留在中间位置）
@@ -4422,6 +4268,7 @@ public async Task SendArticle()
                 // 更新字提和标题（需要在UI线程中执行）
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
+                    System.Diagnostics.Trace.WriteLine($"[难度] BeginInvoke进入, source={source}, articleCache.HasArticle={articleCache.HasArticle()}");
                     if (source == TxtSource.articlesender && articleCache.HasArticle())
                     {
                         string wenlaiDifficulty = articleCache.GetCurrentDifficulty();
@@ -5478,6 +5325,10 @@ public async Task SendArticle()
         
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            // 先关闭字帖模式，避免OnLostFocus抢焦点导致关闭卡死
+            if (_copybookMode != null && _copybookMode.IsActive)
+                _copybookMode.Disable();
+
             // 确保文来日志队列被清空
             WenlaiLog.Shutdown();
 
@@ -8119,7 +7970,7 @@ public async Task SendArticle()
             return pos;
         }
 
-        private void LogBack() //记录回改的字
+        internal void LogBack() //记录回改的字
         {
             string currentMatchText = string.Concat(TextInfo.Words);
             if (!Config.GetBool("错字重打"))
@@ -8154,7 +8005,7 @@ public async Task SendArticle()
             }
         }
 
-        private void LogCorrection()
+        internal void LogCorrection()
         {
             string currentMatchText = string.Concat(TextInfo.Words);
             if (!Config.GetBool("错字重打"))
@@ -8411,7 +8262,11 @@ public async Task SendArticle()
                 this.Dispatcher.BeginInvoke(new Action(() =>
                 {
                     grid_a.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
-                    grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
+                    // 字帖模式下跟打区已折叠，不要给它Star，否则会分走空间导致底部留白
+                    if (_copybookMode == null || !_copybookMode.IsActive)
+                    {
+                        grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
+                    }
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
 
             }
@@ -8599,16 +8454,20 @@ public async Task SendArticle()
 
                 if (total > 0)
                 {
-                    // 保存发文区占(发文+跟打)的比例
+                    // 保存发文区占(发文+跟打)的比例（字帖模式下跟打区高度为0，不保存）
                     double articleTypingTotal = articleHeight + typingHeight;
-                    double articleTypingRatio = articleTypingTotal > 0 ? articleHeight / articleTypingTotal : 0.5;
+                    if (articleTypingTotal > 0)
+                    {
+                        double articleTypingRatio = articleHeight / articleTypingTotal;
+                        Config.dicts["发文区跟打区比例"] = articleTypingRatio.ToString("F6");
+                    }
 
-                    // 保存成绩区占总比例
-                    double resultsRatio = resultsHeight / total;
-
-                    // 直接写入配置字典
-                    Config.dicts["发文区跟打区比例"] = articleTypingRatio.ToString("F6");
-                    Config.dicts["成绩区高度比例"] = resultsRatio.ToString("F6");
+                    // 成绩面板收起时 resultsHeight 为0，不保存，避免写入错误的0值
+                    if (_isResultsExpanded && resultsHeight > 0)
+                    {
+                        double resultsRatio = resultsHeight / total;
+                        Config.dicts["成绩区高度比例"] = resultsRatio.ToString("F6");
+                    }
 
                     // 立即写入配置文件
                     Config.WriteConfig(0);

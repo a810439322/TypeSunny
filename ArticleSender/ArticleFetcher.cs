@@ -621,28 +621,36 @@ namespace TypeSunny.ArticleSender
         public static async Task<string> CalcDifficultyFromApiAsync(string content)
         {
             if (string.IsNullOrWhiteSpace(content))
+            {
+                System.Diagnostics.Trace.WriteLine("[难度] content为空，跳过");
                 return "";
+            }
 
             try
             {
                 var client = EnsureClient();
                 if (client == null)
+                {
+                    System.Diagnostics.Trace.WriteLine("[难度] EnsureClient返回null");
                     return "";
+                }
 
                 var response = await client.PostAsync("/api/texts/calcDifficulty", new { text = content });
+                System.Diagnostics.Trace.WriteLine($"[难度] 接口返回: IsSuccess={response.IsSuccess}, Code={response.Code}, RawData={response.RawData}");
 
                 if (response.IsSuccess && response.RawData != null)
                 {
                     var data = response.RawData;
                     double score = data["difficultyScore"]?.ToObject<double>() ?? 0;
                     string label = data["difficultyLabel"]?.ToString() ?? "";
+                    System.Diagnostics.Trace.WriteLine($"[难度] 解析结果: score={score}, label={label}");
                     if (!string.IsNullOrEmpty(label))
                         return $"{label}({score:F2})";
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[难度] 接口调用失败: {ex.Message}");
+                System.Diagnostics.Trace.WriteLine($"[难度] 接口调用失败: {ex.Message}");
             }
             return "";
         }

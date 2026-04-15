@@ -141,19 +141,23 @@ namespace TypeSunny
                     Title = "跟打",
                     Items = new[]
                     {
-                        "盲打模式",
-                        "速度跟随提示",
                         "错字重打",
-                        "禁止F3重打",
-                        "错字重复次数",
+                        "  错字重复次数",
                         "慢字重打",
-                        "慢字标准(单位:秒)",
-                        "慢字重复次数",
+                        "  慢字标准(单位:秒)",
+                        "  慢字重复次数",
                         "贪吃蛇模式",
-                        "贪吃蛇前显字数",
-                        "贪吃蛇后显字数",
+                        "  贪吃蛇前显字数",
+                        "  贪吃蛇后显字数",
+                        "字帖模式",
+                        "  字帖编码高度",
+                        "  字帖候选框高度",
+                        "  字帖错字高度",
+                        "速度跟随提示",
+                        "禁止F3重打",
                         "显示进度条",
-                        "自动发送成绩"
+                        "自动发送成绩",
+                        "盲打模式"
                     }
                 },
                 new ConfigCategory
@@ -457,8 +461,12 @@ namespace TypeSunny
 
             // 添加该分类下的配置项
             int currentRow = 1;
-            foreach (var itemKey in category.Items)
+            foreach (var rawItemKey in category.Items)
             {
+                // 子项缩进：以空格开头的项视为子项，去掉前缀空格得到实际 key
+                string itemKey = rawItemKey.TrimStart();
+                bool isChild = rawItemKey != itemKey;
+
                 if (!Config.dicts.ContainsKey(itemKey))
                 {
                     // 新配置项可能还不存在，给默认空值让控件能正常创建
@@ -473,10 +481,16 @@ namespace TypeSunny
                 var tbk = new TextBlock
                 {
                     Text = itemKey,
-                    Margin = new Thickness(0, 10, 20, 10),
+                    Margin = new Thickness(isChild ? 20 : 0, 10, 20, 10),
                     FontSize = 14,
                     MinWidth = 120
                 };
+                // 字帖高度选项添加悬停提示
+                if (itemKey == "字帖编码高度" || itemKey == "字帖候选框高度" || itemKey == "字帖错字高度")
+                {
+                    tbk.ToolTip = ">0 往下调，<0 往上调，建议以 0.1 为单位微调";
+                }
+
                 Grid.SetRow(tbk, currentRow);
                 Grid.SetColumn(tbk, 0);
                 ContentPanel.Children.Add(tbk);
@@ -531,6 +545,24 @@ namespace TypeSunny
                     {
                         Config.Set("显示进度条", "否");
                         UpdateMainWindowProgressBar();
+                    };
+                }
+
+                // 字帖模式和速度跟随提示互斥
+                if (itemKey == "字帖模式")
+                {
+                    chk.Checked += (obj, evt) =>
+                    {
+                        var speedChk = FindCheckBoxByLabel("速度跟随提示");
+                        if (speedChk != null) speedChk.IsChecked = false;
+                    };
+                }
+                else if (itemKey == "速度跟随提示")
+                {
+                    chk.Checked += (obj, evt) =>
+                    {
+                        var copybookChk = FindCheckBoxByLabel("字帖模式");
+                        if (copybookChk != null) copybookChk.IsChecked = false;
                     };
                 }
 
@@ -2261,6 +2293,31 @@ namespace TypeSunny
                 }
             }
             return string.Empty;
+        }
+
+        /// <summary>
+        /// 根据标签文本查找对应的 CheckBox
+        /// </summary>
+        private CheckBox FindCheckBoxByLabel(string label)
+        {
+            foreach (var child in ContentPanel.Children)
+            {
+                if (child is TextBlock tb &&
+                    (int)tb.GetValue(Grid.ColumnProperty) == 0 &&
+                    tb.FontWeight != FontWeights.Bold &&
+                    tb.Text == label)
+                {
+                    int row = (int)tb.GetValue(Grid.RowProperty);
+                    foreach (var c in ContentPanel.Children)
+                    {
+                        if (c is CheckBox chk &&
+                            (int)chk.GetValue(Grid.RowProperty) == row &&
+                            (int)chk.GetValue(Grid.ColumnProperty) == 1)
+                            return chk;
+                    }
+                }
+            }
+            return null;
         }
 
         /// <summary>
