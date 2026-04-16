@@ -48,6 +48,7 @@ namespace TypeSunny.UI.Modes
                 var fm = _main.GetCurrentFontFamily();
                 double fs = MainWindow.DisplayFontSize;
                 double height = fs * (1.0 + Config.GetDouble("行距"));
+                double verticalPad = (height - fs) / 2;
                 double MinWidth = fs * 0.9;
 
                 _main.ScDisplay.FontFamily = fm;
@@ -61,6 +62,7 @@ namespace TypeSunny.UI.Modes
                     TextBlock tb = new TextBlock();
                     tb.Text = TextInfo.Words[i];
                     tb.Height = height;
+                    tb.Padding = new Thickness(0, verticalPad, 0, 0);
 
                     // 引号的特殊处理
                     if (tb.Text == "\u201c" || tb.Text == "\u2018")

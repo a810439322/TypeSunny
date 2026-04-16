@@ -33,6 +33,7 @@ config.txt
 # VS Code
 .vscode/
 .claude/
+.worktrees/
 
 # Windows
 Thumbs.db

@@ -406,12 +406,13 @@ namespace TypeSunny.UI
 
                     double fs = DisplayFontSize;
                     double height = fs * (1.0 + Config.GetDouble("行距"));
+                    double verticalPad = (height - fs) / 2;
                     double MinWidth = fs * 0.9;
 
                     ScDisplay.FontFamily = fm;
                     ScDisplay.Foreground = Colors.DisplayForeground;
                     ScDisplay.FontSize = fs;
-                    TbAcc.FontSize = fs / 2.3;
+                    TbAcc.FontSize = fs / 3;
                     TbxInput.FontFamily = fm;
                     if (p.HeadEnd >= 0)
                         TextInfo.PageStartIndex = p.HeadStart;
@@ -431,6 +432,7 @@ namespace TypeSunny.UI
                             tb.Text = TextInfo.Words[i];
 
                             tb.Height = height;
+                            tb.Padding = new Thickness(0, verticalPad, 0, 0);
                             if (tb.Text == "“" || tb.Text == "‘")
                             {
                                 tb.MinWidth = MinWidth;
@@ -456,6 +458,7 @@ namespace TypeSunny.UI
                             TextBlock tb = new TextBlock();
                             tb.Text = TextInfo.Words[i];
                             tb.Height = height;
+                            tb.Padding = new Thickness(0, verticalPad, 0, 0);
                             if (tb.Text == "“" || tb.Text == "‘")
                             {
                                 tb.MinWidth = MinWidth;
@@ -480,6 +483,7 @@ namespace TypeSunny.UI
                             tb.Text = TextInfo.Words[i];
 
                             tb.Height = height;
+                            tb.Padding = new Thickness(0, verticalPad, 0, 0);
                             if (tb.Text == "“" || tb.Text == "‘")
                             {
                                 tb.MinWidth = MinWidth;
@@ -691,33 +695,8 @@ namespace TypeSunny.UI
                             // 执行滚动（起始位置强制滚动，其他时候由 SmoothScrollTo 自动判断）
                             SmoothScrollTo(targetOffset, forceScroll: (nextToType == 0));
 
-                            // 跟随显示速度
-                            bool showSpeed = Config.GetBool("速度跟随提示") && !Config.GetBool("盲打模式") &&
-                                             !double.IsNaN(Score.GetValidSpeed()) && Score.GetValidSpeed() > 0;
-
-                            if (!showSpeed)
-                            {
-                                if (TbAcc.Visibility == Visibility.Visible)
-                                    TbAcc.Visibility = Visibility.Hidden;
-                            }
-                            else
-                            {
-                                if (TbAcc.Visibility == Visibility.Hidden)
-                                    TbAcc.Visibility = Visibility.Visible;
-
-                                double AccLeft =
-                                    TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0])
-                                        .X + TextInfo.Blocks[NextBlockIndex].ActualWidth / 3;
-                                double AccTop =
-                                    TextInfo.Blocks[NextBlockIndex].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0])
-                                        .Y + TextInfo.Blocks[NextBlockIndex].ActualHeight - ScDisplay.VerticalOffset;
-                                Canvas.SetTop(TbAcc, AccTop);
-                                Canvas.SetLeft(TbAcc, AccLeft);
-
-                                // 只显示速度
-                                TbAcc.Text = Score.GetValidSpeed().ToString("F2");
-                                TbAcc.Foreground = Colors.GetSpeedColor(Score.GetValidSpeed());
-                            }
+                            // 跟随显示速度（统一走 UpdateSpeedFollowHint）
+                            UpdateSpeedFollowHint(NextBlockIndex);
                         }
                     }
                     catch
@@ -937,8 +916,8 @@ namespace TypeSunny.UI
         /// </summary>
         internal void UpdateSpeedFollowHint(int nextToType)
         {
-            bool showSpeed = Config.GetBool("速度跟随提示") && !double.IsNaN(Score.GetValidSpeed()) &&
-                             Score.GetValidSpeed() > 0;
+            bool showSpeed = Config.GetBool("速度跟随提示") && !Config.GetBool("盲打模式") &&
+                             !double.IsNaN(Score.GetValidSpeed()) && Score.GetValidSpeed() > 0;
 
             if (!showSpeed)
             {
@@ -951,23 +930,26 @@ namespace TypeSunny.UI
                     TbAcc.Visibility = Visibility.Visible;
 
                 double AccLeft;
-                double AccTop = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y +
-                    TextInfo.Blocks[nextToType].ActualHeight - ScDisplay.VerticalOffset;
+                double blockLeft = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).X;
+                double blockTop = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y;
+                double blockHeight = TextInfo.Blocks[nextToType].ActualHeight;
+                double AccTop;
 
                 if (_copybookMode != null && _copybookMode.IsActive)
                 {
-                    // 字帖模式：速度提示放在行首左侧，避免和编码文本重叠
-                    AccLeft = 0;
+                    // 字帖模式：速度提示放在当前字顶部与上一行之间的行间距区域
+                    double lineSpacing = DisplayFontSize * Config.GetDouble("行距");
+                    AccLeft = blockLeft;
+                    AccTop = blockTop - lineSpacing * 1.1 + 0.5 * DisplayFontSize - ScDisplay.VerticalOffset;
                 }
                 else
                 {
-                    AccLeft = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).X +
-                                     TextInfo.Blocks[nextToType].ActualWidth / 3;
+                    AccTop = blockTop + blockHeight - ScDisplay.VerticalOffset;
+                    AccLeft = blockLeft + TextInfo.Blocks[nextToType].ActualWidth / 3;
                 }
                 Canvas.SetTop(TbAcc, AccTop);
                 Canvas.SetLeft(TbAcc, AccLeft);
 
-                // 只显示速度
                 TbAcc.Text = Score.GetValidSpeed().ToString("F2");
                 TbAcc.Foreground = Colors.GetSpeedColor(Score.GetValidSpeed());
             }
@@ -2050,6 +2032,7 @@ namespace TypeSunny.UI
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     _copybookMode.RefreshWrongCharHints();
+                    _copybookMode.ScheduleUpdatePosition();
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
 
@@ -3472,6 +3455,11 @@ public async Task SendArticle()
 
             TbkStatusTop.Text = Score.Progress();
 
+            // 字帖模式下高频刷新速度跟随提示（复用已有的 250ms 定时器）
+            if (_copybookMode != null && _copybookMode.IsActive)
+            {
+                UpdateSpeedFollowHint(_copybookMode.CurrentIndex);
+            }
         }
 
         internal Timer timerProgress;
@@ -3681,6 +3669,17 @@ public async Task SendArticle()
             {
                 e.Handled = true;
                 return;
+            }
+
+            // 永不退避模式：拦截退格、Esc、Ctrl+Z
+            if (Config.GetBool("永不退避") && StateManager.typingState == TypingState.typing)
+            {
+                if (e.Key == Key.Back || e.Key == Key.Escape ||
+                    (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control))
+                {
+                    e.Handled = true;
+                    return;
+                }
             }
 
             if (IsLookingType && StateManager.LastType && cacheLoadInfo != null && TbxInput.IsReadOnly && !detectKeyup)

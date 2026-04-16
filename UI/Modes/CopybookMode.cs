@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using TypeSunny.Core;
 using TypeSunny.Logs;
+using System.Windows.Media.Animation;
 using TextInfo = TypeSunny.Core.TextInfo;
 using Colors = TypeSunny.Utils.Colors;
 
@@ -21,6 +22,7 @@ namespace TypeSunny.UI.Modes
         private Canvas _overlay;
         private TextBox _inputCapture;
         private TextBlock _compositionText;
+        private Border _cursor;
         private readonly List<FrameworkElement> _wrongCharHints = new List<FrameworkElement>();
         private int _currentIndex;
         private bool _isActive;
@@ -44,7 +46,7 @@ namespace TypeSunny.UI.Modes
             if (_isActive) return;
 
             _isActive = true;
-            _currentIndex = 0;
+            _currentIndex = Score.InputWordCount;
 
             // 隐藏跟打区（只隐藏输入框，保留按钮区）
             _main.TbxInput.Visibility = Visibility.Collapsed;
@@ -62,34 +64,56 @@ namespace TypeSunny.UI.Modes
 
             double fs = MainWindow.DisplayFontSize;
 
-            // 创建覆盖层 Canvas
+            // 创建覆盖层 Canvas（透明背景使整个发文区可点击）
             _overlay = new Canvas();
             _overlay.IsHitTestVisible = true;
+            _overlay.Background = Brushes.Transparent;
+            _overlay.Cursor = Cursors.IBeam;
+            _overlay.MouseDown += (s, ev) => { if (_inputCapture != null) _inputCapture.Focus(); };
             Panel.SetZIndex(_overlay, 5);
 
-            // 创建输入捕获 TextBox（透明，仅用于锚定 IME 候选框位置）
+            // 让 Canvas 撑满父容器
+            _overlay.HorizontalAlignment = HorizontalAlignment.Stretch;
+            _overlay.VerticalAlignment = VerticalAlignment.Stretch;
+            _overlay.SetBinding(Canvas.WidthProperty,
+                new System.Windows.Data.Binding("ActualWidth") { Source = _main.BdDisplay.Child });
+            _overlay.SetBinding(Canvas.HeightProperty,
+                new System.Windows.Data.Binding("ActualHeight") { Source = _main.BdDisplay.Child });
+
+            // 创建输入捕获 TextBox（完全透明，仅用于锚定 IME 候选框位置）
             _inputCapture = new TextBox();
             _inputCapture.Width = fs;
             _inputCapture.Height = fs * 0.6;
             _inputCapture.Background = Brushes.Transparent;
             _inputCapture.Foreground = Brushes.Transparent;
             _inputCapture.BorderThickness = new Thickness(0);
-            _inputCapture.CaretBrush = Colors.DisplayForeground; // 光标可见
+            _inputCapture.CaretBrush = Brushes.Transparent; // 隐藏原生光标
             _inputCapture.FontSize = fs * 0.5;
             _inputCapture.AcceptsReturn = false;
             _inputCapture.MaxLines = 1;
             _inputCapture.Padding = new Thickness(0);
 
+            // 创建自定义光标（竖线，跟字一样高，带闪烁）
+            _cursor = new Border();
+            _cursor.Width = 2;
+            _cursor.Height = fs;
+            _cursor.Background = Colors.DisplayForeground;
+            var blink = new DoubleAnimation(1, 0, new Duration(TimeSpan.FromMilliseconds(500)));
+            blink.AutoReverse = true;
+            blink.RepeatBehavior = RepeatBehavior.Forever;
+            _cursor.BeginAnimation(UIElement.OpacityProperty, blink);
+
             // 创建未上屏编码显示
             _compositionText = new TextBlock();
             _compositionText.FontSize = fs * 0.4;
             _compositionText.Foreground = new SolidColorBrush(Color.FromRgb(0x33, 0x99, 0xFF));
-            _compositionText.Background = _main.BdDisplay.Background; // 遮住后面的字
+            _compositionText.Background = Brushes.Transparent;
             _compositionText.Padding = new Thickness(1, 0, 1, 0);
             _compositionText.Visibility = Visibility.Collapsed;
 
             _overlay.Children.Add(_inputCapture);
             _overlay.Children.Add(_compositionText);
+            _overlay.Children.Add(_cursor);
 
             // 添加到 BdDisplay 内的 Grid
             var grid = (Grid)_main.BdDisplay.Child;
@@ -99,6 +123,7 @@ namespace TypeSunny.UI.Modes
             _inputCapture.PreviewTextInput += OnTextInput;
             _inputCapture.PreviewKeyDown += OnPreviewKeyDown;
             _inputCapture.LostFocus += OnLostFocus;
+            _inputCapture.GotFocus += OnGotFocus;
             TextCompositionManager.AddPreviewTextInputStartHandler(_inputCapture, OnCompositionStart);
             TextCompositionManager.AddPreviewTextInputUpdateHandler(_inputCapture, OnCompositionUpdate);
 
@@ -120,6 +145,7 @@ namespace TypeSunny.UI.Modes
                 _inputCapture.PreviewTextInput -= OnTextInput;
                 _inputCapture.PreviewKeyDown -= OnPreviewKeyDown;
                 _inputCapture.LostFocus -= OnLostFocus;
+                _inputCapture.GotFocus -= OnGotFocus;
                 TextCompositionManager.RemovePreviewTextInputStartHandler(_inputCapture, OnCompositionStart);
                 TextCompositionManager.RemovePreviewTextInputUpdateHandler(_inputCapture, OnCompositionUpdate);
             }
@@ -133,7 +159,12 @@ namespace TypeSunny.UI.Modes
 
             _inputCapture = null;
             _compositionText = null;
+            _cursor = null;
             _wrongCharHints.Clear();
+
+            // 清除已打字的背景色
+            for (int i = 0; i < TextInfo.Blocks.Count; i++)
+                TextInfo.Blocks[i].Background = null;
 
             // 恢复跟打区
             var parentGrid = (Grid)_main.typingAreaAndButtonsGrid.Parent;
@@ -195,14 +226,22 @@ namespace TypeSunny.UI.Modes
         private void OnLostFocus(object sender, RoutedEventArgs e)
         {
             if (!_isActive || _inputCapture == null) return;
+            // 立即隐藏光标，如果抢回焦点成功 OnGotFocus 会再显示
+            if (_cursor != null) _cursor.Visibility = Visibility.Collapsed;
             _main.Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (!_isActive || _inputCapture == null) return;
-                // 如果焦点在按钮上（如关闭/最小化），不抢回来，让按钮正常响应
                 if (Keyboard.FocusedElement is System.Windows.Controls.Primitives.ButtonBase)
+                    return;
+                if (!_main.IsActive)
                     return;
                 _inputCapture.Focus();
             }), System.Windows.Threading.DispatcherPriority.Input);
+        }
+
+        private void OnGotFocus(object sender, RoutedEventArgs e)
+        {
+            if (_cursor != null) _cursor.Visibility = Visibility.Visible;
         }
 
         private void OnCompositionStart(object sender, TextCompositionEventArgs e)
@@ -242,15 +281,39 @@ namespace TypeSunny.UI.Modes
             // 空码/ESC取消
             if (string.IsNullOrEmpty(e.Text))
             {
-                _compositionText.Visibility = Visibility.Collapsed;
-                e.Handled = true;
-                return;
+                if (Config.GetBool("永不退避"))
+                {
+                    // 永不退避模式：空码时强制上屏一个空格，继续往下走逐字比对
+                }
+                else
+                {
+                    _compositionText.Visibility = Visibility.Collapsed;
+                    e.Handled = true;
+                    return;
+                }
             }
 
-            if (e.Text == "\r") { e.Handled = true; return; }
+            // 永不退避模式：回车强制当空格上屏
+            if (e.Text == "\r")
+            {
+                if (Config.GetBool("永不退避"))
+                {
+                    // 不return，下面的逐字比对会处理
+                }
+                else
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+
+            // 永不退避模式：空码/回车强制当空格处理
+            string inputText = e.Text;
+            if (Config.GetBool("永不退避") && (string.IsNullOrEmpty(inputText) || inputText == "\r"))
+                inputText = " ";
 
             // 全局字数计数（正常模式由 TbxInput_TextChanged 处理）
-            var si = new StringInfo(e.Text);
+            var si = new StringInfo(inputText);
             CounterLog.Buffer[0] += si.LengthInTextElements;
 
             // 逐字比对
@@ -326,6 +389,17 @@ namespace TypeSunny.UI.Modes
         {
             if (!_isActive) return;
 
+            // 永不退避模式：拦截退格、Esc、Ctrl+Z
+            if (Config.GetBool("永不退避"))
+            {
+                if (e.Key == Key.Back || e.Key == Key.Escape ||
+                    (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control))
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+
             // 按键统计（击键、键法、选重、标顶、退格等）
             _main.HandleKeyDownStats(e);
 
@@ -375,6 +449,7 @@ namespace TypeSunny.UI.Modes
             hint.Text = wrongChar;
             hint.FontSize = fs * 0.5;
             hint.Foreground = Colors.IncorrectBackground;
+            hint.TextAlignment = TextAlignment.Center;
 
             border.Child = hint;
             _overlay.Children.Add(border);
@@ -388,9 +463,12 @@ namespace TypeSunny.UI.Modes
                 var pos = block.TranslatePoint(new Point(0, 0), grid);
                 double hintHeight = hint.FontSize * 1.2;
                 double wrongOffset = Config.GetDouble("字帖错字高度") * fs;
+                double blockCenter = pos.X + block.ActualWidth / 2;
 
-                Canvas.SetLeft(border, pos.X);
-                Canvas.SetTop(border, pos.Y - hintHeight + wrongOffset);
+                border.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                double hintWidth = border.DesiredSize.Width;
+                Canvas.SetLeft(border, blockCenter - hintWidth / 2);
+                Canvas.SetTop(border, pos.Y - hintHeight - wrongOffset + 0.1 * fs);
             }
             catch { }
         }
@@ -428,8 +506,11 @@ namespace TypeSunny.UI.Modes
                     double hintHeight = hint.FontSize * 1.2;
                     var block = TextInfo.Blocks[idx];
                     var pos = block.TranslatePoint(new Point(0, 0), grid);
-                    Canvas.SetLeft(border, pos.X);
-                    Canvas.SetTop(border, pos.Y - hintHeight + wrongOffset);
+                    double blockCenter = pos.X + block.ActualWidth / 2;
+                    border.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    double hintWidth = border.DesiredSize.Width;
+                    Canvas.SetLeft(border, blockCenter - hintWidth / 2);
+                    Canvas.SetTop(border, pos.Y - hintHeight - wrongOffset + 0.1 * fs);
                 }
                 catch { }
             }
@@ -448,18 +529,24 @@ namespace TypeSunny.UI.Modes
                 double x = pos.X;
                 double y = pos.Y;
                 double fs = MainWindow.DisplayFontSize;
-                double baseUpShift = 0.4 * fs;
-                double baseDownShift = 0.65 * fs;
                 double compositionOffset = (Config.GetDouble("字帖编码高度") + 0.2) * fs;
-                double candidateOffset = (Config.GetDouble("字帖候选框高度") + 0.2) * fs;
+                double candidateOffset = Config.GetDouble("字帖候选框高度") * fs;
 
                 // InputCapture 控制 IME 候选框位置
                 Canvas.SetLeft(_inputCapture, x);
-                Canvas.SetTop(_inputCapture, y + baseDownShift + candidateOffset);
+                Canvas.SetTop(_inputCapture, y + 1.0 * fs + candidateOffset);
+
+                // 自定义光标定位到当前字左侧
+                if (_cursor != null)
+                {
+                    _cursor.Height = fs;
+                    Canvas.SetLeft(_cursor, x - 2);
+                    Canvas.SetTop(_cursor, y + 0.3 * fs);
+                }
 
                 // CompositionText 贴当前字下沿
                 Canvas.SetLeft(_compositionText, x);
-                Canvas.SetTop(_compositionText, y + block.ActualHeight - baseUpShift + compositionOffset);
+                Canvas.SetTop(_compositionText, y + block.ActualHeight - 0.25 * fs + compositionOffset);
             }
             catch { }
         }
@@ -475,10 +562,9 @@ namespace TypeSunny.UI.Modes
                 var block = TextInfo.Blocks[_currentIndex];
                 var pos = block.TranslatePoint(new Point(0, 0), grid);
                 double fs = MainWindow.DisplayFontSize;
-                double baseUpShift = 0.4 * fs;
-                double compositionOffset = (Config.GetDouble("字帖编码高度") + 0.2) * fs;
+                double compositionOffset = Config.GetDouble("字帖编码高度") * fs;
                 double x = pos.X;
-                double y = pos.Y + block.ActualHeight - baseUpShift + compositionOffset;
+                double y = pos.Y + block.ActualHeight - 0.25 * fs + compositionOffset;
 
                 Canvas.SetLeft(_compositionText, x);
                 Canvas.SetTop(_compositionText, y);

@@ -154,6 +154,7 @@ namespace TypeSunny
                         "  字帖候选框高度",
                         "  字帖错字高度",
                         "速度跟随提示",
+                        "永不退避",
                         "禁止F3重打",
                         "显示进度条",
                         "自动发送成绩",
@@ -490,6 +491,10 @@ namespace TypeSunny
                 {
                     tbk.ToolTip = ">0 往下调，<0 往上调，建议以 0.1 为单位微调";
                 }
+                if (itemKey == "永不退避")
+                {
+                    tbk.ToolTip = "该模式下禁止使用退格、Esc、Ctrl+Z，空格或回车后没上屏内容则强制上屏一个空格。加油吧少年，努力提升键准，永不退避！";
+                }
 
                 Grid.SetRow(tbk, currentRow);
                 Grid.SetColumn(tbk, 0);
@@ -545,24 +550,6 @@ namespace TypeSunny
                     {
                         Config.Set("显示进度条", "否");
                         UpdateMainWindowProgressBar();
-                    };
-                }
-
-                // 字帖模式和速度跟随提示互斥
-                if (itemKey == "字帖模式")
-                {
-                    chk.Checked += (obj, evt) =>
-                    {
-                        var speedChk = FindCheckBoxByLabel("速度跟随提示");
-                        if (speedChk != null) speedChk.IsChecked = false;
-                    };
-                }
-                else if (itemKey == "速度跟随提示")
-                {
-                    chk.Checked += (obj, evt) =>
-                    {
-                        var copybookChk = FindCheckBoxByLabel("字帖模式");
-                        if (copybookChk != null) copybookChk.IsChecked = false;
                     };
                 }
 
