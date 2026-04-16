@@ -637,9 +637,10 @@ namespace TypeSunny
             roundCorrectWords += Score.TotalWordCount * accuracy;
 
             double targetAccuracy = Convert.ToDouble(cfg["换段键准"]) / 100.0;
-            WriteDebugLog($"[GetNextRound] 条件判断 accuracy={accuracy:F4}, hitRate={hitrate:F2}, TargetHit={TargetHit:F2}, targetAccuracy={targetAccuracy:F4}, wrong={wrong}");
+            bool passed = wrong == 0 && accuracy >= targetAccuracy && hitrate >= TargetHit;
+            WriteDebugLog($"[GetNextRound] 条件判断 accuracy={accuracy:F4}, hitRate={hitrate:F2}, TargetHit={TargetHit:F2}, targetAccuracy={targetAccuracy:F4}, wrong={wrong}, passed={passed}");
 
-            if (accuracy >= targetAccuracy && hitrate >= TargetHit)
+            if (passed)
             {
                 WriteDebugLog("[GetNextRound] 进入 if 分支");
 
@@ -1060,6 +1061,8 @@ namespace TypeSunny
             // 更新本轮统计显示
             UpdateRoundStatus();
         }
+        private bool suppressInitialSendToMainWindow = false;
+
         private void InitGroup(bool skipInGroupRand = false) //初始化组
         {
             // 不要重置 RetypeCount 和 MaxHitRate，因为 LoadArticleStatistics() 可能已经恢复了它们
@@ -1074,7 +1077,8 @@ namespace TypeSunny
             if (!skipInGroupRand)
                 InGroupRand();
             ShowWords();
-            LoadText();
+            LoadText(!suppressInitialSendToMainWindow);
+            suppressInitialSendToMainWindow = false;
 
             WriteCfg();
 
@@ -1624,9 +1628,10 @@ namespace TypeSunny
             // 加载持久化的统计数据
             LoadStatisticsFromFile();
 
+            suppressInitialSendToMainWindow = true;
             ReadTxt();
             ShowWords();
-            LoadText();
+            LoadText(false);
 
 
 
@@ -2071,8 +2076,13 @@ namespace TypeSunny
 
 
 
-        private void LoadText()
+        private void LoadText(bool sendToMainWindow)
         {
+            if (!sendToMainWindow)
+            {
+                return;
+            }
+
             MainWindow.Current.LoadText(GetMatchText(), RetypeType.first, TxtSource.trainer, false,true);
         }
 
