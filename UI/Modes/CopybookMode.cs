@@ -316,6 +316,13 @@ namespace TypeSunny.UI.Modes
             var si = new StringInfo(inputText);
             CounterLog.Buffer[0] += si.LengthInTextElements;
 
+            // 最后一个字打错后再次输入，退回到最后一个字重新比对
+            if (_currentIndex >= TextInfo.Words.Count
+                && TextInfo.wordStates[TextInfo.Words.Count - 1] != WordStates.RIGHT)
+            {
+                _currentIndex = TextInfo.Words.Count - 1;
+            }
+
             // 逐字比对
             for (int i = 0; i < si.LengthInTextElements && _currentIndex < TextInfo.Words.Count; i++)
             {
@@ -362,12 +369,13 @@ namespace TypeSunny.UI.Modes
             // 清空输入框
             _inputCapture.Text = "";
 
-            // 检查是否结束
-            if (_currentIndex >= TextInfo.Words.Count)
+            // 检查是否结束：必须打完且最后一个字正确才结算
+            if (_currentIndex >= TextInfo.Words.Count
+                && TextInfo.wordStates[TextInfo.Words.Count - 1] == WordStates.RIGHT)
             {
                 _main.StopTyping();
             }
-            else
+            else if (_currentIndex < TextInfo.Words.Count)
             {
                 // 定位到下一个字
                 UpdatePosition();

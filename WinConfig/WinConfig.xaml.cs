@@ -32,6 +32,9 @@ namespace TypeSunny
         // 自定义最大化状态
         private bool _isCustomMaximized = false;
         private Rect _restoreBounds = new Rect();
+        // 互斥模式的 CheckBox 引用
+        private CheckBox _copybookCheckBox;
+        private CheckBox _tracingCheckBox;
 
         // 配置分类数据结构
         private class ConfigCategory
@@ -153,6 +156,7 @@ namespace TypeSunny
                         "  字帖编码高度",
                         "  字帖候选框高度",
                         "  字帖错字高度",
+                        "临摹模式",
                         "速度跟随提示",
                         "永不退避",
                         "禁止F3重打",
@@ -550,6 +554,26 @@ namespace TypeSunny
                     {
                         Config.Set("显示进度条", "否");
                         UpdateMainWindowProgressBar();
+                    };
+                }
+
+                // 字帖模式和临摹模式互斥
+                if (itemKey == "字帖模式")
+                {
+                    _copybookCheckBox = chk;
+                    chk.Checked += (obj, evt) =>
+                    {
+                        if (_tracingCheckBox != null && _tracingCheckBox.IsChecked == true)
+                            _tracingCheckBox.IsChecked = false;
+                    };
+                }
+                if (itemKey == "临摹模式")
+                {
+                    _tracingCheckBox = chk;
+                    chk.Checked += (obj, evt) =>
+                    {
+                        if (_copybookCheckBox != null && _copybookCheckBox.IsChecked == true)
+                            _copybookCheckBox.IsChecked = false;
                     };
                 }
 

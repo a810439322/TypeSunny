@@ -186,6 +186,7 @@
     </Compile>
     <Compile Include="UI\Modes\SnakeMode.cs" />
     <Compile Include="UI\Modes\CopybookMode.cs" />
+    <Compile Include="UI\Modes\TracingMode.cs" />
     <Page Include="WinConfig\WinColorPicker.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -246,6 +247,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="introimages\1.png" />
+    <Content Include="introimages\6.png" />
     <Content Include="introimages\2.png" />
     <Content Include="introimages\3.png" />
     <Content Include="introimages\4.png" />

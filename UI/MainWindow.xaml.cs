@@ -63,6 +63,7 @@ namespace TypeSunny.UI
 
         private readonly SnakeMode _snakeMode;
         internal CopybookMode _copybookMode;
+        internal TracingMode _tracingMode;
 
         // 线程安全的调试日志锁对象
         private static readonly object _debugLogLock = new object();
@@ -257,12 +258,23 @@ namespace TypeSunny.UI
 
         private void UpdateDisplay(UpdateLevel updateLevel)
         {
+            // 行距过小会导致文字溢出背景，强制最小0.5
+            if (Config.GetDouble("行距") < 0.5)
+                Config.dicts["行距"] = "0.5";
+
             // 字帖模式切换检查
             bool copybookEnabled = Config.GetBool("字帖模式");
             if (copybookEnabled && !_copybookMode.IsActive)
                 _copybookMode.Enable();
             else if (!copybookEnabled && _copybookMode.IsActive)
                 _copybookMode.Disable();
+
+            // 临摹模式切换检查
+            bool tracingEnabled = Config.GetBool("临摹模式");
+            if (tracingEnabled && !_tracingMode.IsActive)
+                _tracingMode.Enable();
+            else if (!tracingEnabled && _tracingMode.IsActive)
+                _tracingMode.Disable();
 
             if (IsLookingType && StateManager.LastType)
             {
@@ -339,6 +351,8 @@ namespace TypeSunny.UI
                 int nextToType;
                 if (_copybookMode != null && _copybookMode.IsActive)
                     nextToType = _copybookMode.CurrentIndex;
+                else if (_tracingMode != null && _tracingMode.IsActive)
+                    nextToType = _tracingMode.CurrentIndex;
                 else
                     nextToType = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
                 if (nextToType > TextInfo.Words.Count)
@@ -870,6 +884,8 @@ namespace TypeSunny.UI
             int nextIndex;
             if (_copybookMode != null && _copybookMode.IsActive)
                 nextIndex = _copybookMode.CurrentIndex;
+            else if (_tracingMode != null && _tracingMode.IsActive)
+                nextIndex = _tracingMode.CurrentIndex;
             else
             {
                 System.Globalization.StringInfo si = new System.Globalization.StringInfo(TbxInput.Text);
@@ -924,7 +940,7 @@ namespace TypeSunny.UI
                 if (TbAcc.Visibility == Visibility.Visible)
                     TbAcc.Visibility = Visibility.Hidden;
             }
-            else
+            else if (nextToType < TextInfo.Blocks.Count)
             {
                 if (TbAcc.Visibility == Visibility.Hidden)
                     TbAcc.Visibility = Visibility.Visible;
@@ -941,6 +957,21 @@ namespace TypeSunny.UI
                     double lineSpacing = DisplayFontSize * Config.GetDouble("行距");
                     AccLeft = blockLeft;
                     AccTop = blockTop - lineSpacing * 1.1 + 0.5 * DisplayFontSize - ScDisplay.VerticalOffset;
+                }
+                else if (_tracingMode != null && _tracingMode.IsActive)
+                {
+                    // 临摹模式：速度提示放在镜像行当前字的上方
+                    if (_tracingMode.TryGetMirrorBlockPosition(nextToType, out double mLeft, out double mTop, out double mHeight))
+                    {
+                        double lineSpacing = DisplayFontSize * Config.GetDouble("行距");
+                        AccLeft = mLeft;
+                        AccTop = mTop - lineSpacing * 1.1 + 0.5 * DisplayFontSize - ScDisplay.VerticalOffset;
+                    }
+                    else
+                    {
+                        AccLeft = blockLeft;
+                        AccTop = blockTop + blockHeight - ScDisplay.VerticalOffset;
+                    }
                 }
                 else
                 {
@@ -1085,6 +1116,7 @@ namespace TypeSunny.UI
 
             _snakeMode = new SnakeMode(this);
             _copybookMode = new CopybookMode(this);
+            _tracingMode = new TracingMode(this);
             double left = Config.GetDouble("窗口坐标X");
             double top = Config.GetDouble("窗口坐标Y");
             double width = Config.GetDouble("窗口宽度");
@@ -2035,6 +2067,10 @@ namespace TypeSunny.UI
                     _copybookMode.ScheduleUpdatePosition();
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
+
+            // 刷新临摹模式镜像行
+            if (_tracingMode != null && _tracingMode.IsActive)
+                _tracingMode.ScheduleInsertMirrorBlocks();
 
             System.Diagnostics.Debug.WriteLine($"发文区字体大小调整: {currentSize} -> {newSize}");
         }
@@ -3460,6 +3496,11 @@ public async Task SendArticle()
             {
                 UpdateSpeedFollowHint(_copybookMode.CurrentIndex);
             }
+            // 临摹模式下高频刷新速度跟随提示
+            if (_tracingMode != null && _tracingMode.IsActive)
+            {
+                UpdateSpeedFollowHint(_tracingMode.CurrentIndex);
+            }
         }
 
         internal Timer timerProgress;
@@ -4226,6 +4267,9 @@ public async Task SendArticle()
                     // 字帖模式重置（必须在UI线程，因为操作了_overlay.Children）
                     if (_copybookMode != null && _copybookMode.IsActive)
                         _copybookMode.Reset();
+                    // 临摹模式重置
+                    if (_tracingMode != null && _tracingMode.IsActive)
+                        _tracingMode.Reset();
                 }));
                 if (retypeType == RetypeType.first)
                 {
@@ -4254,6 +4298,10 @@ public async Task SendArticle()
                     // 字帖模式：布局完成后重新定位光标
                     if (_copybookMode != null && _copybookMode.IsActive)
                         _copybookMode.ScheduleUpdatePosition();
+
+                    // 临摹模式：布局完成后插入镜像行
+                    if (_tracingMode != null && _tracingMode.IsActive)
+                        _tracingMode.ScheduleInsertMirrorBlocks();
                 }));
 
                 // 重置滚动位置到顶部（避免乱序/重打时停留在中间位置）
@@ -7971,6 +8019,8 @@ public async Task SendArticle()
 
         internal void LogBack() //记录回改的字
         {
+            if (TextInfo.Words.Count == 0)
+                return;
             string currentMatchText = string.Concat(TextInfo.Words);
             if (!Config.GetBool("错字重打"))
                 return;
