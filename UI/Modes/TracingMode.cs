@@ -657,7 +657,7 @@ namespace TypeSunny.UI.Modes
             }
             else if (_currentIndex < TextInfo.Words.Count)
             {
-                if (Config.GetBool("贪吃蛇模式"))
+                if (Config.GetBool("贪吃蛇模式") || StateManager.txtSource == TxtSource.raceApi)
                     _main.SnakeModeUpdateFromCopybook(_currentIndex);
                 else
                     ScrollToCurrentChar();
@@ -708,7 +708,7 @@ namespace TypeSunny.UI.Modes
                     Score.InputWordCount = _currentIndex;
 
                     UpdatePosition();
-                    if (Config.GetBool("贪吃蛇模式"))
+                    if (Config.GetBool("贪吃蛇模式") || StateManager.txtSource == TxtSource.raceApi)
                         _main.SnakeModeUpdateFromCopybook(_currentIndex);
                     else
                         ScrollToCurrentChar();

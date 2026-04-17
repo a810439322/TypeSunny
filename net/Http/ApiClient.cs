@@ -55,7 +55,8 @@ namespace TypeSunny.Net.Http
                 CookieContainer = this.cookieContainer,
                 UseCookies = true,
                 AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
-                AllowAutoRedirect = true
+                AllowAutoRedirect = true,
+                UseProxy = false
             };
 
             this.httpClient = new HttpClient(handler)
@@ -308,7 +309,8 @@ namespace TypeSunny.Net.Http
                             CookieContainer = this.cookieContainer,
                             UseCookies = true,
                             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
-                            AllowAutoRedirect = true
+                            AllowAutoRedirect = true,
+                            UseProxy = false
                         };
                         client = new HttpClient(retryHandler) { Timeout = TimeSpan.FromSeconds(30) };
 

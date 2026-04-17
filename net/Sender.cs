@@ -9,7 +9,7 @@ namespace Net
 {
     public class Sender
     {
-        private static HttpClient client = new HttpClient();
+        private static HttpClient client = new HttpClient(new HttpClientHandler { UseProxy = false });
         private static int WaitingTime = 5000;
 
         public static void SetWaitingTime(int milliseconds) => Sender.WaitingTime = milliseconds;

@@ -116,7 +116,7 @@ namespace TypeSunny
 
                 Debug.WriteLine($"[VersionManager] 开始检查更新，请求: {VersionFileUrl}");
 
-                using (var client = new HttpClient())
+                using (var client = new HttpClient(new HttpClientHandler { UseProxy = false }))
                 {
                     client.Timeout = TimeSpan.FromSeconds(10);
 

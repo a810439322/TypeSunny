@@ -5917,22 +5917,6 @@ public async Task SendArticle()
                     };
                     MenuItemRace.Items.Add(loginStatusItem);
 
-                    // 排行榜（打开浏览器）
-                    var serverManager = raceHelperV2.GetServerManager();
-                    var servers = serverManager.GetAllServers() ?? new List<TypeSunny.Net.RaceServer>();
-                    if (servers.Count > 0 && !string.IsNullOrWhiteSpace(servers[0].Url))
-                    {
-                        MenuItem leaderboardItem = new MenuItem
-                        {
-                            Header = "    🏆 排行榜",
-                            Background = menuBg, Foreground = menuFg,
-                            Tag = $"server_{servers[0].Id}_leaderboard",
-                            Style = menuItemStyle
-                        };
-                        leaderboardItem.Click += MenuItemRaceLeaderboard_Click;
-                        MenuItemRace.Items.Add(leaderboardItem);
-                    }
-
                     // 退出登录
                     MenuItem logoutItem = new MenuItem
                     {
@@ -5962,6 +5946,24 @@ public async Task SendArticle()
                     };
                     registerItem.Click += MenuItemRaceRegister_Click;
                     MenuItemRace.Items.Add(registerItem);
+                }
+
+                // 排行榜（不依赖登录状态，始终显示）
+                {
+                    var serverManager = raceHelperV2.GetServerManager();
+                    var servers = serverManager.GetAllServers() ?? new List<TypeSunny.Net.RaceServer>();
+                    if (servers.Count > 0 && !string.IsNullOrWhiteSpace(servers[0].Url))
+                    {
+                        MenuItem leaderboardItem = new MenuItem
+                        {
+                            Header = "    🏆 排行榜",
+                            Background = menuBg, Foreground = menuFg,
+                            Tag = $"server_{servers[0].Id}_leaderboard",
+                            Style = menuItemStyle
+                        };
+                        leaderboardItem.Click += MenuItemRaceLeaderboard_Click;
+                        MenuItemRace.Items.Add(leaderboardItem);
+                    }
                 }
 
                 MenuItemRace.Items.Add(CreateStyledSeparator(menuBg));
