@@ -25,6 +25,7 @@ namespace TypeSunny.UI.Modes
         private Border _cursor;
         private int _currentIndex;
         private bool _isActive;
+        private bool _pendingMirrorRebuild;
         private GridLength _savedTypingRowHeight;
         private double _savedTypingRowMinHeight;
         private GridLength _savedSplitterRowHeight;
@@ -33,10 +34,6 @@ namespace TypeSunny.UI.Modes
         private readonly List<TextBlock> _mirrorBlocks = new List<TextBlock>();
         // 行分组信息：每个元素是该行包含的 TextInfo.Blocks 索引列表
         private List<List<int>> _lineGroups = new List<List<int>>();
-        // 镜像行左侧竖线标记
-        private readonly List<Border> _lineMarkers = new List<Border>();
-        // 竖线颜色
-        private static readonly SolidColorBrush LineMarkerBrush = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99));
 
         public bool IsActive => _isActive;
         public int CurrentIndex => _currentIndex;
@@ -146,10 +143,13 @@ namespace TypeSunny.UI.Modes
             _inputCapture.PreviewKeyDown += OnPreviewKeyDown;
             _inputCapture.LostFocus += OnLostFocus;
             _inputCapture.GotFocus += OnGotFocus;
+            _main.Activated += OnWindowActivated;
+            _main.Deactivated += OnWindowDeactivated;
             TextCompositionManager.AddPreviewTextInputStartHandler(_inputCapture, OnCompositionStart);
             TextCompositionManager.AddPreviewTextInputUpdateHandler(_inputCapture, OnCompositionUpdate);
 
-            ScheduleInsertMirrorBlocks();
+            // 不在这里调 ScheduleInsertMirrorBlocks，
+            // 由外部 PageProgressUpdate 结束后统一调度，避免用旧 Blocks 构建镜像行
             _inputCapture.Focus();
         }
 
@@ -170,6 +170,8 @@ namespace TypeSunny.UI.Modes
                 TextCompositionManager.RemovePreviewTextInputStartHandler(_inputCapture, OnCompositionStart);
                 TextCompositionManager.RemovePreviewTextInputUpdateHandler(_inputCapture, OnCompositionUpdate);
             }
+            _main.Activated -= OnWindowActivated;
+            _main.Deactivated -= OnWindowDeactivated;
 
             if (_overlay != null)
             {
@@ -216,16 +218,34 @@ namespace TypeSunny.UI.Modes
         }
 
         /// <summary>
+        /// 主题切换后刷新光标颜色并重建镜像行
+        /// </summary>
+        public void RefreshTheme()
+        {
+            if (!_isActive) return;
+
+            // 更新光标颜色
+            if (_cursor != null)
+                _cursor.Background = Colors.DisplayForeground;
+
+            // 重建镜像行（会使用新的 Colors.DisplayForeground 计算镜像前景色）
+            ScheduleInsertMirrorBlocks();
+        }
+
+        /// <summary>
         /// 延迟到布局完成后插入镜像行并定位光标
         /// </summary>
         public void ScheduleInsertMirrorBlocks()
         {
             if (!_isActive || _inputCapture == null) return;
+            if (_pendingMirrorRebuild) return;
+            _pendingMirrorRebuild = true;
             _main.Dispatcher.BeginInvoke(new Action(() =>
             {
+                _pendingMirrorRebuild = false;
                 if (!_isActive || TextInfo.Blocks.Count == 0) return;
+                _main.TbDispay.UpdateLayout();
                 InsertMirrorBlocks();
-                // 插入镜像行后需要再等一次布局完成才能定位光标
                 _main.Dispatcher.BeginInvoke(new Action(() =>
                 {
                     if (!_isActive || _currentIndex >= TextInfo.Blocks.Count) return;
@@ -245,7 +265,10 @@ namespace TypeSunny.UI.Modes
 
             double fs = MainWindow.DisplayFontSize;
             double height = fs * (1.0 + Config.GetDouble("行距"));
-            double verticalPad = (height - fs) / 2;
+            var fontFamily = _main.ScDisplay.FontFamily;
+            double availablePad = Math.Max(0, height - fs * fontFamily.LineSpacing);
+            double padTop = (availablePad / 2 + Math.Min((height - fs) / 2, availablePad)) / 2;
+            double padBottom = availablePad - padTop;
 
             // 按 Y 坐标分组，确定每个视觉行包含哪些 Block 索引
             _lineGroups = new List<List<int>>();
@@ -283,10 +306,11 @@ namespace TypeSunny.UI.Modes
                 var tb = new TextBlock();
                 tb.Text = "\u3000"; // 全角空格占位
                 tb.Height = height;
-                tb.Padding = new Thickness(0, verticalPad, 0, 0);
+                tb.Padding = new Thickness(0, padTop, 0, padBottom);
                 tb.FontSize = fs;
-                tb.FontFamily = _main.ScDisplay.FontFamily;
-                tb.Foreground = Colors.DisplayForeground;
+                tb.FontFamily = fontFamily;
+                var c = ((SolidColorBrush)Colors.DisplayForeground).Color;
+                tb.Foreground = new SolidColorBrush(Color.FromArgb(100, c.R, c.G, c.B));
                 // 与原文 Block 保持相同的宽度属性
                 var orig = TextInfo.Blocks[i];
                 if (orig.MinWidth > 0) tb.MinWidth = orig.MinWidth;
@@ -322,7 +346,7 @@ namespace TypeSunny.UI.Modes
             double fs = MainWindow.DisplayFontSize;
             double height = fs * (1.0 + Config.GetDouble("行距"));
 
-            // 先把所有原文 Block 从父容器中移除（可能在 StackPanel 中）
+            // 先把所有原文 Block 从父容器中移除
             var originalChildren = new List<UIElement>();
             foreach (UIElement child in wrapPanel.Children)
                 originalChildren.Add(child);
@@ -331,35 +355,32 @@ namespace TypeSunny.UI.Modes
             {
                 if (child is StackPanel sp)
                     sp.Children.Clear();
+                else if (child is Border bd && bd.Child is WrapPanel wp)
+                    wp.Children.Clear();
             }
             wrapPanel.Children.Clear();
-            _lineMarkers.Clear();
 
             // 按行重新添加
             foreach (var line in _lineGroups)
             {
-                // 添加该行的原文 Blocks
+                // 用 Border 包裹原文行
+                var border = new Border();
+                border.Background = new SolidColorBrush(Color.FromArgb(20, 128, 128, 128));
+                border.CornerRadius = new CornerRadius(4);
+                var innerPanel = new WrapPanel();
                 foreach (int idx in line)
                 {
                     if (idx < TextInfo.Blocks.Count)
-                        wrapPanel.Children.Add(TextInfo.Blocks[idx]);
+                        innerPanel.Children.Add(TextInfo.Blocks[idx]);
                 }
+                border.Child = innerPanel;
+                wrapPanel.Children.Add(border);
 
                 // 插入换行元素
                 var lineBreak1 = new FrameworkElement();
                 lineBreak1.Width = panelWidth;
                 lineBreak1.Height = 0;
                 wrapPanel.Children.Add(lineBreak1);
-
-                // 添加左侧竖线标记
-                var marker = new Border();
-                marker.Width = 3;
-                marker.Height = height;
-                marker.Background = LineMarkerBrush;
-                marker.Margin = new Thickness(0, 0, 4, 0);
-                marker.CornerRadius = new CornerRadius(1);
-                _lineMarkers.Add(marker);
-                wrapPanel.Children.Add(marker);
 
                 // 添加该行的镜像 Blocks
                 foreach (int idx in line)
@@ -381,13 +402,20 @@ namespace TypeSunny.UI.Modes
             if (_mirrorBlocks.Count > 0)
             {
                 var wrapPanel = _main.TbDispay;
+                // 先把原文 Blocks 从所有容器中断开（Border>WrapPanel、StackPanel 等）
+                foreach (UIElement child in wrapPanel.Children)
+                {
+                    if (child is Border bd && bd.Child is WrapPanel wp)
+                        wp.Children.Clear();
+                    else if (child is StackPanel sp)
+                        sp.Children.Clear();
+                }
                 wrapPanel.Children.Clear();
                 foreach (var block in TextInfo.Blocks)
                     wrapPanel.Children.Add(block);
             }
             _mirrorBlocks.Clear();
             _lineGroups.Clear();
-            _lineMarkers.Clear();
         }
 
         /// <summary>
@@ -396,6 +424,9 @@ namespace TypeSunny.UI.Modes
         private void UpdateMirrorLineColors()
         {
             if (_lineGroups.Count == 0 || _mirrorBlocks.Count == 0) return;
+
+            var c = ((SolidColorBrush)Colors.DisplayForeground).Color;
+            var mirrorForeground = new SolidColorBrush(Color.FromArgb(100, c.R, c.G, c.B));
 
             // 找到当前行
             int currentLineIdx = _lineGroups.Count;
@@ -420,11 +451,9 @@ namespace TypeSunny.UI.Modes
                         if (idx < _mirrorBlocks.Count)
                         {
                             _mirrorBlocks[idx].Opacity = 0.15;
-                            _mirrorBlocks[idx].Foreground = Colors.DisplayForeground;
+                            _mirrorBlocks[idx].Foreground = mirrorForeground;
                         }
                     }
-                    if (li < _lineMarkers.Count)
-                        _lineMarkers[li].Opacity = 0.15;
                 }
                 else if (li == currentLineIdx)
                 {
@@ -449,8 +478,6 @@ namespace TypeSunny.UI.Modes
                         }
                         _mirrorBlocks[idx].Foreground = Colors.DisplayForeground;
                     }
-                    if (li < _lineMarkers.Count)
-                        _lineMarkers[li].Opacity = 1.0;
                 }
                 else
                 {
@@ -460,11 +487,9 @@ namespace TypeSunny.UI.Modes
                         if (idx < _mirrorBlocks.Count)
                         {
                             _mirrorBlocks[idx].Opacity = 1.0;
-                            _mirrorBlocks[idx].Foreground = Colors.DisplayForeground;
+                            _mirrorBlocks[idx].Foreground = mirrorForeground;
                         }
                     }
-                    if (li < _lineMarkers.Count)
-                        _lineMarkers[li].Opacity = 1.0;
                 }
             }
         }
@@ -478,6 +503,8 @@ namespace TypeSunny.UI.Modes
                 if (!_isActive || _inputCapture == null) return;
                 if (Keyboard.FocusedElement is System.Windows.Controls.Primitives.ButtonBase)
                     return;
+                if (Keyboard.FocusedElement == _main.TbxResults)
+                    return;
                 if (!_main.IsActive) return;
                 _inputCapture.Focus();
             }), System.Windows.Threading.DispatcherPriority.Input);
@@ -486,6 +513,18 @@ namespace TypeSunny.UI.Modes
         private void OnGotFocus(object sender, RoutedEventArgs e)
         {
             if (_cursor != null) _cursor.Visibility = Visibility.Visible;
+        }
+
+        private void OnWindowDeactivated(object sender, EventArgs e)
+        {
+            if (_cursor != null) _cursor.Visibility = Visibility.Collapsed;
+        }
+
+        private void OnWindowActivated(object sender, EventArgs e)
+        {
+            if (!_isActive || _inputCapture == null) return;
+            if (_cursor != null) _cursor.Visibility = Visibility.Visible;
+            _inputCapture.Focus();
         }
 
         private void OnCompositionStart(object sender, TextCompositionEventArgs e)
@@ -521,7 +560,7 @@ namespace TypeSunny.UI.Modes
 
             if (string.IsNullOrEmpty(e.Text))
             {
-                if (Config.GetBool("永不退避")) { /* 继续 */ }
+                if (Config.GetBool("禁用回改")) { /* 继续 */ }
                 else
                 {
                     _compositionText.Visibility = Visibility.Collapsed;
@@ -532,7 +571,7 @@ namespace TypeSunny.UI.Modes
 
             if (e.Text == "\r")
             {
-                if (!Config.GetBool("永不退避"))
+                if (!Config.GetBool("禁用回改"))
                 {
                     e.Handled = true;
                     return;
@@ -540,9 +579,21 @@ namespace TypeSunny.UI.Modes
             }
 
             string inputText = e.Text;
-            if (Config.GetBool("永不退避") && (string.IsNullOrEmpty(inputText) || inputText == "\r"))
+            if (Config.GetBool("禁用回改") && (string.IsNullOrEmpty(inputText) || inputText == "\r"))
                 inputText = " ";
 
+            ProcessInputText(inputText);
+
+            e.Handled = true;
+        }
+
+        private void ProcessSingleChar(string ch)
+        {
+            ProcessInputText(ch);
+        }
+
+        private void ProcessInputText(string inputText)
+        {
             var si = new StringInfo(inputText);
             CounterLog.Buffer[0] += si.LengthInTextElements;
 
@@ -606,22 +657,21 @@ namespace TypeSunny.UI.Modes
             }
             else if (_currentIndex < TextInfo.Words.Count)
             {
-                UpdatePosition();
                 if (Config.GetBool("贪吃蛇模式"))
                     _main.SnakeModeUpdateFromCopybook(_currentIndex);
                 else
                     ScrollToCurrentChar();
+
+                UpdatePosition();
                 _main.UpdateZiTi();
             }
-
-            e.Handled = true;
         }
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (!_isActive) return;
 
-            if (Config.GetBool("永不退避"))
+            if (Config.GetBool("禁用回改"))
             {
                 if (e.Key == Key.Back || e.Key == Key.Escape ||
                     (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control))
@@ -632,6 +682,14 @@ namespace TypeSunny.UI.Modes
             }
 
             _main.HandleKeyDownStats(e);
+
+            // 空格键不会触发 PreviewTextInput，需要在这里手动处理
+            if (e.Key == Key.Space && string.IsNullOrEmpty(_inputCapture.Text))
+            {
+                ProcessSingleChar(" ");
+                e.Handled = true;
+                return;
+            }
 
             if (e.Key == Key.Back && string.IsNullOrEmpty(_inputCapture.Text))
             {
@@ -677,14 +735,21 @@ namespace TypeSunny.UI.Modes
                 double candidateOffset = Config.GetDouble("字帖候选框高度") * fs;
                 double compositionOffset = (Config.GetDouble("字帖编码高度") + 0.2) * fs;
 
+                // 计算文字在 TextBlock 内的实际 padTop（与 PageReArrange 一致）
+                var fm = _main.GetCurrentFontFamily();
+                double height = fs * (1.0 + Config.GetDouble("行距"));
+                double availablePad = Math.Max(0, height - fs * fm.LineSpacing);
+                double padTop = (availablePad / 2 + Math.Min((height - fs) / 2, availablePad)) / 2;
+
                 Canvas.SetLeft(_inputCapture, x);
                 Canvas.SetTop(_inputCapture, y + 1.0 * fs + candidateOffset);
 
                 if (_cursor != null)
                 {
-                    _cursor.Height = fs;
+                    double lineHeight = fs * fm.LineSpacing;
+                    _cursor.Height = lineHeight;
                     Canvas.SetLeft(_cursor, x - 2);
-                    Canvas.SetTop(_cursor, y + 0.3 * fs);
+                    Canvas.SetTop(_cursor, y + padTop);
                 }
 
                 Canvas.SetLeft(_compositionText, x);

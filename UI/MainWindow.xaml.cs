@@ -262,19 +262,19 @@ namespace TypeSunny.UI
             if (Config.GetDouble("行距") < 0.5)
                 Config.dicts["行距"] = "0.5";
 
-            // 字帖模式切换检查
+            // 模式切换：先 Disable 旧模式，再 Enable 新模式，避免 Disable 覆盖 Enable 的隐藏操作
             bool copybookEnabled = Config.GetBool("字帖模式");
+            bool tracingEnabled = Config.GetBool("临摹模式");
+
+            if (!copybookEnabled && _copybookMode.IsActive)
+                _copybookMode.Disable();
+            if (!tracingEnabled && _tracingMode.IsActive)
+                _tracingMode.Disable();
+
             if (copybookEnabled && !_copybookMode.IsActive)
                 _copybookMode.Enable();
-            else if (!copybookEnabled && _copybookMode.IsActive)
-                _copybookMode.Disable();
-
-            // 临摹模式切换检查
-            bool tracingEnabled = Config.GetBool("临摹模式");
             if (tracingEnabled && !_tracingMode.IsActive)
                 _tracingMode.Enable();
-            else if (!tracingEnabled && _tracingMode.IsActive)
-                _tracingMode.Disable();
 
             if (IsLookingType && StateManager.LastType)
             {
@@ -289,6 +289,12 @@ namespace TypeSunny.UI
 
             if (updateLevel >= UpdateLevel.Progress)
                 PageProgressUpdate();
+
+            // TextBlocks 重建后，通知字帖/临摹模式重新定位光标和重建镜像行
+            if (_copybookMode != null && _copybookMode.IsActive)
+                _copybookMode.ScheduleUpdatePosition();
+            if (_tracingMode != null && _tracingMode.IsActive)
+                _tracingMode.ScheduleInsertMirrorBlocks();
 
 
             void PageReArrange()
@@ -420,7 +426,9 @@ namespace TypeSunny.UI
 
                     double fs = DisplayFontSize;
                     double height = fs * (1.0 + Config.GetDouble("行距"));
-                    double verticalPad = (height - fs) / 2;
+                    double availablePad = Math.Max(0, height - fs * fm.LineSpacing);
+                    double padTop = (availablePad / 2 + Math.Min((height - fs) / 2, availablePad)) / 2;
+                    double padBottom = availablePad - padTop;
                     double MinWidth = fs * 0.9;
 
                     ScDisplay.FontFamily = fm;
@@ -446,7 +454,7 @@ namespace TypeSunny.UI
                             tb.Text = TextInfo.Words[i];
 
                             tb.Height = height;
-                            tb.Padding = new Thickness(0, verticalPad, 0, 0);
+                            tb.Padding = new Thickness(0, padTop, 0, padBottom);
                             if (tb.Text == "“" || tb.Text == "‘")
                             {
                                 tb.MinWidth = MinWidth;
@@ -472,7 +480,7 @@ namespace TypeSunny.UI
                             TextBlock tb = new TextBlock();
                             tb.Text = TextInfo.Words[i];
                             tb.Height = height;
-                            tb.Padding = new Thickness(0, verticalPad, 0, 0);
+                            tb.Padding = new Thickness(0, padTop, 0, padBottom);
                             if (tb.Text == "“" || tb.Text == "‘")
                             {
                                 tb.MinWidth = MinWidth;
@@ -497,7 +505,7 @@ namespace TypeSunny.UI
                             tb.Text = TextInfo.Words[i];
 
                             tb.Height = height;
-                            tb.Padding = new Thickness(0, verticalPad, 0, 0);
+                            tb.Padding = new Thickness(0, padTop, 0, padBottom);
                             if (tb.Text == "“" || tb.Text == "‘")
                             {
                                 tb.MinWidth = MinWidth;
@@ -581,6 +589,16 @@ namespace TypeSunny.UI
                         StackPanel lstk = new StackPanel();
                         for (int i = 0; i < TextInfo.Blocks.Count; i++)
                         {
+                            // 在换行位置前插入占满整行的空元素，强制 WrapPanel 换行
+                            int globalIdx = TextInfo.PageStartIndex + i;
+                            if (TextInfo.LineBreaks.Contains(globalIdx))
+                            {
+                                var lineBreak = new FrameworkElement();
+                                lineBreak.Width = TbDispay.ActualWidth > 0 ? TbDispay.ActualWidth : 9999;
+                                lineBreak.Height = 0;
+                                TbDispay.Children.Add(lineBreak);
+                            }
+
                             if (isPackHead[i])
                             {
                                 lstk = new StackPanel();
@@ -612,8 +630,18 @@ namespace TypeSunny.UI
                     }
                     else
                     {
-                        foreach (var tb in TextInfo.Blocks)
-                            TbDispay.Children.Add(tb);
+                        for (int i = 0; i < TextInfo.Blocks.Count; i++)
+                        {
+                            int globalIdx = TextInfo.PageStartIndex + i;
+                            if (TextInfo.LineBreaks.Contains(globalIdx))
+                            {
+                                var lineBreak = new FrameworkElement();
+                                lineBreak.Width = TbDispay.ActualWidth > 0 ? TbDispay.ActualWidth : 9999;
+                                lineBreak.Height = 0;
+                                TbDispay.Children.Add(lineBreak);
+                            }
+                            TbDispay.Children.Add(TextInfo.Blocks[i]);
+                        }
                     }
 
 
@@ -1525,10 +1553,15 @@ namespace TypeSunny.UI
                         this.Dispatcher.BeginInvoke(new Action(() =>
                         {
                             grid_a.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
-                            if (_copybookMode == null || !_copybookMode.IsActive)
+                            if ((_copybookMode == null || !_copybookMode.IsActive) &&
+                                (_tracingMode == null || !_tracingMode.IsActive))
                             {
                                 grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
                             }
+                            if (_copybookMode != null && _copybookMode.IsActive)
+                                _copybookMode.ScheduleUpdatePosition();
+                            if (_tracingMode != null && _tracingMode.IsActive)
+                                _tracingMode.ScheduleInsertMirrorBlocks();
                         }), System.Windows.Threading.DispatcherPriority.Loaded);
 
                         // 保存展开时的窗口高度
@@ -1668,7 +1701,6 @@ namespace TypeSunny.UI
                 winTrainer.Background = this.Background;
             }
 
-
             this.Height = Config.GetDouble("窗口高度");
             this.Width = Config.GetDouble("窗口宽度");
 
@@ -1693,10 +1725,12 @@ namespace TypeSunny.UI
                 }
                 else
                 {
-                    _isResultsExpanded = false;
-                    // 收起状态
-                    this.Dispatcher.BeginInvoke(new Action(() =>
+                    // 收起状态 — 只有从展开切换到收起时才调整窗口高度
+                    if (_isResultsExpanded)
                     {
+                        _isResultsExpanded = false;
+                        this.Dispatcher.BeginInvoke(new Action(() =>
+                        {
                         // 获取发文区和跟打区的当前实际高度
                         double articleHeight = grid_a.RowDefinitions[2].ActualHeight;
                         double typingHeight = grid_a.RowDefinitions[4].ActualHeight;
@@ -1732,15 +1766,28 @@ namespace TypeSunny.UI
                         this.Dispatcher.BeginInvoke(new Action(() =>
                         {
                             grid_a.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
-                            if (_copybookMode == null || !_copybookMode.IsActive)
+                            if ((_copybookMode == null || !_copybookMode.IsActive) &&
+                                (_tracingMode == null || !_tracingMode.IsActive))
                             {
                                 grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
                             }
+                            if (_copybookMode != null && _copybookMode.IsActive)
+                                _copybookMode.ScheduleUpdatePosition();
+                            if (_tracingMode != null && _tracingMode.IsActive)
+                                _tracingMode.ScheduleInsertMirrorBlocks();
                         }), System.Windows.Threading.DispatcherPriority.Loaded);
 
                         // 保存展开时的窗口高度
                         _expandedWindowHeight = Config.GetDouble("窗口高度");
                     }), System.Windows.Threading.DispatcherPriority.Loaded);
+                    }
+                    else
+                    {
+                        // 已经是收起状态，只确保 UI 状态一致
+                        resultsTextBoxGrid.Visibility = Visibility.Collapsed;
+                        gridSplitterResults.Visibility = Visibility.Collapsed;
+                        BtnToggleResults.Content = "▲";
+                    }
                 }
             }
 
@@ -1784,6 +1831,12 @@ namespace TypeSunny.UI
             IntStringDict.Load();
 
             UpdateDisplay(UpdateLevel.PageArrange);
+
+            // 主题切换后刷新字帖/临摹模式的光标颜色和位置
+            if (_copybookMode != null && _copybookMode.IsActive)
+                _copybookMode.RefreshTheme();
+            if (_tracingMode != null && _tracingMode.IsActive)
+                _tracingMode.RefreshTheme();
 
             // 强制刷新标题栏和顶部栏背景色
             Dispatcher.BeginInvoke(new Action(() =>
@@ -3712,8 +3765,8 @@ public async Task SendArticle()
                 return;
             }
 
-            // 永不退避模式：拦截退格、Esc、Ctrl+Z
-            if (Config.GetBool("永不退避") && StateManager.typingState == TypingState.typing)
+            // 禁用回改模式：拦截退格、Esc、Ctrl+Z
+            if (Config.GetBool("禁用回改") && StateManager.typingState == TypingState.typing)
             {
                 if (e.Key == Key.Back || e.Key == Key.Escape ||
                     (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control))
@@ -4425,27 +4478,39 @@ public async Task SendArticle()
 
                 if (index >= 2)
                 {
-                    // 标准三行格式：head + content + tail
-                    head = lines[index - 2];
-                    content = lines[index - 1];
+                    head = lines[0];
+                    // 将 head 和 tail 之间的所有行拼接为 content，并记录换行位置
+                    TextInfo.LineBreaks.Clear();
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 1; i < index; i++)
+                    {
+                        if (i > 1 && lines[i].Length > 0)
+                        {
+                            var sbSi = new System.Globalization.StringInfo(sb.ToString());
+                            TextInfo.LineBreaks.Add(sbSi.LengthInTextElements);
+                        }
+                        sb.Append(lines[i]);
+                    }
+                    content = sb.ToString();
 
                     if (head.Length >= 3 && head.Substring(0, 3) == "皇叔 ")
                         content = UnicodeBias(content);
                 }
                 else if (index == 1)
                 {
-                    // 两行：可能是 head + tail（空段，content被RemoveEmptyEntries吞了）
-                    // 此时 lines[0] 是标题行，content 为空
+                    TextInfo.LineBreaks.Clear();
+                    head = lines[0];
                     content = "";
                 }
                 else
                 {
-                    // 只有尾行
+                    TextInfo.LineBreaks.Clear();
                     content = "";
                 }
             }
             else //非赛文格式
             {
+                TextInfo.LineBreaks.Clear();
                 content = rawTxt.Replace("\n", "").Replace("\r", "").Replace("\t", "");
             }
 
@@ -7475,69 +7540,12 @@ public async Task SendArticle()
 
             try
             {
-                // 先检查登录状态，未登录直接弹登录/注册窗口，不发网络请求
+                // 先检查登录状态，未登录直接弹登录窗口（底部有注册入口）
                 if (!wenlaiHelper.IsLoggedIn())
                 {
-                    bool shouldRetry = false;
-
-                    var dialog = new Window
-                    {
-                        Title = "需要登录",
-                        Width = 360,
-                        Height = 180,
-                        WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                        Owner = this,
-                        ResizeMode = ResizeMode.NoResize
-                    };
-
-                    var grid = new Grid();
-                    grid.Margin = new Thickness(20);
-                    grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                    grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(20) });
-                    grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-                    var message = new TextBlock
-                    {
-                        Text = "请先登录文来账号",
-                        TextWrapping = TextWrapping.Wrap,
-                        FontSize = 14
-                    };
-                    Grid.SetRow(message, 0);
-                    grid.Children.Add(message);
-
-                    var btnPanel = new StackPanel
-                    {
-                        Orientation = Orientation.Horizontal,
-                        HorizontalAlignment = HorizontalAlignment.Center
-                    };
-                    Grid.SetRow(btnPanel, 2);
-
-                    var btnLogin = new Button { Content = "🔑 登录", Width = 90, Height = 32, Margin = new Thickness(0, 0, 10, 0), FontSize = 14 };
-                    var btnRegister = new Button { Content = "📝 注册", Width = 90, Height = 32, Margin = new Thickness(0, 0, 10, 0), FontSize = 14 };
-                    var btnCancel = new Button { Content = "取消", Width = 90, Height = 32, FontSize = 14 };
-
-                    btnLogin.Click += (s, args) =>
-                    {
-                        dialog.Close();
-                        wenlaiHelper.ShowLoginDialog(this);
-                        shouldRetry = wenlaiHelper.IsLoggedIn();
-                        if (shouldRetry) { InitializeWenlaiMenu(); InitializeRaceMenu(); }
-                    };
-                    btnRegister.Click += (s, args) =>
-                    {
-                        dialog.Close();
-                        wenlaiHelper.ShowRegisterDialog(this);
-                        shouldRetry = wenlaiHelper.IsLoggedIn();
-                        if (shouldRetry) { InitializeWenlaiMenu(); InitializeRaceMenu(); }
-                    };
-                    btnCancel.Click += (s, args) => { dialog.Close(); };
-
-                    btnPanel.Children.Add(btnLogin);
-                    btnPanel.Children.Add(btnRegister);
-                    btnPanel.Children.Add(btnCancel);
-                    grid.Children.Add(btnPanel);
-                    dialog.Content = grid;
-                    dialog.ShowDialog();
+                    wenlaiHelper.ShowLoginDialog(this);
+                    bool shouldRetry = wenlaiHelper.IsLoggedIn();
+                    if (shouldRetry) { InitializeWenlaiMenu(); InitializeRaceMenu(); }
 
                     if (shouldRetry)
                     {
@@ -7582,109 +7590,16 @@ public async Task SendArticle()
                     // 检查是否是"请先登录"错误
                     if (article.Title == "接口错误" && article.Content.Contains("登录"))
                     {
-                        // 使用自定义对话框提供"登录"和"注册"两个选项
-                        var dialog = new Window
+                        // 直接弹出登录对话框（登录页底部有注册入口）
+                        wenlaiHelper.ShowLoginDialog(this);
+                        bool shouldRetry = wenlaiHelper.IsLoggedIn();
+
+                        if (shouldRetry)
                         {
-                            Title = "需要登录",
-                            Width = 360,
-                            Height = 180,
-                            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                            Owner = this,
-                            ResizeMode = ResizeMode.NoResize
-                        };
+                            InitializeWenlaiMenu();
+                            InitializeRaceMenu();
+                        }
 
-                        var grid = new Grid();
-                        grid.Margin = new Thickness(20);
-                        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(20) });
-                        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-                        var message = new TextBlock
-                        {
-                            Text = article.Content,
-                            TextWrapping = TextWrapping.Wrap,
-                            FontSize = 14
-                        };
-                        Grid.SetRow(message, 0);
-                        grid.Children.Add(message);
-
-                        var btnPanel = new StackPanel
-                        {
-                            Orientation = Orientation.Horizontal,
-                            HorizontalAlignment = HorizontalAlignment.Center
-                        };
-                        Grid.SetRow(btnPanel, 2);
-
-                        var btnLogin = new Button
-                        {
-                            Content = "🔑 登录",
-                            Width = 90,
-                            Height = 32,
-                            Margin = new Thickness(0, 0, 10, 0),
-                            FontSize = 14
-                        };
-
-                        var btnRegister = new Button
-                        {
-                            Content = "📝 注册",
-                            Width = 90,
-                            Height = 32,
-                            Margin = new Thickness(0, 0, 10, 0),
-                            FontSize = 14
-                        };
-
-                        var btnCancel = new Button
-                        {
-                            Content = "取消",
-                            Width = 90,
-                            Height = 32,
-                            FontSize = 14
-                        };
-
-                        bool shouldRetry = false;
-
-                        btnLogin.Click += (s, args) =>
-                        {
-                            dialog.Close();
-                            wenlaiHelper.ShowLoginDialog(this);
-                            shouldRetry = wenlaiHelper.IsLoggedIn();
-
-                            // ✨ 登录成功后更新菜单（与右键菜单登录保持一致）
-                            if (shouldRetry)
-                            {
-                                InitializeWenlaiMenu();
-                                InitializeRaceMenu();  // 同域名的赛文也可能需要更新
-                            }
-                        };
-
-                        btnRegister.Click += (s, args) =>
-                        {
-                            dialog.Close();
-                            wenlaiHelper.ShowRegisterDialog(this);
-                            shouldRetry = wenlaiHelper.IsLoggedIn();
-
-                            // ✨ 注册成功后更新菜单（与右键菜单注册保持一致）
-                            if (shouldRetry)
-                            {
-                                InitializeWenlaiMenu();
-                                InitializeRaceMenu();  // 同域名的赛文也可能需要更新
-                            }
-                        };
-
-                        btnCancel.Click += (s, args) =>
-                        {
-                            dialog.Close();
-                        };
-
-                        btnPanel.Children.Add(btnLogin);
-                        btnPanel.Children.Add(btnRegister);
-                        btnPanel.Children.Add(btnCancel);
-                        grid.Children.Add(btnPanel);
-
-                        dialog.Content = grid;
-                        dialog.ShowDialog();
-
-                        // 如果登录或注册成功，重新尝试加载文章
                         if (shouldRetry)
                         {
                             // 加载Cookie到ArticleFetcher
@@ -8312,7 +8227,8 @@ public async Task SendArticle()
                 {
                     grid_a.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
                     // 字帖模式下跟打区已折叠，不要给它Star，否则会分走空间导致底部留白
-                    if (_copybookMode == null || !_copybookMode.IsActive)
+                    if ((_copybookMode == null || !_copybookMode.IsActive) &&
+                        (_tracingMode == null || !_tracingMode.IsActive))
                     {
                         grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
                     }

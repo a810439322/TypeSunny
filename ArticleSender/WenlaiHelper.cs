@@ -627,7 +627,7 @@ namespace TypeSunny.ArticleSender
             {
                 Title = "文来登录",
                 Width = 350,
-                Height = 200,
+                Height = 230,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = owner,
                 ResizeMode = ResizeMode.NoResize
@@ -636,11 +636,13 @@ namespace TypeSunny.ArticleSender
             var grid = new Grid();
             grid.Margin = new Thickness(20);
 
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 0: 用户名
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 2: 密码
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(20) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 4: 按钮
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 6: 注册链接
 
             var lblUsername = new Label { Content = "用户名:" };
             Grid.SetRow(lblUsername, 0);
@@ -770,8 +772,6 @@ namespace TypeSunny.ArticleSender
                             System.Diagnostics.Debug.WriteLine($"[文来] 登录后公钥同步失败（不影响登录）: {pkEx.Message}");
                         }
 
-                        MessageBox.Show($"登录成功！欢迎 {displayName}", "提示",
-                            MessageBoxButton.OK, MessageBoxImage.Information);
                         loginDialog.DialogResult = true;
                         loginDialog.Close();
                     }
@@ -800,6 +800,26 @@ namespace TypeSunny.ArticleSender
             btnPanel.Children.Add(btnLogin);
             btnPanel.Children.Add(btnCancel);
             grid.Children.Add(btnPanel);
+
+            var btnRegisterLink = new Button
+            {
+                Content = "没有账号？去注册",
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Background = System.Windows.Media.Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Foreground = System.Windows.Media.Brushes.Gray,
+                Cursor = System.Windows.Input.Cursors.Hand,
+                FontSize = 12,
+                Padding = new Thickness(0)
+            };
+            Grid.SetRow(btnRegisterLink, 6);
+            btnRegisterLink.Click += (s, args) =>
+            {
+                loginDialog.DialogResult = false;
+                loginDialog.Close();
+                ShowRegisterDialog(owner);
+            };
+            grid.Children.Add(btnRegisterLink);
 
             loginDialog.Content = grid;
 

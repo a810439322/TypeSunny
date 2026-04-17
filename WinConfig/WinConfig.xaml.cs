@@ -158,7 +158,7 @@ namespace TypeSunny
                         "  字帖错字高度",
                         "临摹模式",
                         "速度跟随提示",
-                        "永不退避",
+                        "禁用回改",
                         "禁止F3重打",
                         "显示进度条",
                         "自动发送成绩",
@@ -495,9 +495,9 @@ namespace TypeSunny
                 {
                     tbk.ToolTip = ">0 往下调，<0 往上调，建议以 0.1 为单位微调";
                 }
-                if (itemKey == "永不退避")
+                if (itemKey == "禁用回改")
                 {
-                    tbk.ToolTip = "该模式下禁止使用退格、Esc、Ctrl+Z，空格或回车后没上屏内容则强制上屏一个空格。加油吧少年，努力提升键准，永不退避！";
+                    tbk.ToolTip = "该模式下禁止使用退格、Esc、Ctrl+Z，空格或回车后没上屏内容则强制上屏一个空格。努力提升键准吧少年！";
                 }
 
                 Grid.SetRow(tbk, currentRow);
@@ -692,15 +692,23 @@ namespace TypeSunny
 
                 LoadFontItems(cb);
 
-                // 设置当前选中项
+                // 设置当前选中项（精确匹配或前缀匹配，兼容 face name 差异）
+                int matchIndex = -1;
                 for (int i = 0; i < cb.Items.Count; i++)
                 {
-                    if (cb.Items[i].ToString() == itemValue)
+                    string item = cb.Items[i].ToString();
+                    if (item == itemValue)
                     {
-                        cb.SelectedIndex = i;
+                        matchIndex = i;
                         break;
                     }
+                    if (item.StartsWith(itemValue) || itemValue.StartsWith(item))
+                    {
+                        matchIndex = i;
+                    }
                 }
+                if (matchIndex >= 0)
+                    cb.SelectedIndex = matchIndex;
                 valueControl = cb;
             }
             else if (itemKey == "字提方案")
@@ -786,15 +794,23 @@ namespace TypeSunny
 
                 LoadFontItems(cb);
 
-                // 设置当前选中项
+                // 设置当前选中项（精确匹配或前缀匹配，兼容 face name 差异）
+                int matchIndex = -1;
                 for (int i = 0; i < cb.Items.Count; i++)
                 {
-                    if (cb.Items[i].ToString() == itemValue)
+                    string item = cb.Items[i].ToString();
+                    if (item == itemValue)
                     {
-                        cb.SelectedIndex = i;
+                        matchIndex = i;
                         break;
                     }
+                    if (item.StartsWith(itemValue) || itemValue.StartsWith(item))
+                    {
+                        matchIndex = i;
+                    }
                 }
+                if (matchIndex >= 0)
+                    cb.SelectedIndex = matchIndex;
                 valueControl = cb;
             }
             else if (itemKey == "盲打模式")
@@ -1011,14 +1027,15 @@ namespace TypeSunny
                     {
                         var fullname = f.FullName;
                         System.Windows.Media.GlyphTypeface gf = new System.Windows.Media.GlyphTypeface(new Uri(fullname));
-                        var s = gf.FamilyNames;
-                        string fontname = "";
-                        if (s.ContainsKey(cn))
-                            fontname = s[cn];
-                        else if (s.ContainsKey(en))
-                            fontname = s[en];
-                        if (fontname != "")
-                            cb.Items.Add("#" + fontname);
+                        // 用 Win32FamilyNames（WPF FontFamily 渲染时匹配的名称）
+                        var familyNames = gf.Win32FamilyNames;
+                        string familyName = "";
+                        if (familyNames.ContainsKey(cn))
+                            familyName = familyNames[cn];
+                        else if (familyNames.ContainsKey(en))
+                            familyName = familyNames[en];
+                        if (familyName != "")
+                            cb.Items.Add("#" + familyName);
                     }
                     catch { }
                 }
@@ -2102,10 +2119,11 @@ namespace TypeSunny
                 }
                 else if (labelText == "字体")
                 {
-                    key.Add(labelText);
-                    value.Add(comboBox.SelectedIndex >= 0 && comboBox.SelectedIndex < comboBox.Items.Count
-                        ? comboBox.Items[comboBox.SelectedIndex].ToString()
-                        : "微软雅黑");
+                    if (comboBox.SelectedIndex >= 0 && comboBox.SelectedIndex < comboBox.Items.Count)
+                    {
+                        key.Add(labelText);
+                        value.Add(comboBox.Items[comboBox.SelectedIndex].ToString());
+                    }
                 }
                 else if (labelText == "当前Logo")
                 {
@@ -2116,10 +2134,11 @@ namespace TypeSunny
                 }
                 else if (labelText == "字提字体")
                 {
-                    key.Add(labelText);
-                    value.Add(comboBox.SelectedIndex >= 0 && comboBox.SelectedIndex < comboBox.Items.Count
-                        ? comboBox.Items[comboBox.SelectedIndex].ToString()
-                        : "TumanPUA");
+                    if (comboBox.SelectedIndex >= 0 && comboBox.SelectedIndex < comboBox.Items.Count)
+                    {
+                        key.Add(labelText);
+                        value.Add(comboBox.Items[comboBox.SelectedIndex].ToString());
+                    }
                 }
                 else if (labelText == "字提方案")
                 {

@@ -37,6 +37,8 @@ internal static class TextInfo
 
         public static List<WordStates> BlocksStates = new List<WordStates>(); //显示文本UI的状态
 
+        public static HashSet<int> LineBreaks = new HashSet<int>(); // 需要在此索引前插入视觉换行
+
         public static int PageStartIndex = 0;
 
         public static bool Exit = false;

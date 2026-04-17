@@ -124,6 +124,8 @@ namespace TypeSunny.UI.Modes
             _inputCapture.PreviewKeyDown += OnPreviewKeyDown;
             _inputCapture.LostFocus += OnLostFocus;
             _inputCapture.GotFocus += OnGotFocus;
+            _main.Activated += OnWindowActivated;
+            _main.Deactivated += OnWindowDeactivated;
             TextCompositionManager.AddPreviewTextInputStartHandler(_inputCapture, OnCompositionStart);
             TextCompositionManager.AddPreviewTextInputUpdateHandler(_inputCapture, OnCompositionUpdate);
 
@@ -149,6 +151,8 @@ namespace TypeSunny.UI.Modes
                 TextCompositionManager.RemovePreviewTextInputStartHandler(_inputCapture, OnCompositionStart);
                 TextCompositionManager.RemovePreviewTextInputUpdateHandler(_inputCapture, OnCompositionUpdate);
             }
+            _main.Activated -= OnWindowActivated;
+            _main.Deactivated -= OnWindowDeactivated;
 
             if (_overlay != null)
             {
@@ -233,6 +237,8 @@ namespace TypeSunny.UI.Modes
                 if (!_isActive || _inputCapture == null) return;
                 if (Keyboard.FocusedElement is System.Windows.Controls.Primitives.ButtonBase)
                     return;
+                if (Keyboard.FocusedElement == _main.TbxResults)
+                    return;
                 if (!_main.IsActive)
                     return;
                 _inputCapture.Focus();
@@ -242,6 +248,18 @@ namespace TypeSunny.UI.Modes
         private void OnGotFocus(object sender, RoutedEventArgs e)
         {
             if (_cursor != null) _cursor.Visibility = Visibility.Visible;
+        }
+
+        private void OnWindowDeactivated(object sender, EventArgs e)
+        {
+            if (_cursor != null) _cursor.Visibility = Visibility.Collapsed;
+        }
+
+        private void OnWindowActivated(object sender, EventArgs e)
+        {
+            if (!_isActive || _inputCapture == null) return;
+            if (_cursor != null) _cursor.Visibility = Visibility.Visible;
+            _inputCapture.Focus();
         }
 
         private void OnCompositionStart(object sender, TextCompositionEventArgs e)
@@ -281,9 +299,9 @@ namespace TypeSunny.UI.Modes
             // 空码/ESC取消
             if (string.IsNullOrEmpty(e.Text))
             {
-                if (Config.GetBool("永不退避"))
+                if (Config.GetBool("禁用回改"))
                 {
-                    // 永不退避模式：空码时强制上屏一个空格，继续往下走逐字比对
+                    // 禁用回改模式：空码时强制上屏一个空格，继续往下走逐字比对
                 }
                 else
                 {
@@ -293,10 +311,10 @@ namespace TypeSunny.UI.Modes
                 }
             }
 
-            // 永不退避模式：回车强制当空格上屏
+            // 禁用回改模式：回车强制当空格上屏
             if (e.Text == "\r")
             {
-                if (Config.GetBool("永不退避"))
+                if (Config.GetBool("禁用回改"))
                 {
                     // 不return，下面的逐字比对会处理
                 }
@@ -307,11 +325,23 @@ namespace TypeSunny.UI.Modes
                 }
             }
 
-            // 永不退避模式：空码/回车强制当空格处理
+            // 禁用回改模式：空码/回车强制当空格处理
             string inputText = e.Text;
-            if (Config.GetBool("永不退避") && (string.IsNullOrEmpty(inputText) || inputText == "\r"))
+            if (Config.GetBool("禁用回改") && (string.IsNullOrEmpty(inputText) || inputText == "\r"))
                 inputText = " ";
 
+            ProcessInputText(inputText);
+
+            e.Handled = true;
+        }
+
+        private void ProcessSingleChar(string ch)
+        {
+            ProcessInputText(ch);
+        }
+
+        private void ProcessInputText(string inputText)
+        {
             // 全局字数计数（正常模式由 TbxInput_TextChanged 处理）
             var si = new StringInfo(inputText);
             CounterLog.Buffer[0] += si.LengthInTextElements;
@@ -377,28 +407,23 @@ namespace TypeSunny.UI.Modes
             }
             else if (_currentIndex < TextInfo.Words.Count)
             {
-                // 定位到下一个字
-                UpdatePosition();
-
-                // 贪吃蛇模式下更新字符显隐和滚动
+                // 先滚动再定位光标，否则滚动会改变 TextBlock 相对于 Grid 的坐标
                 if (Config.GetBool("贪吃蛇模式"))
                     _main.SnakeModeUpdateFromCopybook(_currentIndex);
                 else
                     ScrollToCurrentChar();
 
-                // 更新字提显示
+                UpdatePosition();
                 _main.UpdateZiTi();
             }
-
-            e.Handled = true;
         }
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (!_isActive) return;
 
-            // 永不退避模式：拦截退格、Esc、Ctrl+Z
-            if (Config.GetBool("永不退避"))
+            // 禁用回改模式：拦截退格、Esc、Ctrl+Z
+            if (Config.GetBool("禁用回改"))
             {
                 if (e.Key == Key.Back || e.Key == Key.Escape ||
                     (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control))
@@ -410,6 +435,14 @@ namespace TypeSunny.UI.Modes
 
             // 按键统计（击键、键法、选重、标顶、退格等）
             _main.HandleKeyDownStats(e);
+
+            // 空格键不会触发 PreviewTextInput，需要在这里手动处理
+            if (e.Key == Key.Space && string.IsNullOrEmpty(_inputCapture.Text))
+            {
+                ProcessSingleChar(" ");
+                e.Handled = true;
+                return;
+            }
 
             if (e.Key == Key.Back && string.IsNullOrEmpty(_inputCapture.Text))
             {
@@ -524,6 +557,32 @@ namespace TypeSunny.UI.Modes
             }
         }
 
+        /// <summary>
+        /// 主题切换后刷新光标颜色、错字提示颜色，并重新定位光标
+        /// </summary>
+        public void RefreshTheme()
+        {
+            if (!_isActive) return;
+
+            // 更新光标颜色
+            if (_cursor != null)
+                _cursor.Background = Colors.DisplayForeground;
+
+            // 更新已有错字提示的颜色
+            foreach (var fe in _wrongCharHints)
+            {
+                var border = fe as Border;
+                if (border == null) continue;
+                border.Background = _main.BdDisplay.Background;
+                border.BorderBrush = Colors.DisplayForeground;
+                if (border.Child is TextBlock hint)
+                    hint.Foreground = Colors.IncorrectBackground;
+            }
+
+            // 重新定位光标（TextBlocks 已被重建）
+            ScheduleUpdatePosition();
+        }
+
         private void UpdatePosition()
         {
             if (_inputCapture == null || _currentIndex >= TextInfo.Blocks.Count || TextInfo.Blocks.Count == 0)
@@ -533,6 +592,7 @@ namespace TypeSunny.UI.Modes
             {
                 var grid = (Grid)_main.BdDisplay.Child;
                 var block = TextInfo.Blocks[_currentIndex];
+                block.UpdateLayout();
                 var pos = block.TranslatePoint(new Point(0, 0), grid);
                 double x = pos.X;
                 double y = pos.Y;
@@ -540,16 +600,23 @@ namespace TypeSunny.UI.Modes
                 double compositionOffset = (Config.GetDouble("字帖编码高度") + 0.2) * fs;
                 double candidateOffset = Config.GetDouble("字帖候选框高度") * fs;
 
+                // 计算文字在 TextBlock 内的实际 padTop（与 PageReArrange 一致）
+                var fm = _main.GetCurrentFontFamily();
+                double height = fs * (1.0 + Config.GetDouble("行距"));
+                double availablePad = Math.Max(0, height - fs * fm.LineSpacing);
+                double padTop = (availablePad / 2 + Math.Min((height - fs) / 2, availablePad)) / 2;
+
                 // InputCapture 控制 IME 候选框位置
                 Canvas.SetLeft(_inputCapture, x);
                 Canvas.SetTop(_inputCapture, y + 1.0 * fs + candidateOffset);
 
-                // 自定义光标定位到当前字左侧
+                // 自定义光标定位到当前字左侧，与文字垂直居中对齐
                 if (_cursor != null)
                 {
-                    _cursor.Height = fs;
+                    double lineHeight = fs * fm.LineSpacing;
+                    _cursor.Height = lineHeight;
                     Canvas.SetLeft(_cursor, x - 2);
-                    Canvas.SetTop(_cursor, y + 0.3 * fs);
+                    Canvas.SetTop(_cursor, y + padTop);
                 }
 
                 // CompositionText 贴当前字下沿

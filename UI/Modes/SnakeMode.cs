@@ -48,7 +48,9 @@ namespace TypeSunny.UI.Modes
                 var fm = _main.GetCurrentFontFamily();
                 double fs = MainWindow.DisplayFontSize;
                 double height = fs * (1.0 + Config.GetDouble("行距"));
-                double verticalPad = (height - fs) / 2;
+                double availablePad = Math.Max(0, height - fs * fm.LineSpacing);
+                double padTop = (availablePad / 2 + Math.Min((height - fs) / 2, availablePad)) / 2;
+                double padBottom = availablePad - padTop;
                 double MinWidth = fs * 0.9;
 
                 _main.ScDisplay.FontFamily = fm;
@@ -59,10 +61,19 @@ namespace TypeSunny.UI.Modes
                 // 创建所有字符的TextBlock
                 for (int i = 0; i < TextInfo.Words.Count; i++)
                 {
+                    // 在换行位置前插入占满整行的空元素
+                    if (TextInfo.LineBreaks.Contains(i))
+                    {
+                        var lineBreak = new FrameworkElement();
+                        lineBreak.Width = _main.TbDispay.ActualWidth > 0 ? _main.TbDispay.ActualWidth : 9999;
+                        lineBreak.Height = 0;
+                        _main.TbDispay.Children.Add(lineBreak);
+                    }
+
                     TextBlock tb = new TextBlock();
                     tb.Text = TextInfo.Words[i];
                     tb.Height = height;
-                    tb.Padding = new Thickness(0, verticalPad, 0, 0);
+                    tb.Padding = new Thickness(0, padTop, 0, padBottom);
 
                     // 引号的特殊处理
                     if (tb.Text == "\u201c" || tb.Text == "\u2018")

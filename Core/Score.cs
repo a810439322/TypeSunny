@@ -345,7 +345,7 @@ static internal class Score
                             if (TypeCount > 1)
                                 report.Add("重打" + (TypeCount - 1).ToString());
                             else
-                                report.Add("首打");
+                                report.Add("【首打】");
                         }
                         break;
                     case "总键数":
