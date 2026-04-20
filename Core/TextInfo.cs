@@ -71,24 +71,27 @@ internal static class TextInfo
 
         public static void Check(string inputTxt)
         {
-            StringInfo siInput = new StringInfo(inputTxt);
-
             if (TextInfo.Words.Count == 0)
-            {
                 return;
+
+            bool isLooking = MainWindow.Current.IsLookingType;
+
+            var enumerator = StringInfo.GetTextElementEnumerator(inputTxt);
+            int inputLen = 0;
+            var inputElements = new string[TextInfo.Words.Count];
+            while (enumerator.MoveNext() && inputLen < TextInfo.Words.Count)
+            {
+                inputElements[inputLen++] = enumerator.GetTextElement();
             }
 
             for (int i = 0; i < TextInfo.Words.Count; i++)
             {
-                if (i >= siInput.LengthInTextElements)
+                if (i >= inputLen)
                     TextInfo.wordStates[i] = WordStates.NO_TYPE;
-                
-                //else if (TextInfo.Words[i] == siInput.SubstringByTextElements(i, 1) ||            ( Config.GetBool("看打模式") &&  ( TextInfo.Words[i] == "“" || TextInfo.Words[i] == "”") && (siInput.SubstringByTextElements(i, 1) == "“" || siInput.SubstringByTextElements(i, 1) == "”")))
-                else if (TextInfo.Words[i] == siInput.SubstringByTextElements(i, 1) || MainWindow.Current.IsLookingType)
-                            TextInfo.wordStates[i] = WordStates.RIGHT;
+                else if (TextInfo.Words[i] == inputElements[i] || isLooking)
+                    TextInfo.wordStates[i] = WordStates.RIGHT;
                 else
                     TextInfo.wordStates[i] = WordStates.WRONG;
-
             }
         }
 

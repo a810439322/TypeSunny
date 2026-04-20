@@ -62,7 +62,7 @@ namespace TypeSunny
         private const int HT_BOTTOMLEFT = 16;
         private const int HT_BOTTOMRIGHT = 17;
 
-        public const string Folder = "练单器/";
+        public const string Folder = "Resources/练单器/";
         public static WinTrainer Current
         {
             get
@@ -733,11 +733,11 @@ namespace TypeSunny
                         // 一轮完成：用SendQQMessageD一次性发最后一段成绩+总成绩
                         if (!string.IsNullOrEmpty(roundRecord))
                         {
-                            QQHelper.SendQQMessageD(MainWindow.Current.QQGroupName, result, roundRecord, 150, MainWindow.Current);
+                            MainWindow.Current.SendContentToClipboardOrQQ(result, roundRecord, true, 150);
                         }
                         else
                         {
-                            QQHelper.SendQQMessage(MainWindow.Current.QQGroupName, result, 150, MainWindow.Current);
+                            MainWindow.Current.SendContentToClipboardOrQQ(result, true, 150);
                         }
                         MainWindow.Current.UpdateTopStatusText("本轮练习完成，请手动发文开始下一轮");
 
@@ -756,13 +756,14 @@ namespace TypeSunny
 
                         WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 LoadText");
                         MainWindow.Current.LoadText(matchText, RetypeType.first, TxtSource.trainer, false, true);
+                        MainWindow.Current.FocusInput();
                         WriteDebugLog("[GetNextRound] LoadText 完成");
 
                         WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 UpdateTopStatusText");
                         MainWindow.Current.UpdateTopStatusText(t);
 
                         WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 SendQQMessageD");
-                        QQHelper.SendQQMessageD(MainWindow.Current.QQGroupName, result, matchText, 150, MainWindow.Current);
+                        MainWindow.Current.SendContentToClipboardOrQQ(result, matchText, true, 150);
                         WriteDebugLog("[GetNextRound] SendQQMessageD 完成");
                     }
 
@@ -841,6 +842,7 @@ namespace TypeSunny
 
                     WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 LoadText");
                     MainWindow.Current.LoadText(retypeText, RetypeType.retype, TxtSource.trainer, false, true);
+                    MainWindow.Current.FocusInput();
                     WriteDebugLog("[GetNextRound] LoadText 完成");
 
                     WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 UpdateTopStatusText");
@@ -886,6 +888,7 @@ namespace TypeSunny
 
       //      RetypeGroup(false, false);
             MainWindow.Current.LoadText(GetMatchText(), RetypeType.retype, TxtSource.trainer, false, true);
+            MainWindow.Current.FocusInput();
             MainWindow.Current.UpdateTopStatusText("重打");
         }
 
@@ -894,6 +897,7 @@ namespace TypeSunny
 
             RetypeGroup(true, false);
             MainWindow.Current.LoadText(GetMatchText(), RetypeType.retype, TxtSource.trainer, false, true);
+            MainWindow.Current.FocusInput();
             MainWindow.Current.UpdateTopStatusText("乱序");
         }
 
@@ -2084,13 +2088,15 @@ namespace TypeSunny
             }
 
             MainWindow.Current.LoadText(GetMatchText(), RetypeType.first, TxtSource.trainer, false,true);
+            MainWindow.Current.FocusInput();
         }
 
         private void BtnSend_Click(object sender, RoutedEventArgs e)
         {
             string matchText = GetMatchText();
             MainWindow.Current.LoadText(matchText, RetypeType.first, TxtSource.trainer, false, true);
-            QQHelper.SendQQMessage(MainWindow.Current.QQGroupName, matchText, 150, MainWindow.Current);
+            MainWindow.Current.FocusInput();
+            MainWindow.Current.SendContentToClipboardOrQQ(matchText, true, 150);
         }
 
         /// <summary>
@@ -2589,4 +2595,3 @@ namespace TypeSunny
         }
     }
 }
-

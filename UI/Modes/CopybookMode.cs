@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Controls.Primitives;
 using TypeSunny.Core;
 using TypeSunny.Logs;
 using System.Windows.Media.Animation;
@@ -26,6 +28,12 @@ namespace TypeSunny.UI.Modes
         private readonly List<FrameworkElement> _wrongCharHints = new List<FrameworkElement>();
         private int _currentIndex;
         private bool _isActive;
+        private bool _manualScrollActive;
+        private int _visualAdvanceVersion;
+        private bool _isImeComposing;
+        private string _activeCompositionText = "";
+        private long _lastImeCancelTicks;
+        private const long ImeBackspaceGuardMs = 120;
         private GridLength _savedTypingRowHeight;
         private double _savedTypingRowMinHeight;
         private GridLength _savedSplitterRowHeight;
@@ -70,6 +78,7 @@ namespace TypeSunny.UI.Modes
             _overlay.Background = Brushes.Transparent;
             _overlay.Cursor = Cursors.IBeam;
             _overlay.MouseDown += (s, ev) => { if (_inputCapture != null) _inputCapture.Focus(); };
+            _overlay.PreviewMouseWheel += OnOverlayPreviewMouseWheel;
             Panel.SetZIndex(_overlay, 5);
 
             // 让 Canvas 撑满父容器
@@ -126,6 +135,7 @@ namespace TypeSunny.UI.Modes
             _inputCapture.GotFocus += OnGotFocus;
             _main.Activated += OnWindowActivated;
             _main.Deactivated += OnWindowDeactivated;
+            _main.ScDisplay.ScrollChanged += OnDisplayScrollChanged;
             TextCompositionManager.AddPreviewTextInputStartHandler(_inputCapture, OnCompositionStart);
             TextCompositionManager.AddPreviewTextInputUpdateHandler(_inputCapture, OnCompositionUpdate);
 
@@ -148,11 +158,13 @@ namespace TypeSunny.UI.Modes
                 _inputCapture.PreviewKeyDown -= OnPreviewKeyDown;
                 _inputCapture.LostFocus -= OnLostFocus;
                 _inputCapture.GotFocus -= OnGotFocus;
+                _overlay.PreviewMouseWheel -= OnOverlayPreviewMouseWheel;
                 TextCompositionManager.RemovePreviewTextInputStartHandler(_inputCapture, OnCompositionStart);
                 TextCompositionManager.RemovePreviewTextInputUpdateHandler(_inputCapture, OnCompositionUpdate);
             }
             _main.Activated -= OnWindowActivated;
             _main.Deactivated -= OnWindowDeactivated;
+            _main.ScDisplay.ScrollChanged -= OnDisplayScrollChanged;
 
             if (_overlay != null)
             {
@@ -191,6 +203,7 @@ namespace TypeSunny.UI.Modes
             foreach (var hint in _wrongCharHints)
                 _overlay.Children.Remove(hint);
             _wrongCharHints.Clear();
+            ClearImeCompositionState();
             _compositionText.Visibility = Visibility.Collapsed;
             if (_inputCapture != null)
             {
@@ -215,6 +228,12 @@ namespace TypeSunny.UI.Modes
             }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
+        public void FocusInputCapture()
+        {
+            if (!_isActive || _inputCapture == null) return;
+            _inputCapture.Focus();
+        }
+
         /// <summary>
         /// 同步错字提示的透明度（贪吃蛇模式调用）
         /// </summary>
@@ -230,19 +249,11 @@ namespace TypeSunny.UI.Modes
         private void OnLostFocus(object sender, RoutedEventArgs e)
         {
             if (!_isActive || _inputCapture == null) return;
-            // 立即隐藏光标，如果抢回焦点成功 OnGotFocus 会再显示
+            // Do not immediately steal focus back here: TSF IME composition can
+            // briefly move focus during pre-edit. Focus is restored only on
+            // explicit entry points such as clicking the article area or
+            // re-activating the main window.
             if (_cursor != null) _cursor.Visibility = Visibility.Collapsed;
-            _main.Dispatcher.BeginInvoke(new Action(() =>
-            {
-                if (!_isActive || _inputCapture == null) return;
-                if (Keyboard.FocusedElement is System.Windows.Controls.Primitives.ButtonBase)
-                    return;
-                if (Keyboard.FocusedElement == _main.TbxResults)
-                    return;
-                if (!_main.IsActive)
-                    return;
-                _inputCapture.Focus();
-            }), System.Windows.Threading.DispatcherPriority.Input);
         }
 
         private void OnGotFocus(object sender, RoutedEventArgs e)
@@ -262,9 +273,28 @@ namespace TypeSunny.UI.Modes
             _inputCapture.Focus();
         }
 
+        private void OnDisplayScrollChanged(object sender, ScrollChangedEventArgs e)
+        {
+            if (!_isActive || _overlay == null)
+                return;
+
+            RefreshWrongCharHints();
+            UpdatePosition();
+        }
+
+        private void OnOverlayPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (!_isActive)
+                return;
+
+            _manualScrollActive = true;
+            _main.ScDisplay.ScrollToVerticalOffset(_main.ScDisplay.VerticalOffset - e.Delta);
+            e.Handled = true;
+        }
+
         private void OnCompositionStart(object sender, TextCompositionEventArgs e)
         {
-            // 编码开始，记录 composing 状态
+            SetImeCompositionState(e.TextComposition.CompositionText ?? "");
             if (!Score.IsComposing)
             {
                 Score.IsComposing = true;
@@ -277,6 +307,7 @@ namespace TypeSunny.UI.Modes
             if (!_isActive || _compositionText == null) return;
 
             string composition = e.TextComposition.CompositionText ?? "";
+            SetImeCompositionState(composition);
             if (string.IsNullOrEmpty(composition))
             {
                 _compositionText.Visibility = Visibility.Collapsed;
@@ -299,6 +330,8 @@ namespace TypeSunny.UI.Modes
             // 空码/ESC取消
             if (string.IsNullOrEmpty(e.Text))
             {
+                ClearImeCompositionState();
+                MarkImeCancel();
                 if (Config.GetBool("禁用回改"))
                 {
                     // 禁用回改模式：空码时强制上屏一个空格，继续往下走逐字比对
@@ -314,6 +347,8 @@ namespace TypeSunny.UI.Modes
             // 禁用回改模式：回车强制当空格上屏
             if (e.Text == "\r")
             {
+                ClearImeCompositionState();
+                MarkImeCancel();
                 if (Config.GetBool("禁用回改"))
                 {
                     // 不return，下面的逐字比对会处理
@@ -330,9 +365,14 @@ namespace TypeSunny.UI.Modes
             if (Config.GetBool("禁用回改") && (string.IsNullOrEmpty(inputText) || inputText == "\r"))
                 inputText = " ";
 
+            ClearImeCompositionState();
             ProcessInputText(inputText);
+            _manualScrollActive = false;
 
-            e.Handled = true;
+            // 不设 e.Handled = true —— 让事件继续流向 TextBox 内部处理器，
+            // 否则 TSF 五码顶字时"提交+首码进新composition"的连续链路会被打断。
+            // _inputCapture.Text 会因此累积已上屏文字，用延迟清理防止无限增长。
+            ScheduleInputCaptureTrim();
         }
 
         private void ProcessSingleChar(string ch)
@@ -396,9 +436,6 @@ namespace TypeSunny.UI.Modes
             // 隐藏编码显示
             _compositionText.Visibility = Visibility.Collapsed;
 
-            // 清空输入框
-            _inputCapture.Text = "";
-
             // 检查是否结束：必须打完且最后一个字正确才结算
             if (_currentIndex >= TextInfo.Words.Count
                 && TextInfo.wordStates[TextInfo.Words.Count - 1] == WordStates.RIGHT)
@@ -407,6 +444,32 @@ namespace TypeSunny.UI.Modes
             }
             else if (_currentIndex < TextInfo.Words.Count)
             {
+                ScheduleAdvanceVisuals();
+            }
+        }
+
+        private void ScheduleInputCaptureTrim()
+        {
+            _main.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!_isActive || _inputCapture == null) return;
+                // 只在没有活跃 composition 时清理，避免打断正在进行的输入
+                if (!HasActiveComposition() && _inputCapture.Text.Length > 0)
+                {
+                    _inputCapture.Text = "";
+                }
+            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+
+        private void ScheduleAdvanceVisuals()
+        {
+            int requestVersion = ++_visualAdvanceVersion;
+            _main.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!_isActive || requestVersion != _visualAdvanceVersion)
+                    return;
+
+                _manualScrollActive = false;
                 // 先滚动再定位光标，否则滚动会改变 TextBlock 相对于 Grid 的坐标
                 if (Config.GetBool("贪吃蛇模式") || StateManager.txtSource == TxtSource.raceApi)
                     _main.SnakeModeUpdateFromCopybook(_currentIndex);
@@ -415,18 +478,19 @@ namespace TypeSunny.UI.Modes
 
                 UpdatePosition();
                 _main.UpdateZiTi();
-            }
+            }), System.Windows.Threading.DispatcherPriority.Input);
         }
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (!_isActive) return;
+            Key inputKey = e.Key == Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
 
             // 禁用回改模式：拦截退格、Esc、Ctrl+Z
             if (Config.GetBool("禁用回改"))
             {
-                if (e.Key == Key.Back || e.Key == Key.Escape ||
-                    (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control))
+                if (inputKey == Key.Back || inputKey == Key.Escape ||
+                    (inputKey == Key.Z && Keyboard.Modifiers == ModifierKeys.Control))
                 {
                     e.Handled = true;
                     return;
@@ -437,15 +501,21 @@ namespace TypeSunny.UI.Modes
             _main.HandleKeyDownStats(e);
 
             // 空格键不会触发 PreviewTextInput，需要在这里手动处理
-            if (e.Key == Key.Space && string.IsNullOrEmpty(_inputCapture.Text))
+            if (inputKey == Key.Space)
             {
-                ProcessSingleChar(" ");
-                e.Handled = true;
                 return;
             }
 
-            if (e.Key == Key.Back && string.IsNullOrEmpty(_inputCapture.Text))
+            if (inputKey == Key.Back)
             {
+                bool hasActiveComposition = HasActiveComposition();
+                bool isGuardedImeBackspace = IsWithinImeBackspaceGuard();
+
+                if (hasActiveComposition || isGuardedImeBackspace)
+                {
+                    return;
+                }
+
                 // 没有未上屏编码时，退格回退到上一个字
                 if (_currentIndex > 0)
                 {
@@ -461,6 +531,7 @@ namespace TypeSunny.UI.Modes
                     Score.InputWordCount = _currentIndex;
 
                     UpdatePosition();
+                    _manualScrollActive = false;
                     if (Config.GetBool("贪吃蛇模式") || StateManager.txtSource == TxtSource.raceApi)
                         _main.SnakeModeUpdateFromCopybook(_currentIndex);
                     else
@@ -471,6 +542,41 @@ namespace TypeSunny.UI.Modes
                 }
                 e.Handled = true;
             }
+        }
+
+        private bool HasActiveComposition()
+        {
+            return _isImeComposing || !string.IsNullOrEmpty(_activeCompositionText);
+        }
+
+        private void SetImeCompositionState(string composition)
+        {
+            bool hadComposition = _isImeComposing || !string.IsNullOrEmpty(_activeCompositionText);
+            _activeCompositionText = composition ?? "";
+            _isImeComposing = !string.IsNullOrEmpty(_activeCompositionText);
+            if (hadComposition && !_isImeComposing)
+                MarkImeCancel();
+        }
+
+        private void ClearImeCompositionState()
+        {
+            _activeCompositionText = "";
+            _isImeComposing = false;
+        }
+
+        private void MarkImeCancel()
+        {
+            _lastImeCancelTicks = Stopwatch.GetTimestamp();
+        }
+
+        private bool IsWithinImeBackspaceGuard()
+        {
+            if (_lastImeCancelTicks == 0)
+                return false;
+
+            long elapsedTicks = Stopwatch.GetTimestamp() - _lastImeCancelTicks;
+            double elapsedMs = elapsedTicks * 1000.0 / Stopwatch.Frequency;
+            return elapsedMs >= 0 && elapsedMs <= ImeBackspaceGuardMs;
         }
 
         private void ShowWrongCharHint(string wrongChar, int index)
@@ -535,6 +641,8 @@ namespace TypeSunny.UI.Modes
             double fs = MainWindow.DisplayFontSize;
             double wrongOffset = Config.GetDouble("字帖错字高度") * fs;
             var grid = (Grid)_main.BdDisplay.Child;
+            double viewportTop = _main.ScDisplay.VerticalOffset;
+            double viewportBottom = viewportTop + _main.ScDisplay.ViewportHeight;
             foreach (var fe in _wrongCharHints)
             {
                 var border = fe as Border;
@@ -547,6 +655,16 @@ namespace TypeSunny.UI.Modes
                     double hintHeight = hint.FontSize * 1.2;
                     var block = TextInfo.Blocks[idx];
                     var pos = block.TranslatePoint(new Point(0, 0), grid);
+                    double blockTop = pos.Y + _main.ScDisplay.VerticalOffset;
+                    double blockBottom = blockTop + block.ActualHeight;
+
+                    if (blockTop < viewportTop || blockBottom > viewportBottom || block.Opacity <= 0.001)
+                    {
+                        border.Visibility = Visibility.Collapsed;
+                        continue;
+                    }
+
+                    border.Visibility = Visibility.Visible;
                     double blockCenter = pos.X + block.ActualWidth / 2;
                     border.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
                     double hintWidth = border.DesiredSize.Width;

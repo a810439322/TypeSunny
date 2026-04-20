@@ -25,6 +25,7 @@ namespace TypeSunny.UI.Modes
         private Border _cursor;
         private int _currentIndex;
         private bool _isActive;
+        private bool _manualScrollActive;
         private bool _pendingMirrorRebuild;
         private GridLength _savedTypingRowHeight;
         private double _savedTypingRowMinHeight;
@@ -92,6 +93,7 @@ namespace TypeSunny.UI.Modes
             _overlay.Background = Brushes.Transparent;
             _overlay.Cursor = Cursors.IBeam;
             _overlay.MouseDown += (s, ev) => { if (_inputCapture != null) _inputCapture.Focus(); };
+            _overlay.PreviewMouseWheel += OnOverlayPreviewMouseWheel;
             Panel.SetZIndex(_overlay, 5);
             _overlay.HorizontalAlignment = HorizontalAlignment.Stretch;
             _overlay.VerticalAlignment = VerticalAlignment.Stretch;
@@ -167,6 +169,7 @@ namespace TypeSunny.UI.Modes
                 _inputCapture.PreviewKeyDown -= OnPreviewKeyDown;
                 _inputCapture.LostFocus -= OnLostFocus;
                 _inputCapture.GotFocus -= OnGotFocus;
+                _overlay.PreviewMouseWheel -= OnOverlayPreviewMouseWheel;
                 TextCompositionManager.RemovePreviewTextInputStartHandler(_inputCapture, OnCompositionStart);
                 TextCompositionManager.RemovePreviewTextInputUpdateHandler(_inputCapture, OnCompositionUpdate);
             }
@@ -253,6 +256,12 @@ namespace TypeSunny.UI.Modes
                     _inputCapture?.Focus();
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
             }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+
+        public void FocusInputCapture()
+        {
+            if (!_isActive || _inputCapture == null) return;
+            _inputCapture.Focus();
         }
 
         /// <summary>
@@ -527,6 +536,16 @@ namespace TypeSunny.UI.Modes
             _inputCapture.Focus();
         }
 
+        private void OnOverlayPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (!_isActive)
+                return;
+
+            _manualScrollActive = true;
+            _main.ScDisplay.ScrollToVerticalOffset(_main.ScDisplay.VerticalOffset - e.Delta);
+            e.Handled = true;
+        }
+
         private void OnCompositionStart(object sender, TextCompositionEventArgs e)
         {
             if (!Score.IsComposing)
@@ -657,6 +676,7 @@ namespace TypeSunny.UI.Modes
             }
             else if (_currentIndex < TextInfo.Words.Count)
             {
+                _manualScrollActive = false;
                 if (Config.GetBool("贪吃蛇模式") || StateManager.txtSource == TxtSource.raceApi)
                     _main.SnakeModeUpdateFromCopybook(_currentIndex);
                 else
@@ -708,6 +728,7 @@ namespace TypeSunny.UI.Modes
                     Score.InputWordCount = _currentIndex;
 
                     UpdatePosition();
+                    _manualScrollActive = false;
                     if (Config.GetBool("贪吃蛇模式") || StateManager.txtSource == TxtSource.raceApi)
                         _main.SnakeModeUpdateFromCopybook(_currentIndex);
                     else

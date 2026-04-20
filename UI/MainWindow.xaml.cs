@@ -686,32 +686,7 @@ namespace TypeSunny.UI
 
 
 
-                // 滚动逻辑（统一使用 paindutch-main 方案）
-                if (TextInfo.Blocks.Count > 0)
-                {
-                    int NextBlockIndex = (nextToType - TextInfo.PageStartIndex);
-
-                    // 确保索引在有效范围内
-                    if (NextBlockIndex >= 0 && NextBlockIndex < TextInfo.Blocks.Count)
-                    {
-                        // 强制更新布局，确保 ActualHeight 已计算
-                        TextInfo.Blocks[NextBlockIndex].UpdateLayout();
-                        TextInfo.Blocks[0].UpdateLayout();
-
-                        // 计算当前字符的Y坐标（相对于第一个Block）
-                        double currentPosY = TextInfo.Blocks[NextBlockIndex]
-                                                 .TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).Y
-                                             + TextInfo.Blocks[NextBlockIndex].ActualHeight / 2;
-
-                        // 使用统一方法计算目标滚动位置（始终居中显示）
-                        double targetOffset = CalculateScrollOffset(currentPosY);
-
-                        // 执行滚动（起始位置强制滚动，其他时候由 SmoothScrollTo 自动判断）
-                        SmoothScrollTo(targetOffset, forceScroll: (nextToType == 0));
-                    }
-                }
-
-                // 普通模式滚动和速度跟随提示（每次更新都执行，不仅在翻页时）
+                // 滚动和速度跟随提示
                 if (TextInfo.Blocks.Count > 0)
                 {
                     try
@@ -3402,19 +3377,56 @@ namespace TypeSunny.UI
         /// <summary>
         /// 通用发送方法（发送到剪切板或QQ群）
         /// </summary>
-        private void SendContentToClipboardOrQQ(string content, bool focus = false)
+        public void SendContentToClipboardOrQQ(string content, bool focus = false, int delayTime = 250)
         {
+            SendContentToClipboardOrQQ(content, null, focus, delayTime);
+        }
+
+        public void SendContentToClipboardOrQQ(string content, string secondContent, bool focus = false, int delayTime = 250)
+        {
+            bool hasSecondContent = !string.IsNullOrWhiteSpace(secondContent);
+
             if (QQGroupName != "")
             {
-                QQHelper.SendQQMessage(QQGroupName, content, 250, this);
+                if (hasSecondContent)
+                    QQHelper.SendQQMessageD(QQGroupName, content, secondContent, delayTime, this);
+                else
+                    QQHelper.SendQQMessage(QQGroupName, content, delayTime, this);
+
                 FocusInput(); // 发送QQ后确保窗口激活
             }
             else
             {
-                Win32SetText(content);
-                if (focus)
+                Win32SetText(hasSecondContent ? content + "\n" + secondContent : content);
+                if (focus || hasSecondContent)
                     FocusInput();
             }
+        }
+
+        public void PrepareLoadedTextForInput(bool focus = true)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!(IsLookingType && StateManager.LastType))
+                    TbxInput.IsReadOnly = false;
+
+                TbxInput.Clear();
+                UpdateDisplay(UpdateLevel.PageArrange);
+
+                if (_copybookMode != null && _copybookMode.IsActive)
+                    _copybookMode.ScheduleUpdatePosition();
+
+                if (_tracingMode != null && _tracingMode.IsActive)
+                    _tracingMode.ScheduleInsertMirrorBlocks();
+
+                if (focus)
+                    FocusInput();
+            }));
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                ScDisplay.ScrollToVerticalOffset(0);
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         /// <summary>
@@ -4314,6 +4326,7 @@ public async Task SendArticle()
                 if (timerProgress != null)
                     timerProgress.Dispose();
                 Score.Reset();
+                Recorder.Reset();
 
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
@@ -4341,28 +4354,7 @@ public async Task SendArticle()
                 }
 
 
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    if (!(IsLookingType && StateManager.LastType))
-                        TbxInput.IsReadOnly = false;
-                    TbxInput.Clear();
-                    UpdateDisplay(UpdateLevel.PageArrange);
-
-                    // 字帖模式：布局完成后重新定位光标
-                    if (_copybookMode != null && _copybookMode.IsActive)
-                        _copybookMode.ScheduleUpdatePosition();
-
-                    // 临摹模式：布局完成后插入镜像行
-                    if (_tracingMode != null && _tracingMode.IsActive)
-                        _tracingMode.ScheduleInsertMirrorBlocks();
-                }));
-
-                // 重置滚动位置到顶部（避免乱序/重打时停留在中间位置）
-                // 使用BeginInvoke确保在UI布局完成后再设置
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    ScDisplay.ScrollToVerticalOffset(0);
-                }), System.Windows.Threading.DispatcherPriority.Loaded);
+                PrepareLoadedTextForInput(focus: switchBack);
 
                 // 计算并显示难度（文来模式优先使用接口返回的难度）
                 // 更新字提和标题（需要在UI线程中执行）
@@ -4423,14 +4415,6 @@ public async Task SendArticle()
                     // 更新标题显示（所有模式，初始字数为0）
                     UpdateWindowTitle(0, TextInfo.Words.Count);
                 }));
-
-
-                if (switchBack)
-                {
-                    FocusInput();
-                }
-
-
 
             }
 
@@ -8370,7 +8354,18 @@ public async Task SendArticle()
                 this.Topmost = true;  // important
                 this.Topmost = false; // important
                 this.Focus();
-                TbxInput.Focus();
+                if (_copybookMode != null && _copybookMode.IsActive)
+                {
+                    _copybookMode.FocusInputCapture();
+                }
+                else if (_tracingMode != null && _tracingMode.IsActive)
+                {
+                    _tracingMode.FocusInputCapture();
+                }
+                else
+                {
+                    TbxInput.Focus();
+                }
             });
         }
 
