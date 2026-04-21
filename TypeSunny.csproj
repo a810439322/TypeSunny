@@ -172,6 +172,10 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="Resources\ComboBoxStyle.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="UI\MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
@@ -299,9 +303,11 @@
     </Content>
     <Content Include="Resources\练单器\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>练单器\%(RecursiveDir)%(Filename)%(Extension)</Link>
     </Content>
     <Content Include="Resources\文章\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>文章\%(RecursiveDir)%(Filename)%(Extension)</Link>
     </Content>
   </ItemGroup>
   <ItemGroup>

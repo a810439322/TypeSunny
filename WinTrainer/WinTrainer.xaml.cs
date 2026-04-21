@@ -62,7 +62,7 @@ namespace TypeSunny
         private const int HT_BOTTOMLEFT = 16;
         private const int HT_BOTTOMRIGHT = 17;
 
-        public const string Folder = "Resources/练单器/";
+        public const string Folder = "练单器/";
         public static WinTrainer Current
         {
             get

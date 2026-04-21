@@ -37,6 +37,8 @@ namespace TypeSunny.UI.Modes
         private GridLength _savedTypingRowHeight;
         private double _savedTypingRowMinHeight;
         private GridLength _savedSplitterRowHeight;
+        private double _savedArticleRowHeight;
+        private double _savedTypingRowHeightValue;
 
         public bool IsActive => _isActive;
         public int CurrentIndex => _currentIndex;
@@ -65,10 +67,20 @@ namespace TypeSunny.UI.Modes
             _savedSplitterRowHeight = parentGrid.RowDefinitions[3].Height;
             _savedTypingRowHeight = parentGrid.RowDefinitions[4].Height;
             _savedTypingRowMinHeight = parentGrid.RowDefinitions[4].MinHeight;
+            _savedArticleRowHeight = parentGrid.RowDefinitions[2].ActualHeight;
+            _savedTypingRowHeightValue = parentGrid.RowDefinitions[4].ActualHeight;
+
+            // 锁定 Row 6 为像素值，释放的空间全部给 Row 2
+            double resultsH = parentGrid.RowDefinitions[6].ActualHeight;
+            parentGrid.RowDefinitions[6].Height = new GridLength(resultsH, GridUnitType.Pixel);
+
             parentGrid.RowDefinitions[3].Height = new GridLength(0);
             parentGrid.RowDefinitions[4].Height = new GridLength(0, GridUnitType.Auto);
             parentGrid.RowDefinitions[4].MinHeight = 0;
             _main.gridSplitterArticleTyping.Visibility = Visibility.Collapsed;
+
+            // Row 2 设为 Star(1)，作为唯一的 Star 行自动吃掉所有释放的空间
+            parentGrid.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
 
             double fs = MainWindow.DisplayFontSize;
 
@@ -184,9 +196,38 @@ namespace TypeSunny.UI.Modes
 
             // 恢复跟打区
             var parentGrid = (Grid)_main.typingAreaAndButtonsGrid.Parent;
-            parentGrid.RowDefinitions[3].Height = _savedSplitterRowHeight;
-            parentGrid.RowDefinitions[4].Height = _savedTypingRowHeight;
             parentGrid.RowDefinitions[4].MinHeight = _savedTypingRowMinHeight;
+
+            // 锁定 Row 6 为像素值，防止恢复 Row 3 splitter 时挤占成绩区
+            double resultsH = parentGrid.RowDefinitions[6].ActualHeight;
+            parentGrid.RowDefinitions[6].Height = new GridLength(resultsH, GridUnitType.Pixel);
+
+            // 跟打区的空间只从发文区里取
+            double currentArticleH = parentGrid.RowDefinitions[2].ActualHeight;
+            // splitter 大约 5px
+            double splitterH = 5;
+            double typingH = _savedTypingRowHeightValue;
+            // 确保跟打区不超过发文区当前高度的一半
+            double maxTypingH = (currentArticleH - splitterH) / 2.0;
+            if (typingH > maxTypingH) typingH = maxTypingH;
+            if (typingH < 30) typingH = 30;
+
+            double newArticleH = currentArticleH - splitterH - typingH;
+            if (newArticleH < 50) newArticleH = 50;
+
+            parentGrid.RowDefinitions[2].Height = new GridLength(newArticleH, GridUnitType.Pixel);
+            parentGrid.RowDefinitions[3].Height = _savedSplitterRowHeight;
+            parentGrid.RowDefinitions[4].Height = new GridLength(typingH, GridUnitType.Pixel);
+
+            // 恢复为 Star 让布局可自适应（不动 Row 6，避免拖动 splitter 时成绩区跟着跑）
+            _main.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                double ah = parentGrid.RowDefinitions[2].ActualHeight;
+                double th = parentGrid.RowDefinitions[4].ActualHeight;
+                if (ah > 0) parentGrid.RowDefinitions[2].Height = new GridLength(ah, GridUnitType.Star);
+                if (th > 0) parentGrid.RowDefinitions[4].Height = new GridLength(th, GridUnitType.Star);
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+
             _main.gridSplitterArticleTyping.Visibility = Visibility.Visible;
             _main.TbxInput.Visibility = Visibility.Visible;
             _main.TbxInput.Focus();

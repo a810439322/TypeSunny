@@ -7,7 +7,7 @@
         mc:Ignorable="d"
         Title="晴练单"
         WindowStartupLocation="CenterScreen"
-        WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResizeWithGrip"
+        WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResize"
         Background="Transparent"
         Icon="/Resources/ico/sunny.ico"
         xml:lang="zh-CN"

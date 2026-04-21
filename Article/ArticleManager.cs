@@ -247,13 +247,15 @@ namespace TypeSunny
 
         public static async Task<string> GetFormattedCurrentSection()
         {
+            return GetPreviewCurrentSection(await ArticleFetcher.CalcDifficultyFromApiAsync(GetCurrentSection()));
+        }
+
+        public static string GetPreviewCurrentSection(string difficultyText = null)
+        {
             if (!Articles.ContainsKey(Title))
                 return "";
 
             string txt = GetCurrentSection();
-
-            // 调用接口计算难度
-            string difficultyText = await ArticleFetcher.CalcDifficultyFromApiAsync(txt);
 
             StringBuilder sb = new StringBuilder();
 

@@ -1537,6 +1537,14 @@ namespace TypeSunny
                             trainerWindow.RefreshTheme();
                         }), System.Windows.Threading.DispatcherPriority.Normal);
                     }
+                    // 如果是文章管理器窗口，调用其 RefreshTheme 方法
+                    else if (window is WinArticle articleWindow)
+                    {
+                        articleWindow.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            articleWindow.RefreshTheme();
+                        }), System.Windows.Threading.DispatcherPriority.Normal);
+                    }
                 }
 
                 System.Diagnostics.Debug.WriteLine($"[WinConfig] 找到 {statsCount} 个成绩统计窗口, {trainerCount} 个练单器窗口");
@@ -2546,6 +2554,9 @@ namespace TypeSunny
 
                 // 更新分类标题颜色
                 UpdateCategoryTitleColor();
+
+                // 更新全局 ComboBox 样式
+                UpdateComboBoxTheme(bgBrush, fgBrush);
             }
             catch (Exception ex)
             {
@@ -2572,6 +2583,40 @@ namespace TypeSunny
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"更新分类标题颜色失败: {ex.Message}");
+            }
+        }
+
+        private void UpdateComboBoxTheme(SolidColorBrush bgBrush, SolidColorBrush fgBrush)
+        {
+            try
+            {
+                var buttonBgBrush = new SolidColorBrush(Color.FromRgb(
+                    (byte)Math.Min(255, bgBrush.Color.R + 20),
+                    (byte)Math.Min(255, bgBrush.Color.G + 20),
+                    (byte)Math.Min(255, bgBrush.Color.B + 20)
+                ));
+
+                var borderBrush = new SolidColorBrush(Color.FromRgb(
+                    (byte)Math.Max(0, bgBrush.Color.R - 30),
+                    (byte)Math.Max(0, bgBrush.Color.G - 30),
+                    (byte)Math.Max(0, bgBrush.Color.B - 30)
+                ));
+
+                var hoverBrush = new SolidColorBrush(Color.FromRgb(
+                    (byte)Math.Min(255, buttonBgBrush.Color.R + 15),
+                    (byte)Math.Min(255, buttonBgBrush.Color.G + 15),
+                    (byte)Math.Min(255, buttonBgBrush.Color.B + 15)
+                ));
+
+                Application.Current.Resources["ComboBoxBackground"] = buttonBgBrush;
+                Application.Current.Resources["ComboBoxForeground"] = fgBrush;
+                Application.Current.Resources["ComboBoxBorderBrush"] = borderBrush;
+                Application.Current.Resources["ComboBoxDropDownBackground"] = bgBrush;
+                Application.Current.Resources["ComboBoxItemHoverBackground"] = hoverBrush;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"更新ComboBox主题失败: {ex.Message}");
             }
         }
 

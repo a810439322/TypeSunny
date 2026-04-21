@@ -1490,57 +1490,46 @@ namespace TypeSunny.UI
                 else
                 {
                     _isResultsExpanded = false;
-                    // 收起状态
+                    // 收起状态：窗口高度已经是收起后保存的值，不需要再缩小窗口
+                    // 只需要确保 UI 元素状态正确
+                    grid_a.RowDefinitions[6].Height = new GridLength(0, GridUnitType.Pixel);
+                    grid_a.RowDefinitions[6].MinHeight = 0;
+                    grid_a.RowDefinitions[5].Height = new GridLength(0, GridUnitType.Pixel);
+                    grid_a.RowDefinitions[5].MinHeight = 0;
+                    resultsTextBoxGrid.Margin = new Thickness(0);
+                    resultsTextBoxGrid.Visibility = Visibility.Collapsed;
+                    gridSplitterResults.Visibility = Visibility.Collapsed;
+                    gridSplitterResults.IsEnabled = false;
+                    BtnToggleResults.Content = "▲";
+
+                    var bottomBorder = this.FindName("bottomBorder") as Border;
+                    if (bottomBorder != null)
+                    {
+                        grid_a.RowDefinitions[7].Height = new GridLength(10, GridUnitType.Pixel);
+                        bottomBorder.Visibility = Visibility.Visible;
+                    }
+
+                    double savedWindowHeight = Config.GetDouble("窗口高度");
+                    double rRatio = Config.GetDouble("成绩区高度比例");
+                    if (rRatio <= 0 || rRatio >= 1) rRatio = 0.2;
+                    _expandedWindowHeight = savedWindowHeight / (1 - rRatio);
+
                     this.Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        // 获取发文区和跟打区的当前实际高度
-                        double articleHeight = grid_a.RowDefinitions[2].ActualHeight;
-                        double typingHeight = grid_a.RowDefinitions[4].ActualHeight;
-
-                        // 先将发文区和跟打区设置为固定像素高度
-                        grid_a.RowDefinitions[2].Height = new GridLength(articleHeight, GridUnitType.Pixel);
-                        grid_a.RowDefinitions[4].Height = new GridLength(typingHeight, GridUnitType.Pixel);
-
-                        // 只禁用成绩区上方的 GridSplitter
-                        gridSplitterArticleTyping.IsEnabled = true;
-                        gridSplitterResults.IsEnabled = false;
-
-                        // 设置成绩区 Border 的 margin 为 0
-                        resultsTextBoxGrid.Margin = new Thickness(0);
-
-                        // 设置成绩区行高度为0
-                        grid_a.RowDefinitions[6].Height = new GridLength(0, GridUnitType.Pixel);
-                        resultsTextBoxGrid.Visibility = Visibility.Collapsed;
-                        gridSplitterResults.Visibility = Visibility.Collapsed;
-                        BtnToggleResults.Content = "▲";
-
-                        // 计算收起后的窗口高度：当前窗口高度 - 成绩区实际高度 - GridSplitter高度
-                        double currentWindowHeight = this.ActualHeight;
-                        double resultsAreaHeight = grid_a.RowDefinitions[6].ActualHeight;
-                        double gridSplitterHeight = 5; // GridSplitter 的高度
-
-                        // 收起后的高度 = 当前高度 - 成绩区高度 - GridSplitter高度
-                        double collapsedHeight = currentWindowHeight - resultsAreaHeight - gridSplitterHeight;
-
-                        this.Height = collapsedHeight;
-
-                        // 延迟将发文区和跟打区改为 *，让它们可以自适应
-                        this.Dispatcher.BeginInvoke(new Action(() =>
+                        double ah = grid_a.RowDefinitions[2].ActualHeight;
+                        double th = grid_a.RowDefinitions[4].ActualHeight;
+                        if (ah <= 0) ah = 1;
+                        if (th <= 0) th = 1;
+                        grid_a.RowDefinitions[2].Height = new GridLength(ah, GridUnitType.Star);
+                        if ((_copybookMode == null || !_copybookMode.IsActive) &&
+                            (_tracingMode == null || !_tracingMode.IsActive))
                         {
-                            grid_a.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
-                            if ((_copybookMode == null || !_copybookMode.IsActive) &&
-                                (_tracingMode == null || !_tracingMode.IsActive))
-                            {
-                                grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
-                            }
-                            if (_copybookMode != null && _copybookMode.IsActive)
-                                _copybookMode.ScheduleUpdatePosition();
-                            if (_tracingMode != null && _tracingMode.IsActive)
-                                _tracingMode.ScheduleInsertMirrorBlocks();
-                        }), System.Windows.Threading.DispatcherPriority.Loaded);
-
-                        // 保存展开时的窗口高度
-                        _expandedWindowHeight = Config.GetDouble("窗口高度");
+                            grid_a.RowDefinitions[4].Height = new GridLength(th, GridUnitType.Star);
+                        }
+                        if (_copybookMode != null && _copybookMode.IsActive)
+                            _copybookMode.ScheduleUpdatePosition();
+                        if (_tracingMode != null && _tracingMode.IsActive)
+                            _tracingMode.ScheduleInsertMirrorBlocks();
                     }), System.Windows.Threading.DispatcherPriority.Loaded);
                 }
             }
@@ -1706,33 +1695,29 @@ namespace TypeSunny.UI
                         _isResultsExpanded = false;
                         this.Dispatcher.BeginInvoke(new Action(() =>
                         {
-                        // 获取发文区和跟打区的当前实际高度
                         double articleHeight = grid_a.RowDefinitions[2].ActualHeight;
                         double typingHeight = grid_a.RowDefinitions[4].ActualHeight;
+                        double resultsAreaHeight = grid_a.RowDefinitions[6].ActualHeight;
 
-                        // 先将发文区和跟打区设置为固定像素高度
                         grid_a.RowDefinitions[2].Height = new GridLength(articleHeight, GridUnitType.Pixel);
                         grid_a.RowDefinitions[4].Height = new GridLength(typingHeight, GridUnitType.Pixel);
 
-                        // 只禁用成绩区上方的 GridSplitter
                         gridSplitterArticleTyping.IsEnabled = true;
                         gridSplitterResults.IsEnabled = false;
 
-                        // 设置成绩区 Border 的 margin 为 0
                         resultsTextBoxGrid.Margin = new Thickness(0);
 
-                        // 设置成绩区行高度为0
                         grid_a.RowDefinitions[6].Height = new GridLength(0, GridUnitType.Pixel);
+                        grid_a.RowDefinitions[6].MinHeight = 0;
+                        grid_a.RowDefinitions[5].Height = new GridLength(0, GridUnitType.Pixel);
+                        grid_a.RowDefinitions[5].MinHeight = 0;
                         resultsTextBoxGrid.Visibility = Visibility.Collapsed;
                         gridSplitterResults.Visibility = Visibility.Collapsed;
                         BtnToggleResults.Content = "▲";
 
-                        // 计算收起后的窗口高度：当前窗口高度 - 成绩区实际高度 - GridSplitter高度
                         double currentWindowHeight = this.ActualHeight;
-                        double resultsAreaHeight = grid_a.RowDefinitions[6].ActualHeight;
-                        double gridSplitterHeight = 5; // GridSplitter 的高度
+                        double gridSplitterHeight = 5;
 
-                        // 收起后的高度 = 当前高度 - 成绩区高度 - GridSplitter高度
                         double collapsedHeight = currentWindowHeight - resultsAreaHeight - gridSplitterHeight;
 
                         this.Height = collapsedHeight;
@@ -1740,11 +1725,11 @@ namespace TypeSunny.UI
                         // 延迟将发文区和跟打区改为 *，让它们可以自适应
                         this.Dispatcher.BeginInvoke(new Action(() =>
                         {
-                            grid_a.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
+                            grid_a.RowDefinitions[2].Height = new GridLength(articleHeight > 0 ? articleHeight : 1, GridUnitType.Star);
                             if ((_copybookMode == null || !_copybookMode.IsActive) &&
                                 (_tracingMode == null || !_tracingMode.IsActive))
                             {
-                                grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
+                                grid_a.RowDefinitions[4].Height = new GridLength(typingHeight > 0 ? typingHeight : 1, GridUnitType.Star);
                             }
                             if (_copybookMode != null && _copybookMode.IsActive)
                                 _copybookMode.ScheduleUpdatePosition();
@@ -1753,7 +1738,10 @@ namespace TypeSunny.UI
                         }), System.Windows.Threading.DispatcherPriority.Loaded);
 
                         // 保存展开时的窗口高度
-                        _expandedWindowHeight = Config.GetDouble("窗口高度");
+                        double swh = Config.GetDouble("窗口高度");
+                        double rr = Config.GetDouble("成绩区高度比例");
+                        if (rr <= 0 || rr >= 1) rr = 0.2;
+                        _expandedWindowHeight = swh / (1 - rr);
                     }), System.Windows.Threading.DispatcherPriority.Loaded);
                     }
                     else
@@ -3449,7 +3437,7 @@ public async Task SendArticle()
 
             if (winArticle != null)
             {
-                await winArticle.UpdateDisplay();
+                winArticle.UpdateDisplay();
             }
 
             if (content == null || content.Length == 0)
@@ -4753,6 +4741,9 @@ public async Task SendArticle()
                     TitleBarGrid.Background = Colors.FromString(Config.GetString("窗体背景色"));
                     System.Diagnostics.Debug.WriteLine($"[Window_Loaded]强制刷新TitleBarGrid背景色: {Config.GetString("窗体背景色")}");
                 }
+
+                // 初始化全局 ComboBox 主题色
+                InitComboBoxTheme();
 
                 this.UpdateLayout();
                 System.Diagnostics.Debug.WriteLine($"[Window_Loaded]强制刷新窗体背景色: {Config.GetString("窗体背景色")}");
@@ -7479,6 +7470,43 @@ public async Task SendArticle()
             }
         }
 
+        private void InitComboBoxTheme()
+        {
+            try
+            {
+                string windowBgColor = Config.GetString("窗体背景色");
+                string windowFgColor = Config.GetString("窗体字体色");
+                var bgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + windowBgColor));
+                var fgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + windowFgColor));
+
+                var buttonBgBrush = new SolidColorBrush(Color.FromRgb(
+                    (byte)Math.Min(255, bgBrush.Color.R + 20),
+                    (byte)Math.Min(255, bgBrush.Color.G + 20),
+                    (byte)Math.Min(255, bgBrush.Color.B + 20)
+                ));
+                var borderBrush = new SolidColorBrush(Color.FromRgb(
+                    (byte)Math.Max(0, bgBrush.Color.R - 30),
+                    (byte)Math.Max(0, bgBrush.Color.G - 30),
+                    (byte)Math.Max(0, bgBrush.Color.B - 30)
+                ));
+                var hoverBrush = new SolidColorBrush(Color.FromRgb(
+                    (byte)Math.Min(255, buttonBgBrush.Color.R + 15),
+                    (byte)Math.Min(255, buttonBgBrush.Color.G + 15),
+                    (byte)Math.Min(255, buttonBgBrush.Color.B + 15)
+                ));
+
+                Application.Current.Resources["ComboBoxBackground"] = buttonBgBrush;
+                Application.Current.Resources["ComboBoxForeground"] = fgBrush;
+                Application.Current.Resources["ComboBoxBorderBrush"] = borderBrush;
+                Application.Current.Resources["ComboBoxDropDownBackground"] = bgBrush;
+                Application.Current.Resources["ComboBoxItemHoverBackground"] = hoverBrush;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"初始化ComboBox主题失败: {ex.Message}");
+            }
+        }
+
         public WinArticle winArticle;// = new WinArticle();
         private void BtnArticle_Click(object sender, RoutedEventArgs e)
         {
@@ -7486,6 +7514,7 @@ public async Task SendArticle()
             {
                 if (item is WinArticle)
                 {
+                    item.Show();
                     item.Focus();
                     item.Activate();
                     return;
@@ -7494,7 +7523,7 @@ public async Task SendArticle()
             }
 
             winArticle = new WinArticle();
- 
+
             winArticle.Show();
         }
 
@@ -8085,29 +8114,23 @@ public async Task SendArticle()
                     tbxResults.Visibility = Visibility.Visible;
                 }
 
-                // 先把Row 2、Row 4和Row 6从像素转回Star，恢复它们的自适应能力
-                // 使用保存的高度比例来设置Star值，保持原来的比例关系
-                if (_collapsedArticleHeight > 0 && _collapsedTypingHeight > 0 && _collapsedResultsHeight > 0)
+                // 展开成绩区：锁定 Row 2 和 Row 4 当前像素值不变，只恢复 Row 6
+                bool isCopybookOrTracing = (_copybookMode != null && _copybookMode.IsActive) ||
+                                           (_tracingMode != null && _tracingMode.IsActive);
+                double currentArticleH = grid_a.RowDefinitions[2].ActualHeight;
+                double currentTypingH = grid_a.RowDefinitions[4].ActualHeight;
+                grid_a.RowDefinitions[2].Height = new GridLength(currentArticleH, GridUnitType.Pixel);
+                if (!isCopybookOrTracing)
                 {
-                    // 找到最大的值作为基准，保持所有三个区域的比例关系
-                    double max = Math.Max(_collapsedArticleHeight, Math.Max(_collapsedTypingHeight, _collapsedResultsHeight));
-                    if (max > 0)
-                    {
-                        // 归一化到1-10的范围，保持比例
-                        double scaleFactor = 10.0 / max;
-                        grid_a.RowDefinitions[2].Height = new GridLength(_collapsedArticleHeight * scaleFactor, GridUnitType.Star);
-                        grid_a.RowDefinitions[4].Height = new GridLength(_collapsedTypingHeight * scaleFactor, GridUnitType.Star);
-                        grid_a.RowDefinitions[6].Height = new GridLength(_collapsedResultsHeight * scaleFactor, GridUnitType.Star);
-                    }
-                    else
-                    {
-                        // 使用配置的默认比例
-                        ApplyDisplayInputRatio();
-                    }
+                    grid_a.RowDefinitions[4].Height = new GridLength(currentTypingH, GridUnitType.Pixel);
+                }
+
+                if (_collapsedResultsHeight > 0)
+                {
+                    grid_a.RowDefinitions[6].Height = new GridLength(_collapsedResultsHeight, GridUnitType.Pixel);
                 }
                 else
                 {
-                    // 使用配置的默认比例
                     ApplyDisplayInputRatio();
                 }
                 grid_a.RowDefinitions[5].Height = new GridLength(5, GridUnitType.Pixel);
@@ -8124,6 +8147,17 @@ public async Task SendArticle()
                 {
                     this.Height = _expandedWindowHeight;
                 }
+
+                // 窗口高度恢复后，转回 Star 让布局可自适应
+                this.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    double ah = grid_a.RowDefinitions[2].ActualHeight;
+                    double th = grid_a.RowDefinitions[4].ActualHeight;
+                    double rh = grid_a.RowDefinitions[6].ActualHeight;
+                    if (ah > 0) grid_a.RowDefinitions[2].Height = new GridLength(ah, GridUnitType.Star);
+                    if (th > 0) grid_a.RowDefinitions[4].Height = new GridLength(th, GridUnitType.Star);
+                    if (rh > 0) grid_a.RowDefinitions[6].Height = new GridLength(rh, GridUnitType.Star);
+                }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
             else
             {
@@ -8132,7 +8166,7 @@ public async Task SendArticle()
 
                 // 计算grid_a的内容高度
                 double gridContentHeight = 0;
-                for (int i = 0; i < 7; i++)
+                for (int i = 0; i < grid_a.RowDefinitions.Count; i++)
                 {
                     gridContentHeight += grid_a.RowDefinitions[i].ActualHeight;
                 }
@@ -8197,8 +8231,8 @@ public async Task SendArticle()
                 double row6ActualHeightAfter = grid_a.RowDefinitions[6].ActualHeight;
 
                 // 计算新的窗口高度
-                // 收起后grid_a的高度 = 原grid_a高度 - 成绩区高度 - 分隔条2高度(5)
-                double collapsedGridHeight = gridContentHeight - resultsAreaHeight - 5;
+                // 收起后grid_a的高度 = 原grid_a高度 - 成绩区高度 - 分隔条高度(5) + 底边框高度(10)
+                double collapsedGridHeight = gridContentHeight - resultsAreaHeight - 5 + 10;
                 // 收起后的窗口高度 = collapsedGridHeight + 窗口与grid_a的高度差
                 double windowOffset = _expandedWindowHeight - gridContentHeight;
                 double collapsedHeight = collapsedGridHeight + windowOffset;
@@ -8211,12 +8245,11 @@ public async Task SendArticle()
                 // 延迟将发文区和跟打区改为Star，让它们可以自适应窗口调整
                 this.Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    grid_a.RowDefinitions[2].Height = new GridLength(1, GridUnitType.Star);
-                    // 字帖模式下跟打区已折叠，不要给它Star，否则会分走空间导致底部留白
+                    grid_a.RowDefinitions[2].Height = new GridLength(_collapsedArticleHeight, GridUnitType.Star);
                     if ((_copybookMode == null || !_copybookMode.IsActive) &&
                         (_tracingMode == null || !_tracingMode.IsActive))
                     {
-                        grid_a.RowDefinitions[4].Height = new GridLength(1, GridUnitType.Star);
+                        grid_a.RowDefinitions[4].Height = new GridLength(_collapsedTypingHeight, GridUnitType.Star);
                     }
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
 
@@ -8224,11 +8257,30 @@ public async Task SendArticle()
         }
 
         // GridSplitter拖动完成事件：保存发文区和跟打区的比例
+        private void GridSplitterArticleTyping_DragStarted(object sender, DragStartedEventArgs e)
+        {
+            var grid_a = this.FindName("grid_a") as Grid;
+            if (grid_a == null) return;
+            // 锁定 Row 6（成绩区）为像素值，拖动 Row 2/Row 4 时不影响它
+            double resultsH = grid_a.RowDefinitions[6].ActualHeight;
+            grid_a.RowDefinitions[6].Height = new GridLength(resultsH, GridUnitType.Pixel);
+        }
+
         private void GridSplitterArticleTyping_DragCompleted(object sender, DragCompletedEventArgs e)
         {
+            var grid_a = this.FindName("grid_a") as Grid;
+            if (grid_a != null)
+            {
+                // 拖完后把 Row 2/4/6 全部转回 Star
+                double ah = grid_a.RowDefinitions[2].ActualHeight;
+                double th = grid_a.RowDefinitions[4].ActualHeight;
+                double rh = grid_a.RowDefinitions[6].ActualHeight;
+                if (ah > 0) grid_a.RowDefinitions[2].Height = new GridLength(ah, GridUnitType.Star);
+                if (th > 0) grid_a.RowDefinitions[4].Height = new GridLength(th, GridUnitType.Star);
+                if (rh > 0) grid_a.RowDefinitions[6].Height = new GridLength(rh, GridUnitType.Star);
+            }
             if (StateManager.ConfigLoaded)
             {
-                // 延迟保存，确保布局已经更新
                 this.Dispatcher.BeginInvoke(new Action(() =>
                 {
                     SaveDisplayInputRatio();
@@ -8379,33 +8431,40 @@ public async Task SendArticle()
 
         private void ApplyDisplayInputRatio()
         {
-            // 恢复发文区和跟打区的比例
             var grid_a = this.FindName("grid_a") as Grid;
             if (grid_a != null)
             {
-                // 默认比例：发文区45%，跟打区35%，成绩区20%
                 double resultsRatio = Config.GetDouble("成绩区高度比例");
                 if (resultsRatio <= 0 || resultsRatio >= 1)
-                    resultsRatio = 0.2; // 默认成绩区占20%
+                    resultsRatio = 0.2;
 
-                double articleTypingRatio = Config.GetDouble("发文区跟打区比例");
-                if (articleTypingRatio <= 0 || articleTypingRatio >= 1)
-                    articleTypingRatio = 0.56; // 默认发文区占(发文+跟打)的56%，即总高度的45%左右
+                bool isCopybookOrTracing = (_copybookMode != null && _copybookMode.IsActive) ||
+                                           (_tracingMode != null && _tracingMode.IsActive);
 
-                // 发文区比例 = 总剩余比例 × 发文区跟打区比例
-                double articleRatio = (1 - resultsRatio) * articleTypingRatio;
-                // 跟打区比例 = 总剩余比例 × (1 - 发文区跟打区比例)
-                double typingRatio = (1 - resultsRatio) * (1 - articleTypingRatio);
+                if (isCopybookOrTracing)
+                {
+                    double articleRatio = 1 - resultsRatio;
+                    grid_a.RowDefinitions[2].Height = new GridLength(articleRatio, GridUnitType.Star);
+                    grid_a.RowDefinitions[6].Height = new GridLength(resultsRatio, GridUnitType.Star);
+                }
+                else
+                {
+                    double articleTypingRatio = Config.GetDouble("发文区跟打区比例");
+                    if (articleTypingRatio <= 0 || articleTypingRatio >= 1)
+                        articleTypingRatio = 0.56;
 
-                grid_a.RowDefinitions[2].Height = new GridLength(articleRatio, GridUnitType.Star);
-                grid_a.RowDefinitions[4].Height = new GridLength(typingRatio, GridUnitType.Star);
-                grid_a.RowDefinitions[6].Height = new GridLength(resultsRatio, GridUnitType.Star);
+                    double articleRatio = (1 - resultsRatio) * articleTypingRatio;
+                    double typingRatio = (1 - resultsRatio) * (1 - articleTypingRatio);
+
+                    grid_a.RowDefinitions[2].Height = new GridLength(articleRatio, GridUnitType.Star);
+                    grid_a.RowDefinitions[4].Height = new GridLength(typingRatio, GridUnitType.Star);
+                    grid_a.RowDefinitions[6].Height = new GridLength(resultsRatio, GridUnitType.Star);
+                }
             }
         }
 
         private void SaveDisplayInputRatio()
         {
-            // 保存所有三个区域的比例
             var grid_a = this.FindName("grid_a") as Grid;
             if (grid_a != null)
             {
@@ -8416,22 +8475,25 @@ public async Task SendArticle()
 
                 if (total > 0)
                 {
-                    // 保存发文区占(发文+跟打)的比例（字帖模式下跟打区高度为0，不保存）
-                    double articleTypingTotal = articleHeight + typingHeight;
-                    if (articleTypingTotal > 0)
+                    bool isCopybookOrTracing = (_copybookMode != null && _copybookMode.IsActive) ||
+                                               (_tracingMode != null && _tracingMode.IsActive);
+
+                    if (!isCopybookOrTracing)
                     {
-                        double articleTypingRatio = articleHeight / articleTypingTotal;
-                        Config.dicts["发文区跟打区比例"] = articleTypingRatio.ToString("F6");
+                        double articleTypingTotal = articleHeight + typingHeight;
+                        if (articleTypingTotal > 0)
+                        {
+                            double articleTypingRatio = articleHeight / articleTypingTotal;
+                            Config.dicts["发文区跟打区比例"] = articleTypingRatio.ToString("F6");
+                        }
                     }
 
-                    // 成绩面板收起时 resultsHeight 为0，不保存，避免写入错误的0值
                     if (_isResultsExpanded && resultsHeight > 0)
                     {
                         double resultsRatio = resultsHeight / total;
                         Config.dicts["成绩区高度比例"] = resultsRatio.ToString("F6");
                     }
 
-                    // 立即写入配置文件
                     Config.WriteConfig(0);
                 }
             }
@@ -8443,11 +8505,100 @@ public async Task SendArticle()
         }
 
         // GridSplitter拖动完成事件：保存成绩区高度
+        private void GridSplitterResults_DragStarted(object sender, DragStartedEventArgs e)
+        {
+            var grid_a = this.FindName("grid_a") as Grid;
+            if (grid_a == null) return;
+            // 锁定 Row 2（发文区）为像素值，拖动 Row 4/Row 6 时不影响它
+            double articleH = grid_a.RowDefinitions[2].ActualHeight;
+            grid_a.RowDefinitions[2].Height = new GridLength(articleH, GridUnitType.Pixel);
+        }
+
         private void GridSplitterResults_DragCompleted(object sender, DragCompletedEventArgs e)
         {
+            if (_copybookModeSplitterDragging)
+            {
+                _copybookModeSplitterDragging = false;
+            }
+            var grid_a = this.FindName("grid_a") as Grid;
+            if (grid_a != null)
+            {
+                // 拖完后把 Row 2/4/6 全部转回 Star
+                double ah = grid_a.RowDefinitions[2].ActualHeight;
+                double th = grid_a.RowDefinitions[4].ActualHeight;
+                double rh = grid_a.RowDefinitions[6].ActualHeight;
+                if (ah > 0) grid_a.RowDefinitions[2].Height = new GridLength(ah, GridUnitType.Star);
+                if (th > 0) grid_a.RowDefinitions[4].Height = new GridLength(th, GridUnitType.Star);
+                if (rh > 0) grid_a.RowDefinitions[6].Height = new GridLength(rh, GridUnitType.Star);
+            }
             if (StateManager.ConfigLoaded)
             {
-                // 延迟保存，确保布局已经更新
+                this.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    SaveDisplayInputRatio();
+                }), System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+        }
+
+        private bool _copybookModeSplitterDragging;
+        private double _splitterDragStartY;
+        private double _splitterDragStartArticleH;
+        private double _splitterDragStartResultsH;
+
+        private bool IsCopybookOrTracingActive()
+        {
+            return (_copybookMode != null && _copybookMode.IsActive) ||
+                   (_tracingMode != null && _tracingMode.IsActive);
+        }
+
+        private void GridSplitterResults_PreviewMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (!IsCopybookOrTracingActive()) return;
+
+            var grid_a = this.FindName("grid_a") as Grid;
+            if (grid_a == null) return;
+
+            _copybookModeSplitterDragging = true;
+            _splitterDragStartY = e.GetPosition(this).Y;
+            _splitterDragStartArticleH = grid_a.RowDefinitions[2].ActualHeight;
+            _splitterDragStartResultsH = grid_a.RowDefinitions[6].ActualHeight;
+
+            gridSplitterResults.CaptureMouse();
+            e.Handled = true;
+        }
+
+        private void GridSplitterResults_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            if (!_copybookModeSplitterDragging) return;
+
+            var grid_a = this.FindName("grid_a") as Grid;
+            if (grid_a == null) return;
+
+            double currentY = e.GetPosition(this).Y;
+            double delta = currentY - _splitterDragStartY;
+
+            double newArticleH = _splitterDragStartArticleH + delta;
+            double newResultsH = _splitterDragStartResultsH - delta;
+
+            if (newArticleH < 50) newArticleH = 50;
+            if (newResultsH < 30) newResultsH = 30;
+
+            grid_a.RowDefinitions[2].Height = new GridLength(newArticleH, GridUnitType.Pixel);
+            grid_a.RowDefinitions[6].Height = new GridLength(newResultsH, GridUnitType.Pixel);
+
+            e.Handled = true;
+        }
+
+        private void GridSplitterResults_PreviewMouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (!_copybookModeSplitterDragging) return;
+
+            _copybookModeSplitterDragging = false;
+            gridSplitterResults.ReleaseMouseCapture();
+            e.Handled = true;
+
+            if (StateManager.ConfigLoaded)
+            {
                 this.Dispatcher.BeginInvoke(new Action(() =>
                 {
                     SaveDisplayInputRatio();

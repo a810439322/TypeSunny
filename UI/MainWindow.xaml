@@ -420,7 +420,7 @@
         </Border>
 
         <!-- GridSplitter 2: 发文区 与 跟打区 之间 -->
-        <GridSplitter x:Name="gridSplitterArticleTyping" Grid.Row="3" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Transparent" ShowsPreview="False" Cursor="SizeNS" Panel.ZIndex="100" Margin="0" Height="5" DragCompleted="GridSplitterArticleTyping_DragCompleted">
+        <GridSplitter x:Name="gridSplitterArticleTyping" Grid.Row="3" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Transparent" ShowsPreview="False" Cursor="SizeNS" Panel.ZIndex="100" Margin="0" Height="5" DragStarted="GridSplitterArticleTyping_DragStarted" DragCompleted="GridSplitterArticleTyping_DragCompleted">
             <GridSplitter.Style>
                 <Style TargetType="GridSplitter">
                     <Setter Property="Background" Value="Transparent"/>
@@ -666,7 +666,7 @@
         </Grid>
 
         <!-- GridSplitter: 跟打区+按钮区2 与 成绩区 之间 -->
-        <GridSplitter x:Name="gridSplitterResults" Grid.Row="5" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Transparent" ShowsPreview="False" Cursor="SizeNS" Panel.ZIndex="100" Margin="0" Height="5" DragCompleted="GridSplitterResults_DragCompleted">
+        <GridSplitter x:Name="gridSplitterResults" Grid.Row="5" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="Transparent" ShowsPreview="False" Cursor="SizeNS" Panel.ZIndex="100" Margin="0" Height="5" DragStarted="GridSplitterResults_DragStarted" DragCompleted="GridSplitterResults_DragCompleted" PreviewMouseLeftButtonDown="GridSplitterResults_PreviewMouseDown" PreviewMouseMove="GridSplitterResults_PreviewMouseMove" PreviewMouseLeftButtonUp="GridSplitterResults_PreviewMouseUp">
             <GridSplitter.Style>
                 <Style TargetType="GridSplitter">
                     <Setter Property="Background" Value="Transparent"/>
