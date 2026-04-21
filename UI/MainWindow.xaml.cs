@@ -1515,6 +1515,12 @@ namespace TypeSunny.UI
                     else
                         _expandedWindowHeight = Config.GetDouble("窗口高度") + 150;
 
+                    // 初始化 _collapsedResultsHeight，展开时用
+                    double rRatio = Config.GetDouble("成绩区高度比例");
+                    if (rRatio <= 0 || rRatio >= 1) rRatio = 0.2;
+                    if (_expandedWindowHeight > 300)
+                        _collapsedResultsHeight = _expandedWindowHeight * rRatio;
+
                     this.Dispatcher.BeginInvoke(new Action(() =>
                     {
                         double ah = grid_a.RowDefinitions[2].ActualHeight;
@@ -1666,9 +1672,6 @@ namespace TypeSunny.UI
                 winTrainer.Background = this.Background;
             }
 
-            this.Height = Config.GetDouble("窗口高度");
-            this.Width = Config.GetDouble("窗口宽度");
-
             // 加载成绩面板展开状态
             var grid_a = this.FindName("grid_a") as Grid;
             if (grid_a != null)
@@ -1744,6 +1747,11 @@ namespace TypeSunny.UI
                             _expandedWindowHeight = ewh;
                         else
                             _expandedWindowHeight = Config.GetDouble("窗口高度") + 150;
+
+                        double rr2 = Config.GetDouble("成绩区高度比例");
+                        if (rr2 <= 0 || rr2 >= 1) rr2 = 0.2;
+                        if (_expandedWindowHeight > 300)
+                            _collapsedResultsHeight = _expandedWindowHeight * rr2;
                     }), System.Windows.Threading.DispatcherPriority.Loaded);
                     }
                     else
@@ -8118,41 +8126,39 @@ public async Task SendArticle()
                     tbxResults.Visibility = Visibility.Visible;
                 }
 
-                // 展开成绩区：锁定 Row 2 和 Row 4 当前像素值不变，只恢复 Row 6
+                // 展开成绩区
                 bool isCopybookOrTracing = (_copybookMode != null && _copybookMode.IsActive) ||
                                            (_tracingMode != null && _tracingMode.IsActive);
+
                 double currentArticleH = grid_a.RowDefinitions[2].ActualHeight;
                 double currentTypingH = grid_a.RowDefinitions[4].ActualHeight;
+
+                double resultsH = _collapsedResultsHeight > 0
+                    ? _collapsedResultsHeight
+                    : currentArticleH * 0.25;
+                if (resultsH < 50) resultsH = 50;
+
+                // 先锁定 Row 2 为像素值，防止窗口变大时 Row 2 跟着撑大
                 grid_a.RowDefinitions[2].Height = new GridLength(currentArticleH, GridUnitType.Pixel);
                 if (!isCopybookOrTracing)
                 {
                     grid_a.RowDefinitions[4].Height = new GridLength(currentTypingH, GridUnitType.Pixel);
                 }
 
-                if (_collapsedResultsHeight > 0)
-                {
-                    grid_a.RowDefinitions[6].Height = new GridLength(_collapsedResultsHeight, GridUnitType.Pixel);
-                }
-                else
-                {
-                    ApplyDisplayInputRatio();
-                }
+                // 先设好 Row 5/6，再改窗口高度
                 grid_a.RowDefinitions[5].Height = new GridLength(5, GridUnitType.Pixel);
                 grid_a.RowDefinitions[5].ClearValue(RowDefinition.MinHeightProperty);
+                grid_a.RowDefinitions[6].Height = new GridLength(resultsH, GridUnitType.Pixel);
                 resultsTextBoxGrid.Visibility = Visibility.Visible;
                 gridSplitterResults.Visibility = Visibility.Visible;
 
-                // 启用所有 GridSplitter
                 gridSplitterArticleTyping.IsEnabled = true;
                 gridSplitterResults.IsEnabled = true;
 
-                // 恢复窗口高度
-                if (_expandedWindowHeight > 300)
-                {
-                    this.Height = _expandedWindowHeight;
-                }
+                // 窗口高度 = 当前高度 + 成绩区高度 + splitter(5) - bottomBorder(10)
+                this.Height = this.ActualHeight + resultsH + 5 - 10;
 
-                // 窗口高度恢复后，转回 Star 让布局可自适应
+                // 转回 Star
                 this.Dispatcher.BeginInvoke(new Action(() =>
                 {
                     double ah = grid_a.RowDefinitions[2].ActualHeight;

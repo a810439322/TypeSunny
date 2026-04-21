@@ -432,6 +432,8 @@ namespace TypeSunny.UI.Modes
 
         private void ProcessInputText(string inputText)
         {
+            if (TextInfo.Words == null || TextInfo.Words.Count == 0) return;
+
             // 全局字数计数（正常模式由 TbxInput_TextChanged 处理）
             var si = new StringInfo(inputText);
             CounterLog.Buffer[0] += si.LengthInTextElements;
