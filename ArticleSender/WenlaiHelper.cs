@@ -189,7 +189,9 @@ namespace TypeSunny.ArticleSender
                 Height = 350,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = owner,
-                ResizeMode = ResizeMode.NoResize
+                ResizeMode = ResizeMode.NoResize,
+                Background = Utils.Colors.FromString(Config.GetString("窗体背景色")),
+                Foreground = Utils.Colors.FromString(Config.GetString("窗体字体色"))
             };
 
             var grid = new Grid();
@@ -207,44 +209,53 @@ namespace TypeSunny.ArticleSender
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(20) });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 10: 按钮
 
-            var lblUsername = new Label { Content = "用户名:" };
+            var inputBg = Utils.Colors.FromString(Config.GetString("跟打区背景色"));
+            var inputFg = Utils.Colors.FromString(Config.GetString("跟打区字体色"));
+            var inputBorder = Utils.Colors.FromString(Config.GetString("按钮背景色"));
+            var labelFg = Utils.Colors.FromString(Config.GetString("窗体字体色"));
+            var btnBg = Utils.Colors.FromString(Config.GetString("按钮背景色"));
+            var btnFg = Utils.Colors.FromString(Config.GetString("按钮字体色"));
+
+            var lblUsername = new Label { Content = "用户名:", Foreground = labelFg };
             Grid.SetRow(lblUsername, 0);
             grid.Children.Add(lblUsername);
 
             var txtUsername = new TextBox
             {
                 Padding = new Thickness(5),
-                Margin = new Thickness(70, 0, 0, 0)
+                Margin = new Thickness(70, 0, 0, 0),
+                Background = inputBg, Foreground = inputFg, BorderBrush = inputBorder
             };
             Grid.SetRow(txtUsername, 0);
             grid.Children.Add(txtUsername);
 
-            var lblPassword = new Label { Content = "密码:" };
+            var lblPassword = new Label { Content = "密码:", Foreground = labelFg };
             Grid.SetRow(lblPassword, 2);
             grid.Children.Add(lblPassword);
 
             var txtPassword = new PasswordBox
             {
                 Padding = new Thickness(5),
-                Margin = new Thickness(70, 0, 0, 0)
+                Margin = new Thickness(70, 0, 0, 0),
+                Background = inputBg, Foreground = inputFg, BorderBrush = inputBorder
             };
             Grid.SetRow(txtPassword, 2);
             grid.Children.Add(txtPassword);
 
-            var lblEmail = new Label { Content = "邮箱:" };
+            var lblEmail = new Label { Content = "邮箱:", Foreground = labelFg };
             Grid.SetRow(lblEmail, 4);
             grid.Children.Add(lblEmail);
 
             var txtEmail = new TextBox
             {
                 Padding = new Thickness(5),
-                Margin = new Thickness(70, 0, 0, 0)
+                Margin = new Thickness(70, 0, 0, 0),
+                Background = inputBg, Foreground = inputFg, BorderBrush = inputBorder
             };
             Grid.SetRow(txtEmail, 4);
             grid.Children.Add(txtEmail);
 
-            // 验证码行：输入框 + 发送按钮
-            var lblCode = new Label { Content = "验证码:" };
+            var lblCode = new Label { Content = "验证码:", Foreground = labelFg };
             Grid.SetRow(lblCode, 6);
             grid.Children.Add(lblCode);
 
@@ -256,7 +267,8 @@ namespace TypeSunny.ArticleSender
             var txtCode = new TextBox
             {
                 Padding = new Thickness(5),
-                Margin = new Thickness(0, 0, 5, 0)
+                Margin = new Thickness(0, 0, 5, 0),
+                Background = inputBg, Foreground = inputFg, BorderBrush = inputBorder
             };
             Grid.SetColumn(txtCode, 0);
             codePanel.Children.Add(txtCode);
@@ -265,7 +277,8 @@ namespace TypeSunny.ArticleSender
             {
                 Content = "发送",
                 Width = 60,
-                Height = 28
+                Height = 28,
+                Background = btnBg, Foreground = btnFg, BorderBrush = btnBg
             };
             Grid.SetColumn(btnSendCode, 1);
             codePanel.Children.Add(btnSendCode);
@@ -277,7 +290,8 @@ namespace TypeSunny.ArticleSender
             {
                 Content = "注册后自动登录",
                 IsChecked = true,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = labelFg
             };
             Grid.SetRow(chkAutoLogin, 8);
             grid.Children.Add(chkAutoLogin);
@@ -294,17 +308,17 @@ namespace TypeSunny.ArticleSender
                 Content = "注册",
                 Width = 80,
                 Height = 30,
-                Margin = new Thickness(0, 0, 10, 0)
+                Margin = new Thickness(0, 0, 10, 0),
+                Background = btnBg, Foreground = btnFg, BorderBrush = btnBg
             };
 
             var btnCancel = new Button
             {
                 Content = "取消",
                 Width = 80,
-                Height = 30
+                Height = 30,
+                Background = btnBg, Foreground = btnFg, BorderBrush = btnBg
             };
-
-            // 发送验证码
             btnSendCode.Click += async (s, args) =>
             {
                 if (string.IsNullOrWhiteSpace(txtEmail.Text))
@@ -630,7 +644,9 @@ namespace TypeSunny.ArticleSender
                 Height = 230,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = owner,
-                ResizeMode = ResizeMode.NoResize
+                ResizeMode = ResizeMode.NoResize,
+                Background = Utils.Colors.FromString(Config.GetString("窗体背景色")),
+                Foreground = Utils.Colors.FromString(Config.GetString("窗体字体色"))
             };
 
             var grid = new Grid();
@@ -644,7 +660,7 @@ namespace TypeSunny.ArticleSender
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 6: 注册链接
 
-            var lblUsername = new Label { Content = "用户名:" };
+            var lblUsername = new Label { Content = "用户名:", Foreground = Utils.Colors.FromString(Config.GetString("窗体字体色")) };
             Grid.SetRow(lblUsername, 0);
             grid.Children.Add(lblUsername);
 
@@ -652,12 +668,15 @@ namespace TypeSunny.ArticleSender
             {
                 Text = account?.Username ?? "",
                 Padding = new Thickness(5),
-                Margin = new Thickness(70, 0, 0, 0)
+                Margin = new Thickness(70, 0, 0, 0),
+                Background = Utils.Colors.FromString(Config.GetString("跟打区背景色")),
+                Foreground = Utils.Colors.FromString(Config.GetString("跟打区字体色")),
+                BorderBrush = Utils.Colors.FromString(Config.GetString("按钮背景色"))
             };
             Grid.SetRow(txtUsername, 0);
             grid.Children.Add(txtUsername);
 
-            var lblPassword = new Label { Content = "密码:" };
+            var lblPassword = new Label { Content = "密码:", Foreground = Utils.Colors.FromString(Config.GetString("窗体字体色")) };
             Grid.SetRow(lblPassword, 2);
             grid.Children.Add(lblPassword);
 
@@ -665,7 +684,10 @@ namespace TypeSunny.ArticleSender
             {
                 Password = account?.Password ?? "",
                 Padding = new Thickness(5),
-                Margin = new Thickness(70, 0, 0, 0)
+                Margin = new Thickness(70, 0, 0, 0),
+                Background = Utils.Colors.FromString(Config.GetString("跟打区背景色")),
+                Foreground = Utils.Colors.FromString(Config.GetString("跟打区字体色")),
+                BorderBrush = Utils.Colors.FromString(Config.GetString("按钮背景色"))
             };
             Grid.SetRow(txtPassword, 2);
             grid.Children.Add(txtPassword);
@@ -683,7 +705,10 @@ namespace TypeSunny.ArticleSender
                 Width = 80,
                 Height = 30,
                 Margin = new Thickness(0, 0, 10, 0),
-                IsDefault = true  // Enter 键自动触发登录
+                IsDefault = true,
+                Background = Utils.Colors.FromString(Config.GetString("按钮背景色")),
+                Foreground = Utils.Colors.FromString(Config.GetString("按钮字体色")),
+                BorderBrush = Utils.Colors.FromString(Config.GetString("按钮背景色"))
             };
 
             var btnCancel = new Button
@@ -691,7 +716,10 @@ namespace TypeSunny.ArticleSender
                 Content = "取消",
                 Width = 80,
                 Height = 30,
-                IsCancel = true  // Esc 键自动取消
+                IsCancel = true,
+                Background = Utils.Colors.FromString(Config.GetString("按钮背景色")),
+                Foreground = Utils.Colors.FromString(Config.GetString("按钮字体色")),
+                BorderBrush = Utils.Colors.FromString(Config.GetString("按钮背景色"))
             };
 
             // 用户名框按回车跳到密码框
@@ -807,7 +835,7 @@ namespace TypeSunny.ArticleSender
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Background = System.Windows.Media.Brushes.Transparent,
                 BorderThickness = new Thickness(0),
-                Foreground = System.Windows.Media.Brushes.Gray,
+                Foreground = Utils.Colors.FromString(Config.GetString("窗体字体色")),
                 Cursor = System.Windows.Input.Cursors.Hand,
                 FontSize = 12,
                 Padding = new Thickness(0)

@@ -240,7 +240,7 @@ static internal class Score
         /// <summary>
         /// 解析成绩显示顺序配置，返回规范化后的项目列表
         /// </summary>
-        private static readonly string DefaultOrder = "速度,击键,键准,字数,难度,打词率,标顶,重打,码长,总键数,键法,回改,退格,废码,选重,用时,错字,盲打正确率,看打正确率,盲打模式,看打模式,签名";
+        private static readonly string DefaultOrder = "速度,击键,键准,字数,难度,打词率,标顶,重打,码长,总键数,键法,回改,禁用回改,退格,废码,选重,用时,错字,盲打正确率,看打正确率,盲打模式,看打模式,签名";
         private static readonly HashSet<string> ValidItems = new HashSet<string>(DefaultOrder.Split(','));
 
         public static List<string> GetScoreOrder()
@@ -365,6 +365,10 @@ static internal class Score
                     case "回改":
                         if (Config.GetBool("显示_回改"))
                             report.Add("回改" + Score.GetCorrection().ToString("F0"));
+                        break;
+                    case "禁用回改":
+                        if (Config.GetBool("显示_禁用回改") && Config.GetBool("禁用回改"))
+                            report.Add("【禁用回改】");
                         break;
                     case "退格":
                         if (Config.GetBool("显示_退格"))
