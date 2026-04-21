@@ -178,10 +178,18 @@ namespace TypeSunny.Net
                 var api = CreateRaceAPI(server);
                 var result = await api.GetDailyArticleAsync(raceId);
 
-                // 如果因为服务端缺公钥而失败，自动补录后重试
-                if (!result.Success && result.Message != null && result.Message.Contains("公钥"))
+                // 如果因为密钥问题失败，重新生成密钥对并上传后重试
+                if (!result.Success && result.NeedKeyReupload)
                 {
-                    System.Diagnostics.Debug.WriteLine("[赛文V2] 服务端缺少公钥，自动补录...");
+                    System.Diagnostics.Debug.WriteLine("[赛文V2] 载文失败（密钥问题），重新生成密钥对并上传...");
+
+                    var freshCrypto = new RaceCryptoClient();
+                    string freshKeyXml = freshCrypto.GetClientKeyXml();
+                    server.ClientKeyXml = freshKeyXml;
+                    account.ClientKeyXml = freshKeyXml;
+                    accountManager.SaveAccount(account);
+
+                    api = CreateRaceAPI(server);
                     var uploadResult = await api.UpdatePublicKeyAsync();
                     if (uploadResult.Success)
                     {

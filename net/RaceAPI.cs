@@ -134,8 +134,19 @@ namespace TypeSunny.Net
                 JObject decrypted;
                 if (data["encryptedKey"] != null && data["iv"] != null && data["encryptedData"] != null)
                 {
-                    // 新格式：加密 envelope，需要解密
-                    decrypted = cryptoClient.DecryptInitResponse(data);
+                    try
+                    {
+                        decrypted = cryptoClient.DecryptInitResponse(data);
+                    }
+                    catch (Exception decryptEx)
+                    {
+                        return new RaceInitResult
+                        {
+                            Success = false,
+                            Message = $"获取赛文失败: {decryptEx.Message}",
+                            NeedKeyReupload = true
+                        };
+                    }
                 }
                 else
                 {
@@ -296,6 +307,10 @@ namespace TypeSunny.Net
         public string ServerPublicKey { get; set; }
         public string KeyId { get; set; }
         public string SessionNonce { get; set; }
+        /// <summary>
+        /// 是否因密钥问题失败（服务端缺公钥 或 本地私钥与服务端公钥不匹配），需要重新上传公钥
+        /// </summary>
+        public bool NeedKeyReupload { get; set; }
     }
 
     /// <summary>

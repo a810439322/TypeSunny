@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Diagnostics;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -33,7 +33,7 @@ namespace TypeSunny.UI.Modes
         private bool _isImeComposing;
         private string _activeCompositionText = "";
         private long _lastImeCancelTicks;
-        private const long ImeBackspaceGuardMs = 120;
+        private const long ImeBackspaceGuardMs = 10;
         private GridLength _savedTypingRowHeight;
         private double _savedTypingRowMinHeight;
         private GridLength _savedSplitterRowHeight;
@@ -382,7 +382,11 @@ namespace TypeSunny.UI.Modes
             {
                 ClearImeCompositionState();
                 MarkImeCancel();
-                if (Config.GetBool("禁用回改"))
+                bool disableBackInEffect = Config.GetBool("禁用回改")
+                    && StateManager.txtSource != TxtSource.raceApi
+                    && StateManager.txtSource != TxtSource.jbs
+                    && StateManager.txtSource != TxtSource.jisucup;
+                if (disableBackInEffect)
                 {
                     // 禁用回改模式：空码时强制上屏一个空格，继续往下走逐字比对
                 }
@@ -399,7 +403,11 @@ namespace TypeSunny.UI.Modes
             {
                 ClearImeCompositionState();
                 MarkImeCancel();
-                if (Config.GetBool("禁用回改"))
+                bool disableBackInEffect = Config.GetBool("禁用回改")
+                    && StateManager.txtSource != TxtSource.raceApi
+                    && StateManager.txtSource != TxtSource.jbs
+                    && StateManager.txtSource != TxtSource.jisucup;
+                if (disableBackInEffect)
                 {
                     // 不return，下面的逐字比对会处理
                 }
@@ -412,7 +420,11 @@ namespace TypeSunny.UI.Modes
 
             // 禁用回改模式：空码/回车强制当空格处理
             string inputText = e.Text;
-            if (Config.GetBool("禁用回改") && (string.IsNullOrEmpty(inputText) || inputText == "\r"))
+            bool disableBackActive = Config.GetBool("禁用回改")
+                && StateManager.txtSource != TxtSource.raceApi
+                && StateManager.txtSource != TxtSource.jbs
+                && StateManager.txtSource != TxtSource.jisucup;
+            if (disableBackActive && (string.IsNullOrEmpty(inputText) || inputText == "\r"))
                 inputText = " ";
 
             ClearImeCompositionState();
@@ -538,10 +550,21 @@ namespace TypeSunny.UI.Modes
             if (!_isActive) return;
             Key inputKey = e.Key == Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
 
-            // 禁用回改模式：拦截退格、Esc、Ctrl+Z
-            if (Config.GetBool("禁用回改"))
+            // 禁用回改模式：拦截退格、Esc、Ctrl+Z（赛文模式不受限制，IME编码中放行退格）
+            if (Config.GetBool("禁用回改")
+                && StateManager.txtSource != TxtSource.raceApi
+                && StateManager.txtSource != TxtSource.jbs
+                && StateManager.txtSource != TxtSource.jisucup)
             {
-                if (inputKey == Key.Back || inputKey == Key.Escape ||
+                if (inputKey == Key.Back)
+                {
+                    if (!HasActiveComposition())
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+                }
+                else if (inputKey == Key.Escape ||
                     (inputKey == Key.Z && Keyboard.Modifiers == ModifierKeys.Control))
                 {
                     e.Handled = true;

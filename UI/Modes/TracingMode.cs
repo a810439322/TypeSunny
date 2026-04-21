@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -27,6 +28,10 @@ namespace TypeSunny.UI.Modes
         private bool _isActive;
         private bool _manualScrollActive;
         private bool _pendingMirrorRebuild;
+        private bool _isImeComposing;
+        private string _activeCompositionText = "";
+        private long _lastImeCancelTicks;
+        private const long ImeBackspaceGuardMs = 10;
         private GridLength _savedTypingRowHeight;
         private double _savedTypingRowMinHeight;
         private GridLength _savedSplitterRowHeight;
@@ -211,6 +216,7 @@ namespace TypeSunny.UI.Modes
         {
             if (!_isActive) return;
             _currentIndex = 0;
+            ClearImeCompositionState();
             _compositionText.Visibility = Visibility.Collapsed;
             if (_inputCapture != null)
             {
@@ -548,6 +554,7 @@ namespace TypeSunny.UI.Modes
 
         private void OnCompositionStart(object sender, TextCompositionEventArgs e)
         {
+            SetImeCompositionState(e.TextComposition.CompositionText ?? "");
             if (!Score.IsComposing)
             {
                 Score.IsComposing = true;
@@ -559,6 +566,7 @@ namespace TypeSunny.UI.Modes
         {
             if (!_isActive || _compositionText == null) return;
             string composition = e.TextComposition.CompositionText ?? "";
+            SetImeCompositionState(composition);
             if (string.IsNullOrEmpty(composition))
             {
                 _compositionText.Visibility = Visibility.Collapsed;
@@ -579,7 +587,13 @@ namespace TypeSunny.UI.Modes
 
             if (string.IsNullOrEmpty(e.Text))
             {
-                if (Config.GetBool("禁用回改")) { /* 继续 */ }
+                ClearImeCompositionState();
+                MarkImeCancel();
+                bool disableBackInEffect = Config.GetBool("禁用回改")
+                    && StateManager.txtSource != TxtSource.raceApi
+                    && StateManager.txtSource != TxtSource.jbs
+                    && StateManager.txtSource != TxtSource.jisucup;
+                if (disableBackInEffect) { /* 继续 */ }
                 else
                 {
                     _compositionText.Visibility = Visibility.Collapsed;
@@ -590,7 +604,13 @@ namespace TypeSunny.UI.Modes
 
             if (e.Text == "\r")
             {
-                if (!Config.GetBool("禁用回改"))
+                ClearImeCompositionState();
+                MarkImeCancel();
+                bool disableBackInEffect = Config.GetBool("禁用回改")
+                    && StateManager.txtSource != TxtSource.raceApi
+                    && StateManager.txtSource != TxtSource.jbs
+                    && StateManager.txtSource != TxtSource.jisucup;
+                if (!disableBackInEffect)
                 {
                     e.Handled = true;
                     return;
@@ -598,12 +618,19 @@ namespace TypeSunny.UI.Modes
             }
 
             string inputText = e.Text;
-            if (Config.GetBool("禁用回改") && (string.IsNullOrEmpty(inputText) || inputText == "\r"))
+            bool disableBackActive = Config.GetBool("禁用回改")
+                && StateManager.txtSource != TxtSource.raceApi
+                && StateManager.txtSource != TxtSource.jbs
+                && StateManager.txtSource != TxtSource.jisucup;
+            if (disableBackActive && (string.IsNullOrEmpty(inputText) || inputText == "\r"))
                 inputText = " ";
 
+            ClearImeCompositionState();
             ProcessInputText(inputText);
 
-            e.Handled = true;
+            // 不设 e.Handled = true —— 让事件继续流向 TextBox 内部处理器，
+            // 否则 TSF 标点顶屏/五码顶字时"提交+首码进新composition"的连续链路会被打断。
+            ScheduleInputCaptureTrim();
         }
 
         private void ProcessSingleChar(string ch)
@@ -667,7 +694,6 @@ namespace TypeSunny.UI.Modes
             }
 
             _compositionText.Visibility = Visibility.Collapsed;
-            _inputCapture.Text = "";
 
             if (_currentIndex >= TextInfo.Words.Count
                 && TextInfo.wordStates[TextInfo.Words.Count - 1] == WordStates.RIGHT)
@@ -690,11 +716,23 @@ namespace TypeSunny.UI.Modes
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (!_isActive) return;
+            Key inputKey = e.Key == Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
 
-            if (Config.GetBool("禁用回改"))
+            if (Config.GetBool("禁用回改")
+                && StateManager.txtSource != TxtSource.raceApi
+                && StateManager.txtSource != TxtSource.jbs
+                && StateManager.txtSource != TxtSource.jisucup)
             {
-                if (e.Key == Key.Back || e.Key == Key.Escape ||
-                    (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control))
+                if (inputKey == Key.Back)
+                {
+                    if (!HasActiveComposition())
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+                }
+                else if (inputKey == Key.Escape ||
+                    (inputKey == Key.Z && Keyboard.Modifiers == ModifierKeys.Control))
                 {
                     e.Handled = true;
                     return;
@@ -703,16 +741,21 @@ namespace TypeSunny.UI.Modes
 
             _main.HandleKeyDownStats(e);
 
-            // 空格键不会触发 PreviewTextInput，需要在这里手动处理
-            if (e.Key == Key.Space && string.IsNullOrEmpty(_inputCapture.Text))
+            if (inputKey == Key.Space)
             {
-                ProcessSingleChar(" ");
-                e.Handled = true;
                 return;
             }
 
-            if (e.Key == Key.Back && string.IsNullOrEmpty(_inputCapture.Text))
+            if (inputKey == Key.Back)
             {
+                bool hasActiveComposition = HasActiveComposition();
+                bool isGuardedImeBackspace = IsWithinImeBackspaceGuard();
+
+                if (hasActiveComposition || isGuardedImeBackspace)
+                {
+                    return;
+                }
+
                 if (_currentIndex > 0)
                 {
                     _currentIndex--;
@@ -737,6 +780,53 @@ namespace TypeSunny.UI.Modes
                 }
                 e.Handled = true;
             }
+        }
+
+        private void ScheduleInputCaptureTrim()
+        {
+            _main.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!_isActive || _inputCapture == null) return;
+                if (!HasActiveComposition() && _inputCapture.Text.Length > 0)
+                {
+                    _inputCapture.Text = "";
+                }
+            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+
+        private bool HasActiveComposition()
+        {
+            return _isImeComposing || !string.IsNullOrEmpty(_activeCompositionText);
+        }
+
+        private void SetImeCompositionState(string composition)
+        {
+            bool hadComposition = _isImeComposing || !string.IsNullOrEmpty(_activeCompositionText);
+            _activeCompositionText = composition ?? "";
+            _isImeComposing = !string.IsNullOrEmpty(_activeCompositionText);
+            if (hadComposition && !_isImeComposing)
+                MarkImeCancel();
+        }
+
+        private void ClearImeCompositionState()
+        {
+            _activeCompositionText = "";
+            _isImeComposing = false;
+        }
+
+        private void MarkImeCancel()
+        {
+            _lastImeCancelTicks = Stopwatch.GetTimestamp();
+        }
+
+        private bool IsWithinImeBackspaceGuard()
+        {
+            if (_lastImeCancelTicks == 0)
+                return false;
+
+            long elapsedTicks = Stopwatch.GetTimestamp() - _lastImeCancelTicks;
+            double elapsedMs = elapsedTicks * 1000.0 / Stopwatch.Frequency;
+            return elapsedMs >= 0 && elapsedMs <= ImeBackspaceGuardMs;
         }
 
         private void UpdatePosition()

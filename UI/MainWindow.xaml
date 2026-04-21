@@ -149,13 +149,16 @@
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <Button x:Name="BtnMinimize" Content="━" Width="45" Height="30" Click="BtnMinimize_Click" BorderThickness="0" Background="Transparent">
+                <Button x:Name="BtnMinimize" Content="━" Width="45" Height="30" Click="BtnMinimize_Click" BorderThickness="0">
                     <Button.Style>
                         <Style TargetType="Button">
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="border" Background="{TemplateBinding Background}">
+                                        <Border x:Name="border">
+                                            <Border.Background>
+                                                <SolidColorBrush Color="Transparent"/>
+                                            </Border.Background>
                                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
                                         </Border>
                                         <ControlTemplate.Triggers>
@@ -165,7 +168,7 @@
                                                         <Storyboard>
                                                             <ColorAnimation Storyboard.TargetName="border"
                                                                           Storyboard.TargetProperty="Background.Color"
-                                                                          To="#50FFFFFF"
+                                                                          To="#30000000"
                                                                           Duration="0:0:0.15"/>
                                                         </Storyboard>
                                                     </BeginStoryboard>
@@ -183,15 +186,18 @@
                                             </Trigger>
                                             <Trigger Property="IsPressed" Value="True">
                                                 <Trigger.EnterActions>
-                                                    <BeginStoryboard>
+                                                    <BeginStoryboard x:Name="MinPressedStoryboard">
                                                         <Storyboard>
                                                             <ColorAnimation Storyboard.TargetName="border"
                                                                           Storyboard.TargetProperty="Background.Color"
-                                                                          To="#70FFFFFF"
+                                                                          To="#50000000"
                                                                           Duration="0:0:0.05"/>
                                                         </Storyboard>
                                                     </BeginStoryboard>
                                                 </Trigger.EnterActions>
+                                                <Trigger.ExitActions>
+                                                    <RemoveStoryboard BeginStoryboardName="MinPressedStoryboard"/>
+                                                </Trigger.ExitActions>
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -200,13 +206,16 @@
                         </Style>
                     </Button.Style>
                 </Button>
-                <Button x:Name="BtnMaximize" Content="◻" Width="45" Height="30" Click="BtnMaximize_Click" BorderThickness="0" Background="Transparent">
+                <Button x:Name="BtnMaximize" Content="◻" Width="45" Height="30" Click="BtnMaximize_Click" BorderThickness="0">
                     <Button.Style>
                         <Style TargetType="Button">
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="border" Background="{TemplateBinding Background}">
+                                        <Border x:Name="border">
+                                            <Border.Background>
+                                                <SolidColorBrush Color="Transparent"/>
+                                            </Border.Background>
                                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
                                         </Border>
                                         <ControlTemplate.Triggers>
@@ -216,7 +225,7 @@
                                                         <Storyboard>
                                                             <ColorAnimation Storyboard.TargetName="border"
                                                                           Storyboard.TargetProperty="Background.Color"
-                                                                          To="#50FFFFFF"
+                                                                          To="#30000000"
                                                                           Duration="0:0:0.15"/>
                                                         </Storyboard>
                                                     </BeginStoryboard>
@@ -234,15 +243,18 @@
                                             </Trigger>
                                             <Trigger Property="IsPressed" Value="True">
                                                 <Trigger.EnterActions>
-                                                    <BeginStoryboard>
+                                                    <BeginStoryboard x:Name="MaxPressedStoryboard">
                                                         <Storyboard>
                                                             <ColorAnimation Storyboard.TargetName="border"
                                                                           Storyboard.TargetProperty="Background.Color"
-                                                                          To="#70FFFFFF"
+                                                                          To="#50000000"
                                                                           Duration="0:0:0.05"/>
                                                         </Storyboard>
                                                     </BeginStoryboard>
                                                 </Trigger.EnterActions>
+                                                <Trigger.ExitActions>
+                                                    <RemoveStoryboard BeginStoryboardName="MaxPressedStoryboard"/>
+                                                </Trigger.ExitActions>
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -251,13 +263,16 @@
                         </Style>
                     </Button.Style>
                 </Button>
-                <Button x:Name="BtnClose" Content="×" Width="45" Height="30" Click="BtnClose_Click" BorderThickness="0" Background="Transparent">
+                <Button x:Name="BtnClose" Content="×" Width="45" Height="30" Click="BtnClose_Click" BorderThickness="0">
                     <Button.Style>
                         <Style TargetType="Button">
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="border" Background="{TemplateBinding Background}">
+                                        <Border x:Name="border">
+                                            <Border.Background>
+                                                <SolidColorBrush Color="Transparent"/>
+                                            </Border.Background>
                                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
                                         </Border>
                                         <ControlTemplate.Triggers>
@@ -285,7 +300,7 @@
                                             </Trigger>
                                             <Trigger Property="IsPressed" Value="True">
                                                 <Trigger.EnterActions>
-                                                    <BeginStoryboard>
+                                                    <BeginStoryboard x:Name="ClosePressedStoryboard">
                                                         <Storyboard>
                                                             <ColorAnimation Storyboard.TargetName="border"
                                                                           Storyboard.TargetProperty="Background.Color"
@@ -294,6 +309,9 @@
                                                         </Storyboard>
                                                     </BeginStoryboard>
                                                 </Trigger.EnterActions>
+                                                <Trigger.ExitActions>
+                                                    <RemoveStoryboard BeginStoryboardName="ClosePressedStoryboard"/>
+                                                </Trigger.ExitActions>
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>

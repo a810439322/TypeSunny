@@ -3775,11 +3775,23 @@ public async Task SendArticle()
                 return;
             }
 
-            // 禁用回改模式：拦截退格、Esc、Ctrl+Z
-            if (Config.GetBool("禁用回改") && StateManager.typingState == TypingState.typing)
+            // 禁用回改模式：拦截退格、Esc、Ctrl+Z（赛文模式不受限制，IME编码中放行退格）
+            if (Config.GetBool("禁用回改") && StateManager.typingState == TypingState.typing
+                && StateManager.txtSource != TxtSource.raceApi
+                && StateManager.txtSource != TxtSource.jbs
+                && StateManager.txtSource != TxtSource.jisucup)
             {
-                if (e.Key == Key.Back || e.Key == Key.Escape ||
-                    (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control))
+                Key inputKey = e.Key == Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
+                if (inputKey == Key.Back)
+                {
+                    if (e.Key != Key.ImeProcessed)
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+                }
+                else if (inputKey == Key.Escape ||
+                    (inputKey == Key.Z && Keyboard.Modifiers == ModifierKeys.Control))
                 {
                     e.Handled = true;
                     return;
@@ -8637,9 +8649,15 @@ public async Task SendArticle()
         // 自定义标题栏事件处理
         private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
+            DependencyObject src = e.OriginalSource as DependencyObject;
+            while (src != null && src != this)
+            {
+                if (src is Button) return;
+                src = VisualTreeHelper.GetParent(src);
+            }
+
             if (e.ClickCount == 2)
             {
-                // 双击切换最大化/还原
                 if (this.WindowState == WindowState.Maximized)
                     this.WindowState = WindowState.Normal;
                 else
@@ -8647,7 +8665,6 @@ public async Task SendArticle()
             }
             else
             {
-                // 单击拖动窗口
                 this.DragMove();
             }
         }

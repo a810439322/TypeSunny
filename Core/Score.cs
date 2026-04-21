@@ -367,7 +367,10 @@ static internal class Score
                             report.Add("回改" + Score.GetCorrection().ToString("F0"));
                         break;
                     case "禁用回改":
-                        if (Config.GetBool("显示_禁用回改") && Config.GetBool("禁用回改"))
+                        if (Config.GetBool("显示_禁用回改") && Config.GetBool("禁用回改")
+                            && StateManager.txtSource != TxtSource.raceApi
+                            && StateManager.txtSource != TxtSource.jbs
+                            && StateManager.txtSource != TxtSource.jisucup)
                             report.Add("【禁用回改】");
                         break;
                     case "退格":
