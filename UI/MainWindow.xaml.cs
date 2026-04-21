@@ -1509,10 +1509,11 @@ namespace TypeSunny.UI
                         bottomBorder.Visibility = Visibility.Visible;
                     }
 
-                    double savedWindowHeight = Config.GetDouble("窗口高度");
-                    double rRatio = Config.GetDouble("成绩区高度比例");
-                    if (rRatio <= 0 || rRatio >= 1) rRatio = 0.2;
-                    _expandedWindowHeight = savedWindowHeight / (1 - rRatio);
+                    double expandedH = Config.GetDouble("展开窗口高度");
+                    if (expandedH > 300)
+                        _expandedWindowHeight = expandedH;
+                    else
+                        _expandedWindowHeight = Config.GetDouble("窗口高度") + 150;
 
                     this.Dispatcher.BeginInvoke(new Action(() =>
                     {
@@ -1738,10 +1739,11 @@ namespace TypeSunny.UI
                         }), System.Windows.Threading.DispatcherPriority.Loaded);
 
                         // 保存展开时的窗口高度
-                        double swh = Config.GetDouble("窗口高度");
-                        double rr = Config.GetDouble("成绩区高度比例");
-                        if (rr <= 0 || rr >= 1) rr = 0.2;
-                        _expandedWindowHeight = swh / (1 - rr);
+                        double ewh = Config.GetDouble("展开窗口高度");
+                        if (ewh > 300)
+                            _expandedWindowHeight = ewh;
+                        else
+                            _expandedWindowHeight = Config.GetDouble("窗口高度") + 150;
                     }), System.Windows.Threading.DispatcherPriority.Loaded);
                     }
                     else
@@ -5443,6 +5445,8 @@ public async Task SendArticle()
 
             Config.Set("窗口坐标X", this.Left, 0);
             Config.Set("窗口坐标Y", this.Top, 0);
+            Config.Set("窗口高度", this.Height, 0);
+            Config.Set("窗口宽度", this.Width, 0);
             SaveDisplayInputRatio();
             Config.WriteConfig(0);
 
@@ -8163,8 +8167,7 @@ public async Task SendArticle()
             {
                 // 收起：先获取各区域的比例，然后隐藏成绩区，最后调整窗口高度
                 _expandedWindowHeight = this.ActualHeight;
-
-                // 计算grid_a的内容高度
+                Config.dicts["展开窗口高度"] = _expandedWindowHeight.ToString("F0");
                 double gridContentHeight = 0;
                 for (int i = 0; i < grid_a.RowDefinitions.Count; i++)
                 {

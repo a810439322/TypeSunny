@@ -71,8 +71,17 @@ namespace TypeSunny.UI.Modes
             _savedTypingRowHeightValue = parentGrid.RowDefinitions[4].ActualHeight;
 
             // 锁定 Row 6 为像素值，释放的空间全部给 Row 2
-            double resultsH = parentGrid.RowDefinitions[6].ActualHeight;
-            parentGrid.RowDefinitions[6].Height = new GridLength(resultsH, GridUnitType.Pixel);
+            // 如果成绩区已收起（Height=0px），保持为 0
+            var row6Height = parentGrid.RowDefinitions[6].Height;
+            if (row6Height.IsAbsolute && row6Height.Value == 0)
+            {
+                parentGrid.RowDefinitions[6].Height = new GridLength(0, GridUnitType.Pixel);
+            }
+            else
+            {
+                double resultsH = parentGrid.RowDefinitions[6].ActualHeight;
+                parentGrid.RowDefinitions[6].Height = new GridLength(resultsH, GridUnitType.Pixel);
+            }
 
             parentGrid.RowDefinitions[3].Height = new GridLength(0);
             parentGrid.RowDefinitions[4].Height = new GridLength(0, GridUnitType.Auto);
