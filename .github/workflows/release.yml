@@ -136,21 +136,20 @@ jobs:
           echo "Zip size: $((Get-Item $zipFile).Length / 1MB) MB"
 
           $uploaded = $false
-          for ($i = 1; $i -le 3; $i++) {
-            echo "Upload attempt $i/3..."
+          for ($i = 1; $i -le 10; $i++) {
+            echo "Upload attempt $i/10..."
             try {
               $form = @{
-                access_token = $token
                 file = Get-Item $zipFile
               }
-              Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${releaseId}/attach_files" `
+              Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${releaseId}/attach_files?access_token=${token}" `
                 -Method Post -Form $form
               echo "Upload completed on attempt $i"
               $uploaded = $true
               break
             } catch {
               echo "Attempt $i failed: $($_.Exception.Message)"
-              if ($i -lt 3) {
+              if ($i -lt 10) {
                 echo "Waiting 10 seconds before retry..."
                 Start-Sleep -Seconds 10
               }
