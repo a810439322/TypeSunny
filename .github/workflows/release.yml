@@ -117,29 +117,23 @@ jobs:
           VERSION=${{ steps.version.outputs.version }}
           MSG="${{ steps.commit.outputs.message }}"
 
-          # 先尝试删除已有的同名 release
-          EXISTING=$(curl -s "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/tags/v${VERSION}?access_token=${{ secrets.GITEE_TOKEN }}")
-          EXISTING_ID=$(echo "$EXISTING" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
-          if [ -n "$EXISTING_ID" ]; then
-            echo "Deleting existing Gitee release: $EXISTING_ID"
-            curl -s -X DELETE "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${EXISTING_ID}?access_token=${{ secrets.GITEE_TOKEN }}"
-          fi
+          # 用 jq 构建 JSON，避免特殊字符破坏格式
+          PAYLOAD=$(jq -n \
+            --arg token "${{ secrets.GITEE_TOKEN }}" \
+            --arg tag "v${VERSION}" \
+            --arg name "晴跟打 v${VERSION}" \
+            --arg body "$MSG" \
+            '{access_token: $token, tag_name: $tag, name: $name, body: $body, target_commitish: "master"}')
 
-          # 创建 Release
+          echo "Creating Gitee release..."
           RESPONSE=$(curl -s -X POST \
             "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases" \
             -H "Content-Type: application/json" \
-            -d "{
-              \"access_token\": \"${{ secrets.GITEE_TOKEN }}\",
-              \"tag_name\": \"v${VERSION}\",
-              \"name\": \"晴跟打 v${VERSION}\",
-              \"body\": \"${MSG}\",
-              \"target_commitish\": \"master\"
-            }")
+            -d "$PAYLOAD")
 
-          echo "Create release response: $RESPONSE"
+          echo "Response: $RESPONSE"
 
-          RELEASE_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null)
+          RELEASE_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
 
           if [ -z "$RELEASE_ID" ]; then
             echo "Failed to create Gitee release"
@@ -148,7 +142,6 @@ jobs:
 
           echo "Gitee Release ID: $RELEASE_ID"
 
-          # 上传附件
           curl -s -X POST \
             "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${RELEASE_ID}/attach_files" \
             -H "Content-Type: multipart/form-data" \
