@@ -89,6 +89,14 @@ jobs:
           git diff --cached --quiet || git commit -m "ci: update version info to ${{ steps.version.outputs.version }}"
           git push origin master
 
+      - name: Delete existing release and tag
+        shell: bash
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          gh release delete "v${VERSION}" --yes --cleanup-tag 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
