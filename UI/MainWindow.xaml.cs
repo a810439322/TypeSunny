@@ -4935,15 +4935,9 @@ public async Task SendArticle()
 
         // 版本检测定时器
         private System.Windows.Threading.DispatcherTimer _versionCheckTimer;
-        // 标记用户是否已关闭更新提醒
-        private bool _updateReminderDismissed = false;
 
-        /// <summary>
-        /// 启动版本检测（启动时检查 + 定时器每小时检查一次）
-        /// </summary>
         private void StartVersionCheck()
         {
-            // 启动时立即检查一次（如果距离上次检查超过24小时）
             Task.Run(async () =>
             {
                 try
@@ -4953,11 +4947,8 @@ public async Task SendArticle()
                     {
                         Dispatcher.Invoke(() =>
                         {
-                            // 只有在用户没有关闭过提醒时才显示
-                            if (!_updateReminderDismissed)
-                            {
+                            if (VersionManager.ShouldShowReminder)
                                 ShowUpdateReminder();
-                            }
                         });
                     }
                 }
@@ -4967,18 +4958,15 @@ public async Task SendArticle()
                 }
             });
 
-            // 启动定时器：每小时检查一次是否超过24小时
             _versionCheckTimer = new System.Windows.Threading.DispatcherTimer();
-            _versionCheckTimer.Interval = TimeSpan.FromHours(1); // 每小时检查一次
+            _versionCheckTimer.Interval = TimeSpan.FromHours(1);
             _versionCheckTimer.Tick += async (s, e) =>
             {
                 try
                 {
                     bool hasUpdate = await VersionManager.CheckUpdateAsync();
-                    if (hasUpdate)
+                    if (hasUpdate && VersionManager.ShouldShowReminder)
                     {
-                        // 真正检查到有更新时，重置标志，允许显示提醒
-                        _updateReminderDismissed = false;
                         ShowUpdateReminder();
                     }
                 }
@@ -4990,25 +4978,18 @@ public async Task SendArticle()
             _versionCheckTimer.Start();
         }
 
-        /// <summary>
-        /// 显示更新提醒
-        /// </summary>
         private void ShowUpdateReminder()
         {
-            // 检查窗口是否已关闭或正在关闭
             if (!IsLoaded)
                 return;
 
-            // 如果用户已经关闭过提醒，不重复显示（除非24小时后重新检查）
-            if (_updateReminderDismissed)
+            if (!VersionManager.ShouldShowReminder)
                 return;
 
-            // 查找按钮
             var btn = this.FindName("BtnUpdateReminder") as System.Windows.Controls.Button;
             if (btn == null)
                 return;
 
-            // 如果提醒已经可见，不需要重复显示
             if (btn.Visibility == Visibility.Visible)
                 return;
 
@@ -5019,21 +5000,20 @@ public async Task SendArticle()
             }
             catch
             {
-                // 窗口已关闭，忽略错误
             }
         }
 
-        /// <summary>
-        /// 更新提醒被点击
-        /// </summary>
         private void BtnUpdateReminder_Click(object sender, RoutedEventArgs e)
         {
-            var btn = sender as System.Windows.Controls.Button;
-            if (btn != null)
+            var dialog = new UI.UpdateDialog(this);
+            dialog.ShowDialog();
+
+            if (dialog.Result == UI.UpdateDialogResult.IgnoreVersion ||
+                dialog.Result == UI.UpdateDialogResult.DismissToday)
             {
-                btn.Visibility = Visibility.Collapsed;
-                _updateReminderDismissed = true;  // 标记用户已关闭
-                VersionManager.DismissUpdateReminder();
+                var btn = sender as System.Windows.Controls.Button;
+                if (btn != null)
+                    btn.Visibility = Visibility.Collapsed;
             }
         }
 

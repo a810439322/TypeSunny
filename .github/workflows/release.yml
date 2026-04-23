@@ -1,0 +1,145 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore TypeSunny.sln
+
+      - name: Build Release
+        run: msbuild TypeSunny.sln /p:Configuration=Release /p:Platform="Any CPU" /m
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(cat Version/version.txt | tr -d '\r\n ')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Get commit message
+        id: commit
+        shell: bash
+        run: |
+          MSG=$(git log -1 --pretty=%B | head -1)
+          echo "message=$MSG" >> $GITHUB_OUTPUT
+
+      - name: Create full package
+        shell: bash
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          mkdir -p "release-staging/full"
+          cp -r bin/Release/* "release-staging/full/"
+
+      - name: Create update package
+        shell: bash
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          mkdir -p "release-staging/update"
+          cd bin/Release
+          # 只复制 exe, dll, xml, pdb, config 文件（不含子目录的资源）
+          find . -maxdepth 1 -type f \( \
+            -name "*.exe" -o -name "*.dll" -o -name "*.xml" \
+            -o -name "*.pdb" -o -name "*.config" \
+          \) -exec cp {} "../../release-staging/update/" \;
+
+      - name: Zip packages
+        shell: bash
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          cd release-staging/full && zip -r "../../晴跟打${VERSION}全量包.zip" . && cd ../..
+          cd release-staging/update && zip -r "../../晴跟打${VERSION}更新包.zip" . && cd ../..
+
+      - name: Update update.json
+        shell: bash
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          MSG=$(git log -1 --pretty=%B)
+          cat > Version/update.json << JSONEOF
+          {
+            "version": "${VERSION}",
+            "changelog": "${MSG}",
+            "update_url": "https://gitee.com/fuchuxuan/TypeSunny/releases/download/v${VERSION}/晴跟打${VERSION}更新包.zip",
+            "full_url": "https://gitee.com/fuchuxuan/TypeSunny/releases/download/v${VERSION}/晴跟打${VERSION}全量包.zip"
+          }
+          JSONEOF
+
+      - name: Commit update.json
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Version/update.json
+          git diff --cached --quiet || git commit -m "ci: update version info to ${{ steps.version.outputs.version }}"
+          git push origin master
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: 晴跟打 v${{ steps.version.outputs.version }}
+          body: ${{ steps.commit.outputs.message }}
+          files: |
+            晴跟打${{ steps.version.outputs.version }}全量包.zip
+            晴跟打${{ steps.version.outputs.version }}更新包.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Gitee Release
+        shell: bash
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          MSG="${{ steps.commit.outputs.message }}"
+
+          # 创建 Release
+          RESPONSE=$(curl -s -X POST \
+            "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"access_token\": \"${{ secrets.GITEE_TOKEN }}\",
+              \"tag_name\": \"v${VERSION}\",
+              \"name\": \"晴跟打 v${VERSION}\",
+              \"body\": \"${MSG}\",
+              \"target_commitish\": \"master\"
+            }")
+
+          RELEASE_ID=$(echo "$RESPONSE" | python -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null)
+
+          if [ -z "$RELEASE_ID" ]; then
+            echo "Failed to create Gitee release"
+            echo "Response: $RESPONSE"
+            exit 1
+          fi
+
+          echo "Gitee Release ID: $RELEASE_ID"
+
+          # 上传全量包
+          curl -s -X POST \
+            "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${RELEASE_ID}/attach_files" \
+            -H "Content-Type: multipart/form-data" \
+            -F "access_token=${{ secrets.GITEE_TOKEN }}" \
+            -F "file=@晴跟打${VERSION}全量包.zip"
+
+          # 上传更新包
+          curl -s -X POST \
+            "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${RELEASE_ID}/attach_files" \
+            -H "Content-Type: multipart/form-data" \
+            -F "access_token=${{ secrets.GITEE_TOKEN }}" \
+            -F "file=@晴跟打${VERSION}更新包.zip"
+
+          echo "Gitee release created and files uploaded"

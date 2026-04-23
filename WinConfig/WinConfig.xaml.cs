@@ -981,7 +981,6 @@ namespace TypeSunny
             }
             else if (itemKey == "最新版本")
             {
-                // 最新版本：文本框 + 刷新按钮
                 var panel = new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
@@ -1007,9 +1006,20 @@ namespace TypeSunny
                     Content = "刷新",
                     Width = 60,
                     Height = 28,
-                    Margin = new Thickness(0, 0, 0, 0),
+                    Margin = new Thickness(0, 0, 5, 0),
                     VerticalAlignment = VerticalAlignment.Center
                 };
+
+                var updateBtn = new Button
+                {
+                    Content = "立即更新",
+                    Width = 70,
+                    Height = 28,
+                    FontWeight = FontWeights.Bold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Visibility = VersionManager.HasUpdate ? Visibility.Visible : Visibility.Collapsed
+                };
+
                 refreshBtn.Click += async (s, e) =>
                 {
                     refreshBtn.IsEnabled = false;
@@ -1018,6 +1028,7 @@ namespace TypeSunny
                     {
                         await VersionManager.CheckUpdateAsync(forceRefresh: true);
                         tb.Text = VersionManager.LatestVersion;
+                        updateBtn.Visibility = VersionManager.HasUpdate ? Visibility.Visible : Visibility.Collapsed;
                     }
                     catch (Exception ex)
                     {
@@ -1029,7 +1040,15 @@ namespace TypeSunny
                         refreshBtn.IsEnabled = true;
                     }
                 };
+
+                updateBtn.Click += (s, e) =>
+                {
+                    var dialog = new UI.UpdateDialog(this);
+                    dialog.ShowDialog();
+                };
+
                 panel.Children.Add(refreshBtn);
+                panel.Children.Add(updateBtn);
 
                 valueControl = panel;
             }

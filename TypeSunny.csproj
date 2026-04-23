@@ -164,6 +164,9 @@
     <Compile Include="UI\WinStatistics.xaml.cs">
       <DependentUpon>WinStatistics.xaml</DependentUpon>
     </Compile>
+    <Compile Include="UI\UpdateDialog.xaml.cs">
+      <DependentUpon>UpdateDialog.xaml</DependentUpon>
+    </Compile>
     <Compile Include="WinTrainer\TrainerConfig.cs" />
     <Compile Include="WinTrainer\TrainerLog.cs" />
     <Compile Include="WinTrainer\WinTrainer.xaml.cs">
@@ -201,6 +204,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="UI\WinStatistics.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="UI\UpdateDialog.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
