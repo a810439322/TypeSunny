@@ -159,6 +159,25 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- 关闭按钮样式（右上角圆角） -->
+        <Style x:Key="TitleBarCloseButtonStyle" TargetType="Button" BasedOn="{StaticResource TitleBarButtonStyle}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="0,4,0,0">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#E81123"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Window.Effect>
@@ -197,7 +216,7 @@
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
                             <Button x:Name="BtnMinimize" Content="━" Click="BtnMinimize_Click" Style="{StaticResource TitleBarButtonStyle}"/>
                             <Button x:Name="BtnMaximize" Content="◻" Click="BtnMaximize_Click" Style="{StaticResource TitleBarButtonStyle}"/>
-                            <Button x:Name="BtnClose" Content="×" Click="BtnClose_Click" Style="{StaticResource TitleBarButtonStyle}"/>
+                            <Button x:Name="BtnClose" Content="×" Click="BtnClose_Click" Style="{StaticResource TitleBarCloseButtonStyle}"/>
                         </StackPanel>
                     </Grid>
                 </Border>

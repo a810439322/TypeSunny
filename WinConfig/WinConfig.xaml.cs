@@ -209,6 +209,7 @@ namespace TypeSunny
                     Title = "成绩",
                     Items = new[]
                     {
+                        "成绩显示时间",
                         "成绩签名"
                     }
                 },
@@ -543,8 +544,43 @@ namespace TypeSunny
         {
             FrameworkElement valueControl = null;
 
+            if (itemKey == "成绩显示时间")
+            {
+                var options = new[] {
+                    "关闭",
+                    "HH:mm",
+                    "HH:mm:ss",
+                    "MM-dd HH:mm",
+                    "MM-dd HH:mm:ss",
+                    "MM/dd HH:mm",
+                    "MM月dd日 HH:mm",
+                    "yyyy-MM-dd HH:mm",
+                    "yyyy/MM/dd HH:mm:ss",
+                };
+                var cb = new ComboBox
+                {
+                    Width = 200,
+                    Margin = new Thickness(0, 8, 0, 8),
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Foreground = this.Foreground,
+                    Background = this.Background,
+                };
+                foreach (var opt in options)
+                    cb.Items.Add(opt);
+                int idx = Array.IndexOf(options, itemValue);
+                cb.SelectedIndex = idx >= 0 ? idx : 3;
+                cb.SelectionChanged += (s, e) =>
+                {
+                    if (cb.SelectedIndex >= 0)
+                    {
+                        Config.Set("成绩显示时间", options[cb.SelectedIndex]);
+                        RefreshMainWindowResults();
+                    }
+                };
+                valueControl = cb;
+            }
             // 根据配置项类型创建对应的控件
-            if (itemValue == "是" || itemValue == "否")
+            else if (itemValue == "是" || itemValue == "否")
             {
                 var chk = new CheckBox
                 {
@@ -3004,6 +3040,25 @@ namespace TypeSunny
             {
                 System.Diagnostics.Debug.WriteLine($"更新进度条显示失败: {ex.Message}");
             }
+        }
+
+        private void RefreshMainWindowResults()
+        {
+            try
+            {
+                foreach (Window window in Application.Current.Windows)
+                {
+                    if (window is MainWindow mainWindow)
+                    {
+                        mainWindow.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            mainWindow.UpdateTypingStat();
+                        }), System.Windows.Threading.DispatcherPriority.Normal);
+                        break;
+                    }
+                }
+            }
+            catch (Exception) { }
         }
 
         // 标题栏拖动

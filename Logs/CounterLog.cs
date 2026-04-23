@@ -401,10 +401,19 @@ namespace TypeSunny.Logs
             return sb.ToString();
         }
 
-        /// <summary>从文件分页读取更多成绩记录</summary>
-        static public List<string> LoadMoreResults(int skip, int count)
+        /// <summary>获取内存中的成绩记录（带时间戳）</summary>
+        static public List<(long timestamp, string content)> GetDailyResultsWithTimestamp()
         {
-            var results = new List<string>();
+            var results = new List<(long, string)>();
+            foreach (var record in DailyResults)
+                results.Add((record.Timestamp, record.Content));
+            return results;
+        }
+
+        /// <summary>从文件分页读取更多成绩记录（带时间戳）</summary>
+        static public List<(long timestamp, string content)> LoadMoreResults(int skip, int count)
+        {
+            var results = new List<(long, string)>();
             if (!File.Exists(ResultPath))
                 return results;
 
@@ -423,7 +432,7 @@ namespace TypeSunny.Logs
                 all.Sort((a, b) => b.Timestamp.CompareTo(a.Timestamp));
 
                 for (int i = skip; i < all.Count && results.Count < count; i++)
-                    results.Add(all[i].Content);
+                    results.Add((all[i].Timestamp, all[i].Content));
             }
             catch (Exception) { }
 

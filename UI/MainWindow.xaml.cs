@@ -2219,7 +2219,7 @@ namespace TypeSunny.UI
         }
 
 
-        private List<List<string>> ResultRows = new List<List<string>>();
+        private List<(long timestamp, List<string> items)> ResultRows = new List<(long, List<string>)>();
         private string trainerStatText = ""; // 练单器统计文本
 
         /// <summary>
@@ -2235,7 +2235,7 @@ namespace TypeSunny.UI
         {
             if (!string.IsNullOrEmpty(newReport))
             {
-                var items = new List<string>(newReport.Split(new[] { "  " }, StringSplitOptions.RemoveEmptyEntries));
+                var items = Score.ParseReportLine(newReport);
                 UpdateTypingStat(items);
             }
             else
@@ -2326,7 +2326,8 @@ namespace TypeSunny.UI
 
             if (newReportItems != null && newReportItems.Count > 0)
             {
-                ResultRows.Insert(0, newReportItems);
+                long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                ResultRows.Insert(0, (now, newReportItems));
                 if (ResultRows.Count > 30)
                     ResultRows.RemoveAt(ResultRows.Count - 1);
                 string plainReport = string.Join("  ", newReportItems);
@@ -2335,7 +2336,32 @@ namespace TypeSunny.UI
 
             if (ResultRows.Count > 0)
             {
-                sb.Append(Score.FormatRows(ResultRows));
+                var itemRows = new List<List<string>>();
+                foreach (var r in ResultRows)
+                    itemRows.Add(r.items);
+                string formatted = Score.FormatRows(itemRows);
+
+                string timeFormat = Config.GetString("成绩显示时间");
+                if (timeFormat == "是") timeFormat = "MM-dd HH:mm";
+                if (timeFormat != "否" && timeFormat != "关闭" && !string.IsNullOrEmpty(timeFormat))
+                {
+                    var lines = formatted.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+                    var sbRows = new StringBuilder();
+                    for (int i = 0; i < lines.Length && i < ResultRows.Count; i++)
+                    {
+                        if (i > 0) sbRows.AppendLine();
+                        var dt = DateTimeOffset.FromUnixTimeSeconds(ResultRows[i].timestamp).LocalDateTime;
+                        sbRows.Append(dt.ToString(timeFormat));
+                        sbRows.Append("  ");
+                        sbRows.Append(lines[i]);
+                    }
+                    sb.Append(sbRows);
+                }
+                else
+                {
+                    sb.Append(formatted);
+                }
+
                 int total = CounterLog.GetTotalResultCount();
                 if (total > ResultRows.Count)
                     sb.AppendLine("\n▼ 滚动查看更多 (" + (total - ResultRows.Count) + " 条)");
@@ -4784,13 +4810,9 @@ public async Task SendArticle()
 
             // 加载当日成绩记录
             CounterLog.LoadDailyResults();
-            string savedResults = CounterLog.GetDailyResults();
             ResultRows.Clear();
-            if (!string.IsNullOrWhiteSpace(savedResults))
-            {
-                foreach (string line in savedResults.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
-                    ResultRows.Add(new List<string>(line.Split(new[] { "  " }, StringSplitOptions.RemoveEmptyEntries)));
-            }
+            foreach (var r in CounterLog.GetDailyResultsWithTimestamp())
+                ResultRows.Add((r.timestamp, Score.ParseReportLine(r.content)));
 
             // 强制刷新窗体背景色和字体色（确保主题生效）
             Dispatcher.BeginInvoke(new Action(() =>
@@ -8177,13 +8199,22 @@ public async Task SendArticle()
         {
             var sv = sender as System.Windows.Controls.ScrollViewer;
             if (sv == null) return;
+
+            // 滚到底部：加载更多
             if (sv.VerticalOffset >= sv.ScrollableHeight - 1 && CounterLog.GetTotalResultCount() > ResultRows.Count)
             {
                 var more = CounterLog.LoadMoreResults(ResultRows.Count, 30);
-                foreach (var line in more)
-                    ResultRows.Add(new List<string>(line.Split(new[] { "  " }, StringSplitOptions.RemoveEmptyEntries)));
+                foreach (var r in more)
+                    ResultRows.Add((r.timestamp, Score.ParseReportLine(r.content)));
                 if (more.Count > 0)
                     UpdateTypingStat();
+            }
+
+            // 滚到顶部：裁回30条
+            if (sv.VerticalOffset <= 0 && ResultRows.Count > 30)
+            {
+                ResultRows.RemoveRange(30, ResultRows.Count - 30);
+                UpdateTypingStat();
             }
         }
 
@@ -8222,8 +8253,25 @@ public async Task SendArticle()
             if (string.IsNullOrWhiteSpace(lineText))
                 return;
 
-            // 去掉 PadRight 的尾部空格，还原成紧凑格式
-            var parts = lineText.Split(new[] { "  " }, StringSplitOptions.RemoveEmptyEntries);
+            // 如果行首有时间前缀，去掉后再解析
+            string timeFormat = Config.GetString("成绩显示时间");
+            if (timeFormat == "是") timeFormat = "MM-dd HH:mm";
+            if (timeFormat != "否" && timeFormat != "关闭" && !string.IsNullOrEmpty(timeFormat))
+            {
+                int prefixLen = DateTime.Now.ToString(timeFormat).Length + 2; // +2 for "  "
+                if (lineText.Length > prefixLen)
+                {
+                    try
+                    {
+                        DateTime.ParseExact(lineText.Substring(0, prefixLen - 2), timeFormat,
+                            System.Globalization.CultureInfo.InvariantCulture);
+                        lineText = lineText.Substring(prefixLen);
+                    }
+                    catch { }
+                }
+            }
+
+            var parts = Score.ParseReportLine(lineText);
             string cleanText = string.Join(" ", parts);
 
             try
@@ -8246,15 +8294,19 @@ public async Task SendArticle()
             TbxResults.Select(start, length);
             string saved = TbxResults.SelectedText;
 
-            // 短暂替换该行文本显示提示
+            var sv = GetScrollViewer(TbxResults);
+            double scrollOffset = sv?.VerticalOffset ?? 0;
+
             string text = TbxResults.Text;
             string before = text.Substring(0, start);
             string after = text.Substring(start + length);
             TbxResults.Text = before + tipLine + after;
+            sv?.ScrollToVerticalOffset(scrollOffset);
 
             await System.Threading.Tasks.Task.Delay(800);
 
             TbxResults.Text = before + saved + after;
+            sv?.ScrollToVerticalOffset(scrollOffset);
         }
 
         private void BtnTrainer_Click(object sender, RoutedEventArgs e)

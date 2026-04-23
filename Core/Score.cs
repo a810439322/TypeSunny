@@ -482,6 +482,70 @@ static internal class Score
             return pad > 0 ? s + new string(' ', pad) : s;
         }
 
+        private static readonly string[] ScoreItemPrefixes = new string[]
+        {
+            "速度", "击键", "码长", "字数", "重打", "总键数", "键法", "回改",
+            "退格", "键准", "废码", "打词率", "选重", "标顶", "用时",
+            "错字", "少", "多", "盲打正确率", "看打正确率",
+            "【禁用回改】", "【盲打模式】", "【看打模式】", "【首打】",
+            "普(", "易(", "中(", "难(", "超难(", "水(",
+        };
+
+        public static List<string> ParseReportLine(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                return new List<string>();
+
+            line = line.Trim();
+
+            // 先尝试双空格拆分（新格式）
+            var parts = line.Split(new[] { "  " }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length > 3)
+            {
+                var result = new List<string>();
+                foreach (var p in parts)
+                    result.Add(p.Trim());
+                return result;
+            }
+
+            // 老格式：单空格分隔，用前缀识别拆分
+            var items = new List<string>();
+            int i = 0;
+            while (i < line.Length)
+            {
+                // 跳过空格
+                while (i < line.Length && line[i] == ' ') i++;
+                if (i >= line.Length) break;
+
+                // 找下一个成绩项的起始位置
+                int nextStart = line.Length;
+                for (int j = i + 1; j < line.Length; j++)
+                {
+                    // 检查是否有空格+前缀的模式
+                    if (line[j - 1] == ' ')
+                    {
+                        foreach (var prefix in ScoreItemPrefixes)
+                        {
+                            if (j + prefix.Length <= line.Length && line.Substring(j, prefix.Length) == prefix)
+                            {
+                                nextStart = j;
+                                goto found;
+                            }
+                        }
+                        // 检查版本签名（末尾的 xxxVersion 或中文签名）
+                    }
+                }
+                found:
+
+                string item = line.Substring(i, nextStart - i).Trim();
+                if (!string.IsNullOrEmpty(item))
+                    items.Add(item);
+                i = nextStart;
+            }
+
+            return items;
+        }
+
         public static string FormatRows(List<List<string>> rows)
         {
             if (rows.Count == 0) return "";
