@@ -7,7 +7,6 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    if: "!contains(github.event.head_commit.message, 'ci: update version info')"
     permissions:
       contents: write
 
@@ -39,22 +38,20 @@ jobs:
 
       - name: Get commit message
         id: commit
-        shell: bash
+        shell: pwsh
         run: |
-          MSG=$(git log -1 --pretty=%B | head -1)
-          echo "message=$MSG" >> $GITHUB_OUTPUT
+          $msg = (git log -1 --pretty=%s)
+          echo "message=$msg" >> $env:GITHUB_OUTPUT
 
       - name: Create packages
         shell: pwsh
         run: |
           $ver = "${{ steps.version.outputs.version }}"
 
-          # 全量包：bin/Release 全部内容
           $fullZip = "TypeSunny-${ver}-full.zip"
           Compress-Archive -Path "bin\Release\*" -DestinationPath $fullZip -Force
           echo "Created $fullZip"
 
-          # 更新包：只有根目录下的 exe, dll, xml, pdb, config
           $updateDir = "release-staging\update"
           New-Item -ItemType Directory -Path $updateDir -Force | Out-Null
           Get-ChildItem "bin\Release" -File | Where-Object {
@@ -64,32 +61,7 @@ jobs:
           Compress-Archive -Path "$updateDir\*" -DestinationPath $updateZip -Force
           echo "Created $updateZip"
 
-      - name: Update update.json
-        shell: pwsh
-        run: |
-          $ver = "${{ steps.version.outputs.version }}"
-          $msg = (git log -1 --pretty=%s).Trim()
-          $msgEscaped = $msg.Replace('\', '\\').Replace('"', '\"').Replace("`r", '').Replace("`n", '\n')
-          $json = @"
-          {
-            "version": "$ver",
-            "changelog": "$msgEscaped",
-            "update_url": "https://gitee.com/fuchuxuan/TypeSunny/releases/download/v$ver/TypeSunny-${ver}-update.zip",
-            "full_url": "https://gitee.com/fuchuxuan/TypeSunny/releases/download/v$ver/TypeSunny-${ver}-full.zip"
-          }
-          "@
-          $json.Trim() | Set-Content -Path "Version\update.json" -Encoding UTF8 -NoNewline
-
-      - name: Commit update.json
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Version/update.json
-          git diff --cached --quiet || git commit -m "ci: update version info to ${{ steps.version.outputs.version }}"
-          git push origin master
-
-      - name: Delete existing release and tag
+      - name: Delete existing GitHub release
         shell: bash
         run: |
           VERSION=${{ steps.version.outputs.version }}
@@ -112,46 +84,33 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Gitee Release
-        shell: bash
+        shell: pwsh
         run: |
-          VERSION=${{ steps.version.outputs.version }}
-          MSG="${{ steps.commit.outputs.message }}"
+          $ver = "${{ steps.version.outputs.version }}"
+          $msg = "${{ steps.commit.outputs.message }}"
 
-          # 用 jq 构建 JSON，避免特殊字符破坏格式
-          PAYLOAD=$(jq -n \
-            --arg token "${{ secrets.GITEE_TOKEN }}" \
-            --arg tag "v${VERSION}" \
-            --arg name "晴跟打 v${VERSION}" \
-            --arg body "$MSG" \
-            '{access_token: $token, tag_name: $tag, name: $name, body: $body, target_commitish: "master"}')
+          $body = @{
+            access_token = "${{ secrets.GITEE_TOKEN }}"
+            tag_name = "v$ver"
+            name = "晴跟打 v$ver"
+            body = $msg
+            target_commitish = "master"
+          } | ConvertTo-Json -Depth 3
 
-          echo "Creating Gitee release..."
-          RESPONSE=$(curl -s -X POST \
-            "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases" \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD")
+          $utf8 = [System.Text.Encoding]::UTF8
+          $bodyBytes = $utf8.GetBytes($body)
 
-          echo "Response: $RESPONSE"
+          $response = Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases" `
+            -Method Post -ContentType "application/json; charset=utf-8" `
+            -Body $bodyBytes
 
-          RELEASE_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
+          $releaseId = $response.id
+          echo "Gitee Release ID: $releaseId"
 
-          if [ -z "$RELEASE_ID" ]; then
-            echo "Failed to create Gitee release"
-            exit 1
-          fi
-
-          echo "Gitee Release ID: $RELEASE_ID"
-
-          curl -s -X POST \
-            "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${RELEASE_ID}/attach_files" \
-            -H "Content-Type: multipart/form-data" \
-            -F "access_token=${{ secrets.GITEE_TOKEN }}" \
-            -F "file=@TypeSunny-${VERSION}-full.zip"
-
-          curl -s -X POST \
-            "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${RELEASE_ID}/attach_files" \
-            -H "Content-Type: multipart/form-data" \
-            -F "access_token=${{ secrets.GITEE_TOKEN }}" \
-            -F "file=@TypeSunny-${VERSION}-update.zip"
-
-          echo "Gitee release created and files uploaded"
+          $form = @{
+            access_token = "${{ secrets.GITEE_TOKEN }}"
+            file = Get-Item "TypeSunny-${ver}-update.zip"
+          }
+          Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${releaseId}/attach_files" `
+            -Method Post -Form $form
+          echo "Uploaded update zip"

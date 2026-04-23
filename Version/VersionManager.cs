@@ -9,7 +9,7 @@ namespace TypeSunny
 {
     public static class VersionManager
     {
-        private const string UpdateJsonUrl = "https://gitee.com/fuchuxuan/TypeSunny/raw/master/Version/update.json";
+        private const string GiteeReleaseApi = "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/latest";
 
         public static string CurrentVersion => GeneratedVersion.CurrentVersion;
 
@@ -130,12 +130,12 @@ namespace TypeSunny
                     return false;
                 }
 
-                Debug.WriteLine($"[VersionManager] 开始检查更新，请求: {UpdateJsonUrl}");
+                Debug.WriteLine($"[VersionManager] 开始检查更新，请求: {GiteeReleaseApi}");
 
                 using (var client = new HttpClient(new HttpClientHandler { UseProxy = false }))
                 {
                     client.Timeout = TimeSpan.FromSeconds(10);
-                    var response = await client.GetAsync(UpdateJsonUrl);
+                    var response = await client.GetAsync(GiteeReleaseApi);
                     if (!response.IsSuccessStatusCode)
                     {
                         Debug.WriteLine($"[VersionManager] HTTP请求失败: {response.StatusCode}");
@@ -150,7 +150,8 @@ namespace TypeSunny
                     }
 
                     var json = JObject.Parse(content);
-                    string latestVersion = json["version"]?.ToString()?.Trim();
+                    string tagName = json["tag_name"]?.ToString()?.Trim() ?? "";
+                    string latestVersion = tagName.TrimStart('v', 'V');
 
                     if (string.IsNullOrEmpty(latestVersion) ||
                         !System.Text.RegularExpressions.Regex.IsMatch(latestVersion, @"^\d{6}$"))
@@ -160,9 +161,24 @@ namespace TypeSunny
                     }
 
                     LatestVersion = latestVersion;
-                    Changelog = json["changelog"]?.ToString() ?? "";
-                    UpdatePackageUrl = json["update_url"]?.ToString() ?? "";
-                    FullPackageUrl = json["full_url"]?.ToString() ?? "";
+                    Changelog = json["body"]?.ToString() ?? "";
+
+                    string updateUrl = "";
+                    var assets = json["assets"] as JArray;
+                    if (assets != null)
+                    {
+                        foreach (var asset in assets)
+                        {
+                            string name = asset["name"]?.ToString() ?? "";
+                            if (name.Contains("update"))
+                            {
+                                updateUrl = asset["browser_download_url"]?.ToString() ?? "";
+                                break;
+                            }
+                        }
+                    }
+                    UpdatePackageUrl = updateUrl;
+                    FullPackageUrl = $"https://github.com/a810439322/TypeSunny/releases/tag/v{latestVersion}";
                     LastCheckTime = DateTime.Now;
 
                     Debug.WriteLine($"[VersionManager] 获取到最新版本: {latestVersion}");
@@ -203,6 +219,6 @@ namespace TypeSunny
             LastCheckTime = DateTime.Now;
         }
 
-        public static string GetVersionFileUrl() => UpdateJsonUrl;
+        public static string GetVersionFileUrl() => GiteeReleaseApi;
     }
 }

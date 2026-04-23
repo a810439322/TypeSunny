@@ -139,7 +139,10 @@ namespace TypeSunny.UI
 
                 if (!File.Exists(updaterPath))
                 {
-                    MessageBox.Show("未找到 Updater.exe，请前往 Gitee 下载全量包。", "提示");
+                    var result = MessageBox.Show("未找到 Updater.exe，需要下载全量包。\n是否打开下载页面？", "提示",
+                        MessageBoxButton.YesNo);
+                    if (result == MessageBoxResult.Yes)
+                        Process.Start("https://github.com/a810439322/TypeSunny/releases/latest");
                     panelButtons.Visibility = Visibility.Visible;
                     gridProgress.Visibility = Visibility.Collapsed;
                     return;
