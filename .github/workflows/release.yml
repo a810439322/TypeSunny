@@ -99,7 +99,20 @@ jobs:
           echo "Version: $ver"
           echo "Message: $msg"
           echo "Token length: $($token.Length)"
-          echo "Token prefix: $($token.Substring(0, [Math]::Min(4, $token.Length)))***"
+
+          echo "--- Step 0: Deleting existing release if any ---"
+          try {
+            $releases = Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases?access_token=${token}" -Method Get
+            foreach ($rel in $releases) {
+              if ($rel.tag_name -eq "v$ver") {
+                echo "Found existing release ID $($rel.id) with tag v$ver, deleting..."
+                Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/$($rel.id)?access_token=${token}" -Method Delete
+                echo "Deleted"
+              }
+            }
+          } catch {
+            echo "No existing release found or error: $($_.Exception.Message)"
+          }
 
           echo "--- Step 1: Creating release ---"
           $body = @{
