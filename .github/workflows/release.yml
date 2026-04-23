@@ -85,32 +85,69 @@ jobs:
 
       - name: Create Gitee Release
         shell: pwsh
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          $OutputEncoding = [System.Text.Encoding]::UTF8
+
           $ver = "${{ steps.version.outputs.version }}"
           $msg = "${{ steps.commit.outputs.message }}"
+          $token = $env:GITEE_TOKEN
 
+          echo "=== Gitee Release ==="
+          echo "Version: $ver"
+          echo "Message: $msg"
+          echo "Token length: $($token.Length)"
+          echo "Token prefix: $($token.Substring(0, [Math]::Min(4, $token.Length)))***"
+
+          echo "--- Step 1: Creating release ---"
           $body = @{
-            access_token = "${{ secrets.GITEE_TOKEN }}"
+            access_token = $token
             tag_name = "v$ver"
-            name = "晴跟打 v$ver"
+            name = "TypeSunny v$ver"
             body = $msg
             target_commitish = "master"
           } | ConvertTo-Json -Depth 3
 
+          echo "Request body: $body"
+
           $utf8 = [System.Text.Encoding]::UTF8
           $bodyBytes = $utf8.GetBytes($body)
 
-          $response = Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases" `
-            -Method Post -ContentType "application/json; charset=utf-8" `
-            -Body $bodyBytes
+          try {
+            $response = Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases" `
+              -Method Post -ContentType "application/json; charset=utf-8" `
+              -Body $bodyBytes
+            echo "Release created successfully"
+          } catch {
+            echo "ERROR creating release: $($_.Exception.Message)"
+            echo "Response: $($_.ErrorDetails.Message)"
+            throw
+          }
 
           $releaseId = $response.id
           echo "Gitee Release ID: $releaseId"
 
+          echo "--- Step 2: Uploading update zip ---"
+          $zipFile = "TypeSunny-${ver}-update.zip"
+          echo "Zip file: $zipFile"
+          echo "Zip exists: $(Test-Path $zipFile)"
+          echo "Zip size: $((Get-Item $zipFile).Length / 1MB) MB"
+
           $form = @{
-            access_token = "${{ secrets.GITEE_TOKEN }}"
-            file = Get-Item "TypeSunny-${ver}-update.zip"
+            access_token = $token
+            file = Get-Item $zipFile
           }
-          Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${releaseId}/attach_files" `
-            -Method Post -Form $form
-          echo "Uploaded update zip"
+
+          try {
+            Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${releaseId}/attach_files" `
+              -Method Post -Form $form
+            echo "Upload completed"
+          } catch {
+            echo "ERROR uploading: $($_.Exception.Message)"
+            echo "Response: $($_.ErrorDetails.Message)"
+            throw
+          }
+
+          echo "=== Gitee Release Done ==="

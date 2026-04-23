@@ -154,7 +154,7 @@ namespace TypeSunny
                     string latestVersion = tagName.TrimStart('v', 'V');
 
                     if (string.IsNullOrEmpty(latestVersion) ||
-                        !System.Text.RegularExpressions.Regex.IsMatch(latestVersion, @"^\d{6}$"))
+                        !System.Text.RegularExpressions.Regex.IsMatch(latestVersion, @"^\d{8}$"))
                     {
                         Debug.WriteLine($"[VersionManager] 版本号格式不正确: {latestVersion}");
                         return false;
