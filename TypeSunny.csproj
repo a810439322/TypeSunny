@@ -101,6 +101,7 @@
     <Compile Include="Article\ArticleConfig.cs" />
     <Compile Include="Article\ArticleManager.cs" />
     <Compile Include="Article\Filter.cs" />
+    <Compile Include="Article\RegexFilter.cs" />
     <Compile Include="Article\TxtFileEncoder.cs" />
     <Compile Include="Article\WinArticle.xaml.cs">
       <DependentUpon>WinArticle.xaml</DependentUpon>

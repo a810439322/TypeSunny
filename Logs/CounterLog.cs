@@ -17,6 +17,7 @@ namespace TypeSunny.Logs
         static private Dictionary<string, Dictionary<string, int>> Dict = new Dictionary<string, Dictionary<string, int>>();
         static public int[] Buffer = new int[1000];
         static private List<ResultRecord> DailyResults = new List<ResultRecord>();
+        static private int _addCountSinceCleanup = 0;
 
         // 队列和锁（用于异步写入统计文件）
         private static readonly Queue<bool> _writeQueue = new Queue<bool>();
@@ -273,32 +274,28 @@ namespace TypeSunny.Logs
                 long now = GetCurrentTimestamp();
                 long twentyFourHoursAgo = now - 24 * 3600;
 
+                var all = new List<ResultRecord>();
                 foreach (string line in lines)
                 {
                     if (string.IsNullOrWhiteSpace(line))
                         continue;
 
-                    // 格式：时间戳\t成绩内容
                     string[] parts = line.Split(new char[] { '\t' }, 2);
                     if (parts.Length == 2 && long.TryParse(parts[0], out long timestamp))
                     {
-                        DailyResults.Add(new ResultRecord(timestamp, parts[1]));
+                        all.Add(new ResultRecord(timestamp, parts[1]));
                     }
                 }
 
-                // 按时间戳倒序排列（最新的在前面）
-                DailyResults.Sort((a, b) => b.Timestamp.CompareTo(a.Timestamp));
+                all.Sort((a, b) => b.Timestamp.CompareTo(a.Timestamp));
 
-                // 24小时内的全部保留 + 超过24小时的最近30条
-                List<ResultRecord> filtered = new List<ResultRecord>();
+                // 过滤：24h内全保留 + 超过24h最近30条
+                var filtered = new List<ResultRecord>();
                 int oldCount = 0;
-
-                foreach (var record in DailyResults)
+                foreach (var record in all)
                 {
                     if (record.Timestamp >= twentyFourHoursAgo)
-                    {
                         filtered.Add(record);
-                    }
                     else if (oldCount < 30)
                     {
                         filtered.Add(record);
@@ -306,7 +303,14 @@ namespace TypeSunny.Logs
                     }
                 }
 
-                DailyResults = filtered;
+                // 写回过滤后的文件
+                var filteredLines = new List<string>();
+                foreach (var record in filtered)
+                    filteredLines.Add(record.ToString());
+                File.WriteAllLines(ResultPath, filteredLines);
+
+                // 内存只保留最新30条
+                DailyResults = filtered.Count > 30 ? filtered.GetRange(0, 30) : filtered;
             }
             catch (Exception)
             {
@@ -321,10 +325,70 @@ namespace TypeSunny.Logs
                 return;
 
             long timestamp = GetCurrentTimestamp();
-            DailyResults.Insert(0, new ResultRecord(timestamp, result));
+            var record = new ResultRecord(timestamp, result);
+            DailyResults.Insert(0, record);
+            if (DailyResults.Count > 30)
+                DailyResults.RemoveAt(DailyResults.Count - 1);
+
+            // 追加写文件
+            try
+            {
+                File.AppendAllText(ResultPath, record.ToString() + Environment.NewLine);
+            }
+            catch (Exception) { }
+
+            // 每100条触发一次文件清理（异步）
+            _addCountSinceCleanup++;
+            if (_addCountSinceCleanup >= 100)
+            {
+                _addCountSinceCleanup = 0;
+                System.Threading.Tasks.Task.Run(() => CleanupResultFile());
+            }
         }
 
-        /// <summary>获取所有成绩记录（不含时间戳）</summary>
+        /// <summary>清理成绩文件：删除超过24h且超出30条的旧记录</summary>
+        static private void CleanupResultFile()
+        {
+            if (!File.Exists(ResultPath))
+                return;
+
+            try
+            {
+                string[] lines = File.ReadAllLines(ResultPath);
+                long twentyFourHoursAgo = GetCurrentTimestamp() - 24 * 3600;
+
+                var filtered = new List<string>();
+                int oldCount = 0;
+
+                // 先解析排序
+                var all = new List<ResultRecord>();
+                foreach (string line in lines)
+                {
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
+                    string[] parts = line.Split(new char[] { '\t' }, 2);
+                    if (parts.Length == 2 && long.TryParse(parts[0], out long ts))
+                        all.Add(new ResultRecord(ts, parts[1]));
+                }
+                all.Sort((a, b) => b.Timestamp.CompareTo(a.Timestamp));
+
+                foreach (var r in all)
+                {
+                    if (r.Timestamp >= twentyFourHoursAgo)
+                        filtered.Add(r.ToString());
+                    else if (oldCount < 30)
+                    {
+                        filtered.Add(r.ToString());
+                        oldCount++;
+                    }
+                }
+
+                File.WriteAllLines(ResultPath, filtered);
+            }
+            catch (Exception) { }
+        }
+
+        /// <summary>获取内存中的成绩记录（最多30条）</summary>
         static public string GetDailyResults()
         {
             StringBuilder sb = new StringBuilder();
@@ -337,22 +401,55 @@ namespace TypeSunny.Logs
             return sb.ToString();
         }
 
-        /// <summary>同步保存成绩记录</summary>
-        static public void SaveDailyResults()
+        /// <summary>从文件分页读取更多成绩记录</summary>
+        static public List<string> LoadMoreResults(int skip, int count)
         {
+            var results = new List<string>();
+            if (!File.Exists(ResultPath))
+                return results;
+
             try
             {
-                List<string> lines = new List<string>();
-                foreach (var record in DailyResults)
+                string[] lines = File.ReadAllLines(ResultPath);
+                var all = new List<ResultRecord>();
+                foreach (string line in lines)
                 {
-                    lines.Add(record.ToString());
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
+                    string[] parts = line.Split(new char[] { '\t' }, 2);
+                    if (parts.Length == 2 && long.TryParse(parts[0], out long timestamp))
+                        all.Add(new ResultRecord(timestamp, parts[1]));
                 }
-                File.WriteAllLines(ResultPath, lines);
+                all.Sort((a, b) => b.Timestamp.CompareTo(a.Timestamp));
+
+                for (int i = skip; i < all.Count && results.Count < count; i++)
+                    results.Add(all[i].Content);
             }
-            catch (Exception)
+            catch (Exception) { }
+
+            return results;
+        }
+
+        /// <summary>获取文件中的总记录数</summary>
+        static public int GetTotalResultCount()
+        {
+            if (!File.Exists(ResultPath))
+                return 0;
+            try
             {
-                // 忽略写入错误
+                int count = 0;
+                foreach (string line in File.ReadAllLines(ResultPath))
+                    if (!string.IsNullOrWhiteSpace(line)) count++;
+                return count;
             }
+            catch { return 0; }
+        }
+
+        /// <summary>同步保存成绩记录（启动时清理用）</summary>
+        static public void SaveDailyResults()
+        {
+            // 不再从内存写回，因为内存只有30条
+            // 文件由 AddDailyResult 追加写入，LoadDailyResults 启动时清理
         }
 
         /// <summary>异步保存成绩记录（兼容旧代码）</summary>

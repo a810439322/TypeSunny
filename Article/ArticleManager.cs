@@ -207,6 +207,14 @@ namespace TypeSunny
                 rt = Filter.ProcFilter(rt);
             }
 
+            if (RegexFilter.IsEnabled("本地发文"))
+            {
+                var filterResult = RegexFilter.Apply(rt);
+                if (filterResult.IsBlocked)
+                    return null;
+                rt = filterResult.Text;
+            }
+
             if (RemoveSpace)
                 rt = rt.Replace(" ", "").Replace("　", "");
             else //去除首末空格
@@ -256,6 +264,7 @@ namespace TypeSunny
                 return "";
 
             string txt = GetCurrentSection();
+            if (txt == null) return null;
 
             StringBuilder sb = new StringBuilder();
 

@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -197,6 +198,11 @@ namespace TypeSunny
                         "赛文服务器地址",
                         "赛文输入法"
                     }
+                },
+                new ConfigCategory
+                {
+                    Title = "过滤",
+                    Items = new string[0]
                 },
                 new ConfigCategory
                 {
@@ -521,6 +527,12 @@ namespace TypeSunny
             if (category.Title == "成绩")
             {
                 AppendScoreItemsList(currentRow);
+            }
+
+            // 如果是"过滤"分类，构建自定义过滤设置UI
+            if (category.Title == "过滤")
+            {
+                AppendFilterSettings(currentRow);
             }
         }
 
@@ -1714,6 +1726,606 @@ namespace TypeSunny
             cancelBtn.Click += (s, args) => window.Close();
 
             window.ShowDialog();
+        }
+
+        // ========== 过滤设置 ==========
+
+        private System.Windows.Threading.DispatcherTimer _previewDebounceTimer;
+
+        private void AppendFilterSettings(int startRow)
+        {
+            int row = startRow;
+            Brush subtitleBrush = new SolidColorBrush(Color.FromRgb(100, 150, 200));
+            Brush hintBrush = new SolidColorBrush(Color.FromRgb(150, 150, 150));
+
+            // 从主题配置读取输入框颜色
+            Brush inputBg, inputFg;
+            try
+            {
+                string bgHex = Config.GetString("窗体背景色");
+                string fgHex = Config.GetString("窗体字体色");
+                var bgColor = (Color)ColorConverter.ConvertFromString("#" + bgHex);
+                var fgColor = (Color)ColorConverter.ConvertFromString("#" + fgHex);
+                // 输入框背景比窗体背景稍亮/暗一点，增加区分度
+                byte offsetR = (byte)(bgColor.R > 128 ? Math.Max(0, bgColor.R - 15) : Math.Min(255, bgColor.R + 20));
+                byte offsetG = (byte)(bgColor.G > 128 ? Math.Max(0, bgColor.G - 15) : Math.Min(255, bgColor.G + 20));
+                byte offsetB = (byte)(bgColor.B > 128 ? Math.Max(0, bgColor.B - 15) : Math.Min(255, bgColor.B + 20));
+                inputBg = new SolidColorBrush(Color.FromRgb(offsetR, offsetG, offsetB));
+                inputFg = new SolidColorBrush(fgColor);
+            }
+            catch
+            {
+                inputBg = SystemColors.WindowBrush;
+                inputFg = SystemColors.WindowTextBrush;
+            }
+
+            // --- 生效范围 ---
+            var scopeRow = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+
+            var scopeHeader = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+            scopeHeader.Children.Add(new TextBlock
+            {
+                Text = "生效范围",
+                FontSize = 15,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 16, 0)
+            });
+            scopeHeader.Children.Add(new TextBlock
+            {
+                Text = "赛文始终不受过滤影响",
+                FontSize = 12,
+                Foreground = hintBrush,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            scopeRow.Children.Add(scopeHeader);
+
+            var scopeGrid = new UniformGrid { Rows = 1, Columns = 4 };
+            scopeGrid.SizeChanged += (s, e) =>
+            {
+                double w = e.NewSize.Width;
+                if (w >= 480) { scopeGrid.Columns = 4; scopeGrid.Rows = 1; }
+                else if (w >= 240) { scopeGrid.Columns = 2; scopeGrid.Rows = 2; }
+                else { scopeGrid.Columns = 1; scopeGrid.Rows = 4; }
+            };
+            string[] scopeNames = { "文来", "本地发文", "练单器", "剪贴板" };
+            foreach (var name in scopeNames)
+            {
+                string configKey = "过滤_生效_" + name;
+
+                var itemPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Margin = new Thickness(0, 4, 0, 4),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                itemPanel.Children.Add(new TextBlock
+                {
+                    Text = name,
+                    FontSize = 14,
+                    Width = 60,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 8, 0)
+                });
+
+                var chk = new CheckBox
+                {
+                    IsChecked = Config.GetBool(configKey),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Style = FindResource("ModernToggleStyle") as Style
+                };
+                chk.Checked += (s, e) => Config.Set(configKey, "是");
+                chk.Unchecked += (s, e) => Config.Set(configKey, "否");
+                itemPanel.Children.Add(chk);
+
+                scopeGrid.Children.Add(itemPanel);
+            }
+            scopeRow.Children.Add(scopeGrid);
+
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(scopeRow, row);
+            Grid.SetColumnSpan(scopeRow, 2);
+            ContentPanel.Children.Add(scopeRow);
+            row++;
+
+            // --- 文来最大重试次数 ---
+            var retryLabel = new TextBlock
+            {
+                Text = "文来最大重试次数",
+                FontSize = 15,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 10, 20, 10),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto, MinHeight = 38 });
+            Grid.SetRow(retryLabel, row);
+            Grid.SetColumn(retryLabel, 0);
+            ContentPanel.Children.Add(retryLabel);
+
+            var retryPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 5) };
+            var retryBox = new TextBox
+            {
+                Text = Config.GetString("过滤_文来最大重试"),
+                Width = 60,
+                VerticalAlignment = VerticalAlignment.Center,
+                Background = inputBg,
+                Foreground = inputFg
+            };
+            retryBox.TextChanged += (s, e) =>
+            {
+                if (int.TryParse(retryBox.Text, out int val) && val >= 1 && val <= 50)
+                    Config.Set("过滤_文来最大重试", retryBox.Text);
+            };
+            retryPanel.Children.Add(retryBox);
+            var retryHint = new TextBlock
+            {
+                Text = "  文来遇到被屏蔽的文章时，自动换下一篇的最大次数",
+                FontSize = 12,
+                Foreground = hintBrush,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            retryPanel.Children.Add(retryHint);
+            Grid.SetRow(retryPanel, row);
+            Grid.SetColumn(retryPanel, 1);
+            ContentPanel.Children.Add(retryPanel);
+            row++;
+
+            // --- 简单模式 ---
+            row = AppendFilterSection(row, "关键词（普通用户推荐）", subtitleBrush, hintBrush, inputBg, inputFg,
+                "屏蔽关键词", "过滤_黑名单关键词", "一行一个，包含该词的文章将被跳过",
+                "替换关键词", "过滤_替换关键词", "查找", "替换为（留空则删除）",
+                out TextBox bkKeywordBox, out TextBox rpKeywordBox);
+
+            // --- 高级模式 ---
+            row = AppendFilterSection(row, "正则表达式（进阶用户）", subtitleBrush, hintBrush, inputBg, inputFg,
+                "屏蔽正则", "过滤_黑名单正则", "一行一条正则，匹配到的文章将被跳过",
+                "替换正则", "过滤_替换正则", "正则表达式", "替换为（留空则删除）",
+                out TextBox bkRegexBox, out TextBox rpRegexBox);
+
+            // --- 配置参考说明 ---
+            var helpSep = new Border
+            {
+                Height = 1,
+                Background = new SolidColorBrush(Color.FromRgb(60, 60, 60)),
+                Margin = new Thickness(0, 15, 0, 10)
+            };
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(helpSep, row);
+            Grid.SetColumnSpan(helpSep, 2);
+            ContentPanel.Children.Add(helpSep);
+            row++;
+
+            var helpTitlePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+            helpTitlePanel.Children.Add(new Border
+            {
+                Width = 3,
+                Background = subtitleBrush,
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Stretch
+            });
+            helpTitlePanel.Children.Add(new TextBlock
+            {
+                Text = "配置参考",
+                FontSize = 16,
+                FontWeight = FontWeights.Bold,
+                Foreground = subtitleBrush
+            });
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(helpTitlePanel, row);
+            Grid.SetColumnSpan(helpTitlePanel, 2);
+            ContentPanel.Children.Add(helpTitlePanel);
+            row++;
+
+            var helpText = new TextBlock
+            {
+                Text = "【关键词】一行一个。屏蔽：包含该词的文章会被跳过。替换：旧词=>新词，省略=>新词则删除。\n" +
+                       "  例：（求全订）         → 删除所有（求全订）\n" +
+                       "  例：旧词=>新词         → 把旧词替换成新词\n\n" +
+                       "【正则】一行一条。屏蔽：匹配到的文章会被跳过。替换：正则=>替换内容，省略则删除匹配项。\n" +
+                       "  例：。{7,}             → 匹配连续7个以上句号\n" +
+                       "  例：\\d{3,}            → 匹配3位以上数字\n" +
+                       "  例：[a-zA-Z]+          → 匹配英文单词",
+                FontSize = 12,
+                Foreground = hintBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(12, 0, 0, 15)
+            };
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(helpText, row);
+            Grid.SetColumnSpan(helpText, 2);
+            ContentPanel.Children.Add(helpText);
+            row++;
+
+            // --- 效果预览 ---
+            var previewSep = new Border
+            {
+                Height = 1,
+                Background = new SolidColorBrush(Color.FromRgb(60, 60, 60)),
+                Margin = new Thickness(0, 15, 0, 10)
+            };
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(previewSep, row);
+            Grid.SetColumnSpan(previewSep, 2);
+            ContentPanel.Children.Add(previewSep);
+            row++;
+
+            var previewTitlePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+            previewTitlePanel.Children.Add(new Border
+            {
+                Width = 3,
+                Background = subtitleBrush,
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Stretch
+            });
+            previewTitlePanel.Children.Add(new TextBlock
+            {
+                Text = "效果预览",
+                FontSize = 16,
+                FontWeight = FontWeights.Bold,
+                Foreground = subtitleBrush
+            });
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(previewTitlePanel, row);
+            Grid.SetColumnSpan(previewTitlePanel, 2);
+            ContentPanel.Children.Add(previewTitlePanel);
+            row++;
+
+            var previewInput = new TextBox
+            {
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.Wrap,
+                MinHeight = 60,
+                MaxHeight = 120,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Margin = new Thickness(12, 5, 0, 5),
+                Background = inputBg,
+                Foreground = inputFg
+            };
+            SetPlaceholder(previewInput, "粘贴测试文本...");
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(previewInput, row);
+            Grid.SetColumnSpan(previewInput, 2);
+            ContentPanel.Children.Add(previewInput);
+            row++;
+
+            var previewResult = new RichTextBox
+            {
+                IsReadOnly = true,
+                MinHeight = 60,
+                MaxHeight = 200,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Margin = new Thickness(12, 5, 0, 15),
+                BorderThickness = new Thickness(1),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(80, 80, 80)),
+                Background = inputBg,
+                Foreground = inputFg
+            };
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(previewResult, row);
+            Grid.SetColumnSpan(previewResult, 2);
+            ContentPanel.Children.Add(previewResult);
+            row++;
+
+            // 防抖定时器
+            _previewDebounceTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+            _previewDebounceTimer.Tick += (s, e) =>
+            {
+                _previewDebounceTimer.Stop();
+                UpdateFilterPreview(previewInput, previewResult, bkKeywordBox, rpKeywordBox, bkRegexBox, rpRegexBox);
+            };
+
+            previewInput.TextChanged += (s, e) =>
+            {
+                _previewDebounceTimer.Stop();
+                _previewDebounceTimer.Start();
+            };
+        }
+
+        private int AppendFilterSection(int row, string title, Brush titleBrush, Brush hintBrush, Brush inputBg, Brush inputFg,
+            string label1, string configKey1, string placeholder1,
+            string label2, string configKey2, string leftHeader, string rightHeader,
+            out TextBox box1, out TextBox box2)
+        {
+            // 分隔线
+            var separator = new Border
+            {
+                Height = 1,
+                Background = new SolidColorBrush(Color.FromRgb(60, 60, 60)),
+                Margin = new Thickness(0, 15, 0, 10)
+            };
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(separator, row);
+            Grid.SetColumnSpan(separator, 2);
+            ContentPanel.Children.Add(separator);
+            row++;
+
+            // 区域标题（带左侧色条）
+            var titlePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+            titlePanel.Children.Add(new Border
+            {
+                Width = 3,
+                Background = titleBrush,
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Stretch
+            });
+            titlePanel.Children.Add(new TextBlock
+            {
+                Text = title,
+                FontSize = 16,
+                FontWeight = FontWeights.Bold,
+                Foreground = titleBrush
+            });
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(titlePanel, row);
+            Grid.SetColumnSpan(titlePanel, 2);
+            ContentPanel.Children.Add(titlePanel);
+            row++;
+
+            // 整个内容区域缩进
+            var contentWrapper = new StackPanel { Margin = new Thickness(12, 0, 0, 0) };
+
+            // Box 1: 黑名单（单框）
+            contentWrapper.Children.Add(new TextBlock { Text = label1, FontSize = 14, Margin = new Thickness(0, 5, 0, 2) });
+            contentWrapper.Children.Add(new TextBlock
+            {
+                Text = placeholder1,
+                FontSize = 12,
+                Foreground = hintBrush,
+                Margin = new Thickness(0, 0, 0, 4),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            box1 = new TextBox
+            {
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.Wrap,
+                MinHeight = 80,
+                MaxHeight = 200,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Text = RegexFilter.DecodeMultiline(Config.GetString(configKey1)),
+                Margin = new Thickness(0, 0, 0, 12),
+                Background = inputBg,
+                Foreground = inputFg
+            };
+            var capturedKey1 = configKey1;
+            var capturedBox1 = box1;
+            box1.TextChanged += (s, e) =>
+            {
+                Config.Set(capturedKey1, RegexFilter.EncodeMultiline(capturedBox1.Text));
+                RestartPreviewTimer();
+            };
+            contentWrapper.Children.Add(box1);
+
+            // Box 2: 替换（左右双框）
+            contentWrapper.Children.Add(new TextBlock { Text = label2, FontSize = 14, Margin = new Thickness(0, 5, 0, 2) });
+            contentWrapper.Children.Add(new TextBlock
+            {
+                Text = "左边填要查找的内容，右边填替换成什么（留空则删除），行数一一对应",
+                FontSize = 12,
+                Foreground = hintBrush,
+                Margin = new Thickness(0, 0, 0, 4),
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            // 列头
+            var headerGrid = new Grid { Margin = new Thickness(0, 0, 0, 2) };
+            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
+            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var leftLabel = new TextBlock { Text = leftHeader, FontSize = 12, Foreground = hintBrush };
+            var rightLabel = new TextBlock { Text = rightHeader, FontSize = 12, Foreground = hintBrush };
+            Grid.SetColumn(leftLabel, 0);
+            Grid.SetColumn(rightLabel, 2);
+            headerGrid.Children.Add(leftLabel);
+            headerGrid.Children.Add(rightLabel);
+            contentWrapper.Children.Add(headerGrid);
+
+            // 双框容器
+            var dualGrid = new Grid { Margin = new Thickness(0, 0, 0, 10) };
+            dualGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            dualGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
+            dualGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var leftBox = new TextBox
+            {
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.Wrap,
+                MinHeight = 80,
+                MaxHeight = 200,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Background = inputBg,
+                Foreground = inputFg
+            };
+            var rightBox = new TextBox
+            {
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.Wrap,
+                MinHeight = 80,
+                MaxHeight = 200,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Background = inputBg,
+                Foreground = inputFg
+            };
+
+            // 从 config 解析 => 格式，拆成左右
+            LoadDualBoxes(configKey2, leftBox, rightBox);
+
+            var capturedKey2 = configKey2;
+            bool updating = false;
+            TextChangedEventHandler syncHandler = (s, e) =>
+            {
+                if (updating) return;
+                updating = true;
+                SaveDualBoxes(capturedKey2, leftBox, rightBox);
+                RestartPreviewTimer();
+                updating = false;
+            };
+            leftBox.TextChanged += syncHandler;
+            rightBox.TextChanged += syncHandler;
+
+            Grid.SetColumn(leftBox, 0);
+            Grid.SetColumn(rightBox, 2);
+            dualGrid.Children.Add(leftBox);
+            dualGrid.Children.Add(rightBox);
+            contentWrapper.Children.Add(dualGrid);
+
+            // box2 指向 leftBox，用于预览时读取
+            box2 = leftBox;
+
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(contentWrapper, row);
+            Grid.SetColumnSpan(contentWrapper, 2);
+            ContentPanel.Children.Add(contentWrapper);
+            row++;
+
+            return row;
+        }
+
+        private void LoadDualBoxes(string configKey, TextBox leftBox, TextBox rightBox)
+        {
+            string decoded = RegexFilter.DecodeMultiline(Config.GetString(configKey));
+            if (string.IsNullOrEmpty(decoded)) return;
+
+            var leftLines = new List<string>();
+            var rightLines = new List<string>();
+            foreach (var line in decoded.Split('\n'))
+            {
+                int idx = line.IndexOf("=>", StringComparison.Ordinal);
+                if (idx >= 0)
+                {
+                    leftLines.Add(line.Substring(0, idx));
+                    rightLines.Add(line.Substring(idx + 2));
+                }
+                else
+                {
+                    leftLines.Add(line);
+                    rightLines.Add("");
+                }
+            }
+            leftBox.Text = string.Join("\n", leftLines);
+            rightBox.Text = string.Join("\n", rightLines);
+        }
+
+        private void SaveDualBoxes(string configKey, TextBox leftBox, TextBox rightBox)
+        {
+            var leftLines = leftBox.Text.Split('\n');
+            var rightLines = rightBox.Text.Split('\n');
+            int count = Math.Max(leftLines.Length, rightLines.Length);
+            var result = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                string left = i < leftLines.Length ? leftLines[i].TrimEnd('\r') : "";
+                string right = i < rightLines.Length ? rightLines[i].TrimEnd('\r') : "";
+                if (string.IsNullOrEmpty(left) && string.IsNullOrEmpty(right)) continue;
+                if (string.IsNullOrEmpty(right))
+                    result.Add(left);
+                else
+                    result.Add(left + "=>" + right);
+            }
+            Config.Set(configKey, RegexFilter.EncodeMultiline(string.Join("\n", result)));
+        }
+
+        private void RestartPreviewTimer()
+        {
+            if (_previewDebounceTimer != null)
+            {
+                _previewDebounceTimer.Stop();
+                _previewDebounceTimer.Start();
+            }
+        }
+
+        private void SetPlaceholder(TextBox textBox, string placeholder)
+        {
+            Brush normalBrush = textBox.Foreground;
+            Brush placeholderBrush = new SolidColorBrush(Color.FromRgb(140, 140, 140));
+
+            if (string.IsNullOrEmpty(textBox.Text))
+            {
+                textBox.Text = placeholder;
+                textBox.Foreground = placeholderBrush;
+                textBox.Tag = true;
+            }
+            textBox.GotFocus += (s, e) =>
+            {
+                if (textBox.Tag is true)
+                {
+                    textBox.Text = "";
+                    textBox.ClearValue(TextBox.ForegroundProperty);
+                    textBox.Tag = false;
+                }
+            };
+            textBox.LostFocus += (s, e) =>
+            {
+                if (string.IsNullOrEmpty(textBox.Text))
+                {
+                    textBox.Text = placeholder;
+                    textBox.Foreground = placeholderBrush;
+                    textBox.Tag = true;
+                }
+            };
+        }
+
+        private void UpdateFilterPreview(TextBox input, RichTextBox output,
+            TextBox bkKw, TextBox rpKw, TextBox bkRx, TextBox rpRx)
+        {
+            string text = (input.Tag is true) ? "" : input.Text;
+            if (string.IsNullOrEmpty(text))
+            {
+                output.Document.Blocks.Clear();
+                output.Document.Blocks.Add(new Paragraph(new Run("在上方输入文本查看过滤效果")
+                {
+                    Foreground = new SolidColorBrush(Color.FromRgb(140, 140, 140))
+                }));
+                return;
+            }
+
+            string bkKwText = (bkKw.Tag is true) ? "" : bkKw.Text;
+            string bkRxText = (bkRx.Tag is true) ? "" : bkRx.Text;
+            // 替换规则从 config 读取（已包含 => 格式）
+            string rpKwText = RegexFilter.DecodeMultiline(Config.GetString("过滤_替换关键词"));
+            string rpRxText = RegexFilter.DecodeMultiline(Config.GetString("过滤_替换正则"));
+
+            var result = RegexFilter.Preview(text, bkKwText, rpKwText, bkRxText, rpRxText);
+
+            output.Document.Blocks.Clear();
+
+            if (result.IsBlocked)
+            {
+                var para = new Paragraph();
+                para.Inlines.Add(new Run("  该文本命中屏蔽规则：" + result.BlockReason)
+                {
+                    Foreground = new SolidColorBrush(System.Windows.Media.Colors.White),
+                    Background = new SolidColorBrush(Color.FromRgb(220, 50, 50))
+                });
+                output.Document.Blocks.Add(para);
+
+                if (result.Diffs.Count > 0)
+                {
+                    var diffPara = new Paragraph();
+                    diffPara.Inlines.Add(new Run("\n替换结果（屏蔽前）：\n") { FontSize = 11 });
+                    diffPara.Inlines.Add(new Run(result.Text));
+                    output.Document.Blocks.Add(diffPara);
+                }
+            }
+            else if (result.Diffs.Count > 0)
+            {
+                var para = new Paragraph();
+                para.Inlines.Add(new Run("替换前：") { FontWeight = FontWeights.Bold, FontSize = 11 });
+                para.Inlines.Add(new Run("\n" + text + "\n\n"));
+                para.Inlines.Add(new Run("替换后：") { FontWeight = FontWeights.Bold, FontSize = 11 });
+                para.Inlines.Add(new Run("\n" + result.Text + "\n\n"));
+                para.Inlines.Add(new Run($"共 {result.Diffs.Count} 处替换") { FontSize = 11, Foreground = new SolidColorBrush(Color.FromRgb(100, 180, 100)) });
+                output.Document.Blocks.Add(para);
+            }
+            else
+            {
+                var para = new Paragraph(new Run("  无变化，文本未命中任何过滤规则")
+                {
+                    Foreground = new SolidColorBrush(Color.FromRgb(100, 180, 100))
+                });
+                output.Document.Blocks.Add(para);
+            }
         }
 
         // 强制显示的成绩项（勾选不可取消，但可参与排序）

@@ -2219,7 +2219,7 @@ namespace TypeSunny.UI
         }
 
 
-        private string TxtResult = "";
+        private List<List<string>> ResultRows = new List<List<string>>();
         private string trainerStatText = ""; // 练单器统计文本
 
         /// <summary>
@@ -2231,7 +2231,18 @@ namespace TypeSunny.UI
             UpdateTypingStat();
         }
 
-        public void UpdateTypingStat(string newReport = "")
+        public void UpdateTypingStat(string newReport)
+        {
+            if (!string.IsNullOrEmpty(newReport))
+            {
+                var items = new List<string>(newReport.Split(new[] { "  " }, StringSplitOptions.RemoveEmptyEntries));
+                UpdateTypingStat(items);
+            }
+            else
+                UpdateTypingStat((List<string>)null);
+        }
+
+        public void UpdateTypingStat(List<string> newReportItems = null)
         {
 
             CounterLog.Add("字数", CounterLog.Buffer[0]);
@@ -2313,16 +2324,22 @@ namespace TypeSunny.UI
 
             sb.AppendLine();
 
-            if (newReport != "")
+            if (newReportItems != null && newReportItems.Count > 0)
             {
-                TxtResult = newReport + "\n" + TxtResult;
-                // 保存当日成绩记录
-                CounterLog.AddDailyResult(newReport);
+                ResultRows.Insert(0, newReportItems);
+                if (ResultRows.Count > 30)
+                    ResultRows.RemoveAt(ResultRows.Count - 1);
+                string plainReport = string.Join("  ", newReportItems);
+                CounterLog.AddDailyResult(plainReport);
             }
 
-            sb.Append(TxtResult);
-
-
+            if (ResultRows.Count > 0)
+            {
+                sb.Append(Score.FormatRows(ResultRows));
+                int total = CounterLog.GetTotalResultCount();
+                if (total > ResultRows.Count)
+                    sb.AppendLine("\n▼ 滚动查看更多 (" + (total - ResultRows.Count) + " 条)");
+            }
 
             TbxResults.Text = sb.ToString();
         }
@@ -2489,11 +2506,11 @@ namespace TypeSunny.UI
 
                 await Dispatcher.InvokeAsync(() => { TbkStatusTop.Text = Score.Progress(); });
 
-                string typingStatReport = Score.Report(); // 提前计算，避免异步竞争
+                var typingStatItems = Score.ReportItems(); // 提前计算，避免异步竞争
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     if (savedRetypeType != RetypeType.wrongRetype && savedRetypeType != RetypeType.slowRetype)
-                        UpdateTypingStat(typingStatReport);
+                        UpdateTypingStat(typingStatItems);
                     else
                         UpdateTypingStat();
                 }));
@@ -3454,6 +3471,7 @@ public async Task SendArticle()
                 return;
 
             LoadText(content, RetypeType.first, TxtSource.book, false);
+            FocusInput();
 
             SendContentToClipboardOrQQ(content);
 
@@ -3655,6 +3673,10 @@ public async Task SendArticle()
         /// </summary>
         internal void HandleKeyDownStats(KeyEventArgs e)
         {
+            // Ctrl组合键不参与成绩统计（Ctrl+R载文、Ctrl+E等不应触发计时或计入击键）
+            if (e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Control) && e.Key != Key.ImeProcessed)
+                return;
+
             // 回车暂停
             if (e.Key == Key.Enter && StateManager.txtSource != TxtSource.changeSheng && StateManager.txtSource != TxtSource.jbs && StateManager.txtSource != TxtSource.jisucup && StateManager.txtSource != TxtSource.raceApi)
             {
@@ -4204,6 +4226,19 @@ public async Task SendArticle()
 
             var rt = ExtractRawTxt(rawTxt);
 
+            // 正则过滤：剪贴板载文
+            if (source == TxtSource.clipboard && RegexFilter.IsEnabled("剪贴板") && !string.IsNullOrWhiteSpace(rt.Item1))
+            {
+                var filterResult = RegexFilter.Apply(rt.Item1);
+                if (filterResult.IsBlocked)
+                {
+                    MessageBox.Show($"该文本被过滤规则屏蔽：{filterResult.BlockReason}", "过滤提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                if (filterResult.Text != rt.Item1)
+                    rt = new Tuple<string, int, string>(filterResult.Text, rt.Item2, rt.Item3);
+            }
+
             if (string.IsNullOrWhiteSpace(rt.Item1))
             {
                 return;
@@ -4749,7 +4784,13 @@ public async Task SendArticle()
 
             // 加载当日成绩记录
             CounterLog.LoadDailyResults();
-            TxtResult = CounterLog.GetDailyResults();
+            string savedResults = CounterLog.GetDailyResults();
+            ResultRows.Clear();
+            if (!string.IsNullOrWhiteSpace(savedResults))
+            {
+                foreach (string line in savedResults.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                    ResultRows.Add(new List<string>(line.Split(new[] { "  " }, StringSplitOptions.RemoveEmptyEntries)));
+            }
 
             // 强制刷新窗体背景色和字体色（确保主题生效）
             Dispatcher.BeginInvoke(new Action(() =>
@@ -7619,6 +7660,42 @@ public async Task SendArticle()
                 // 异步获取文章
                 ArticleData article = await ArticleFetcher.FetchArticleAsync(difficulty, maxLength);
 
+                // 正则过滤：文来模式下的重试逻辑
+                if (RegexFilter.IsEnabled("文来"))
+                {
+                    int maxRetry = Config.GetInt("过滤_文来最大重试");
+                    if (maxRetry < 1) maxRetry = 5;
+                    int retryCount = 0;
+
+                    while (retryCount < maxRetry)
+                    {
+                        if (string.IsNullOrEmpty(article.Content) ||
+                            article.Title == "配置错误" || article.Title == "接口错误" ||
+                            article.Title == "数据错误" || article.Title == "获取失败")
+                            break;
+
+                        var filterResult = RegexFilter.Apply(article.Content);
+                        if (!filterResult.IsBlocked)
+                        {
+                            article.Content = filterResult.Text;
+                            article.FullContent = filterResult.Text;
+                            break;
+                        }
+
+                        retryCount++;
+                        System.Diagnostics.Debug.WriteLine($"[过滤] 文来文章被屏蔽（{retryCount}/{maxRetry}）：{filterResult.BlockReason}");
+
+                        if (retryCount >= maxRetry)
+                        {
+                            MessageBox.Show($"连续 {maxRetry} 篇文章被过滤规则屏蔽，请检查过滤设置或换个分类。\n最后一条屏蔽原因：{filterResult.BlockReason}",
+                                "过滤提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                            return;
+                        }
+
+                        article = await ArticleFetcher.FetchArticleAsync(difficulty, maxLength);
+                    }
+                }
+
                 // 检查是否是错误消息
                 if (string.IsNullOrEmpty(article.Content) ||
                     article.Title == "配置错误" ||
@@ -7887,6 +7964,7 @@ public async Task SendArticle()
             ArticleManager.PrevSection();
             string content = await ArticleManager.GetFormattedCurrentSection();
             LoadText(content, RetypeType.first, TxtSource.book, false);
+            FocusInput();
             SendContentToClipboardOrQQ(content);
         }
 
@@ -7895,6 +7973,7 @@ public async Task SendArticle()
             ArticleManager.NextSection();
             string content = await ArticleManager.GetFormattedCurrentSection();
             LoadText(content, RetypeType.first, TxtSource.book, false);
+            FocusInput();
             SendContentToClipboardOrQQ(content);
         }
 
@@ -8078,6 +8157,104 @@ public async Task SendArticle()
         private void TbxResults_Loaded(object sender, RoutedEventArgs e)
         {
             UpdateTypingStat();
+            var sv = GetScrollViewer(TbxResults);
+            if (sv != null)
+                sv.ScrollChanged += TbxResults_ScrollChanged;
+        }
+
+        private static System.Windows.Controls.ScrollViewer GetScrollViewer(System.Windows.DependencyObject o)
+        {
+            if (o is System.Windows.Controls.ScrollViewer s) return s;
+            for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(o); i++)
+            {
+                var child = GetScrollViewer(System.Windows.Media.VisualTreeHelper.GetChild(o, i));
+                if (child != null) return child;
+            }
+            return null;
+        }
+
+        private void TbxResults_ScrollChanged(object sender, System.Windows.Controls.ScrollChangedEventArgs e)
+        {
+            var sv = sender as System.Windows.Controls.ScrollViewer;
+            if (sv == null) return;
+            if (sv.VerticalOffset >= sv.ScrollableHeight - 1 && CounterLog.GetTotalResultCount() > ResultRows.Count)
+            {
+                var more = CounterLog.LoadMoreResults(ResultRows.Count, 30);
+                foreach (var line in more)
+                    ResultRows.Add(new List<string>(line.Split(new[] { "  " }, StringSplitOptions.RemoveEmptyEntries)));
+                if (more.Count > 0)
+                    UpdateTypingStat();
+            }
+        }
+
+        private System.Windows.Threading.DispatcherTimer _longPressTimer;
+        private int _longPressCharIndex = -1;
+
+        private void TbxResults_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            _longPressCharIndex = TbxResults.GetCharacterIndexFromPoint(e.GetPosition(TbxResults), true);
+            if (_longPressTimer == null)
+            {
+                _longPressTimer = new System.Windows.Threading.DispatcherTimer();
+                _longPressTimer.Interval = TimeSpan.FromMilliseconds(1000);
+                _longPressTimer.Tick += LongPressTimer_Tick;
+            }
+            _longPressTimer.Start();
+        }
+
+        private void TbxResults_PreviewMouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (_longPressTimer != null)
+                _longPressTimer.Stop();
+        }
+
+        private void LongPressTimer_Tick(object sender, EventArgs e)
+        {
+            _longPressTimer.Stop();
+            if (_longPressCharIndex < 0 || _longPressCharIndex >= TbxResults.Text.Length)
+                return;
+
+            int lineIndex = TbxResults.GetLineIndexFromCharacterIndex(_longPressCharIndex);
+            if (lineIndex < 0)
+                return;
+
+            string lineText = TbxResults.GetLineText(lineIndex)?.TrimEnd('\r', '\n');
+            if (string.IsNullOrWhiteSpace(lineText))
+                return;
+
+            // 去掉 PadRight 的尾部空格，还原成紧凑格式
+            var parts = lineText.Split(new[] { "  " }, StringSplitOptions.RemoveEmptyEntries);
+            string cleanText = string.Join(" ", parts);
+
+            try
+            {
+                System.Windows.Clipboard.SetText(cleanText);
+                ShowCopyTip(lineIndex);
+            }
+            catch (Exception) { }
+        }
+
+        private async void ShowCopyTip(int lineIndex)
+        {
+            int charIndex = TbxResults.GetCharacterIndexFromLineIndex(lineIndex);
+            string originalLine = TbxResults.GetLineText(lineIndex);
+            string tipLine = "✓ 已复制到剪贴板";
+
+            int start = charIndex;
+            int length = originalLine.TrimEnd('\r', '\n').Length;
+
+            TbxResults.Select(start, length);
+            string saved = TbxResults.SelectedText;
+
+            // 短暂替换该行文本显示提示
+            string text = TbxResults.Text;
+            string before = text.Substring(0, start);
+            string after = text.Substring(start + length);
+            TbxResults.Text = before + tipLine + after;
+
+            await System.Threading.Tasks.Task.Delay(800);
+
+            TbxResults.Text = before + saved + after;
         }
 
         private void BtnTrainer_Click(object sender, RoutedEventArgs e)

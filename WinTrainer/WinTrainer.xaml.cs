@@ -330,6 +330,18 @@ namespace TypeSunny
             {
                 // 没有保存的数据，从文件读取文章内容
                 string mbtxt = File.ReadAllText(filename).Trim().Replace("\r", "");//.Replace(" ", "\t");
+
+                if (RegexFilter.IsEnabled("练单器"))
+                {
+                    var filterResult = RegexFilter.Apply(mbtxt);
+                    if (filterResult.IsBlocked)
+                    {
+                        MessageBox.Show($"该练习内容被过滤规则屏蔽：{filterResult.BlockReason}", "过滤提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
+                    mbtxt = filterResult.Text;
+                }
+
                 do
                 {
                     mbtxt = mbtxt.Replace("\n\n", "\n");

@@ -272,7 +272,7 @@ static internal class Score
             return result;
         }
 
-        public static string Report()
+        public static List<string> ReportItems()
         {
             List<string> report = new List<string>();
 
@@ -290,27 +290,26 @@ static internal class Score
 
             }
 
-            // 使用新的布尔配置检查成绩屏蔽
             bool isBime =  BimeHit > 0;
             bool notBime = !isBime;
 
-            // === 固定头部：段号 ===
+            string paragraphLabel;
             if (!string.IsNullOrEmpty(ArticleMark))
             {
-                report.Add("段" + ArticleMark);
+                paragraphLabel = "段" + ArticleMark;
             }
             else if (!string.IsNullOrEmpty(ParagraphString))
             {
-                report.Add("第" + ParagraphString + "段");
+                paragraphLabel = "第" + ParagraphString + "段";
             }
             else
             {
-                report.Add("第" + Paragraph + "段");
+                paragraphLabel = "第" + Paragraph + "段";
             }
+            report.Add(paragraphLabel);
 
             int TypeCount = RetypeCounter.Get(TextInfo.TextMD5);
 
-            // === 按配置顺序输出成绩项 ===
             foreach (string item in GetScoreOrder())
             {
                 switch (item)
@@ -326,9 +325,10 @@ static internal class Score
                     case "击键":
                         if (Config.GetBool("显示_击键"))
                         {
-                            report.Add("击键" + HitRate.ToString("F2"));
+                            string hitStr = "击键" + HitRate.ToString("F2");
                             if (StateManager.txtSource == TxtSource.trainer)
-                                report.Add("/" + WinTrainer.TargetHit.ToString("F2"));
+                                hitStr += " /" + WinTrainer.TargetHit.ToString("F2");
+                            report.Add(hitStr);
                         }
                         break;
                     case "码长":
@@ -379,7 +379,7 @@ static internal class Score
                         break;
                     case "键准":
                         if (Config.GetBool("显示_键准"))
-                            report.Add("键准" + GetAccuracy().ToString("P2"));
+                            report.Add("键准" + (GetAccuracy() * 100).ToString("F2") + "%");
                         break;
                     case "废码":
                         if (Config.GetBool("显示_废码") && notBime && WasteCodes > 0)
@@ -387,7 +387,7 @@ static internal class Score
                         break;
                     case "打词率":
                         if (Config.GetBool("显示_打词率") && notBime)
-                            report.Add("打词率" + GetCiRatio().ToString("P2"));
+                            report.Add("打词率" + (GetCiRatio() * 100).ToString("F2") + "%");
                         break;
                     case "选重":
                         if (Config.GetBool("显示_选重") && notBime)
@@ -433,7 +433,7 @@ static internal class Score
                         {
                             int wr = Math.Max(More, Less);
                             double ratio = Math.Round((double)(TotalWordCount - wr) / (double)TotalWordCount, 4);
-                            report.Add("盲打正确率" + ratio.ToString("P2"));
+                            report.Add("盲打正确率" + (ratio * 100).ToString("F2") + "%");
                         }
                         break;
                     case "看打正确率":
@@ -441,7 +441,7 @@ static internal class Score
                         {
                             int wr = Math.Max(More, Less);
                             double ratio = Math.Round((double)(TotalWordCount - wr) / (double)TotalWordCount, 4);
-                            report.Add("看打正确率" + ratio.ToString("P2"));
+                            report.Add("看打正确率" + (ratio * 100).ToString("F2") + "%");
                         }
                         break;
                     case "盲打模式":
@@ -459,9 +459,57 @@ static internal class Score
                 }
             }
 
-            // === 固定尾部 ===
             report.Add(StateManager.Version);
-            return string.Join(" ",report);
+            return report;
+        }
+
+        public static string Report()
+        {
+            return string.Join("  ", ReportItems());
+        }
+
+        public static int GetDisplayWidth(string s)
+        {
+            int width = 0;
+            foreach (char c in s)
+                width += c > 127 ? 2 : 1;
+            return width;
+        }
+
+        public static string PadRightByDisplayWidth(string s, int totalWidth)
+        {
+            int pad = totalWidth - GetDisplayWidth(s);
+            return pad > 0 ? s + new string(' ', pad) : s;
+        }
+
+        public static string FormatRows(List<List<string>> rows)
+        {
+            if (rows.Count == 0) return "";
+            int cols = 0;
+            foreach (var row in rows)
+                if (row.Count > cols) cols = row.Count;
+            int[] maxWidths = new int[cols];
+            foreach (var row in rows)
+                for (int i = 0; i < row.Count; i++)
+                {
+                    int w = GetDisplayWidth(row[i]);
+                    if (w > maxWidths[i]) maxWidths[i] = w;
+                }
+            var sb = new System.Text.StringBuilder();
+            for (int r = 0; r < rows.Count; r++)
+            {
+                if (r > 0) sb.AppendLine();
+                var row = rows[r];
+                for (int i = 0; i < row.Count; i++)
+                {
+                    if (i > 0) sb.Append("  ");
+                    if (i < row.Count - 1)
+                        sb.Append(PadRightByDisplayWidth(row[i], maxWidths[i]));
+                    else
+                        sb.Append(row[i]);
+                }
+            }
+            return sb.ToString();
         }
 
         static List<Key> KeysLeft = new List<Key>
