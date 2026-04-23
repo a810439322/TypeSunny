@@ -117,6 +117,15 @@ jobs:
           VERSION=${{ steps.version.outputs.version }}
           MSG="${{ steps.commit.outputs.message }}"
 
+          # 先尝试删除已有的同名 release
+          EXISTING=$(curl -s "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/tags/v${VERSION}?access_token=${{ secrets.GITEE_TOKEN }}")
+          EXISTING_ID=$(echo "$EXISTING" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+          if [ -n "$EXISTING_ID" ]; then
+            echo "Deleting existing Gitee release: $EXISTING_ID"
+            curl -s -X DELETE "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${EXISTING_ID}?access_token=${{ secrets.GITEE_TOKEN }}"
+          fi
+
+          # 创建 Release
           RESPONSE=$(curl -s -X POST \
             "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases" \
             -H "Content-Type: application/json" \
@@ -128,16 +137,18 @@ jobs:
               \"target_commitish\": \"master\"
             }")
 
-          RELEASE_ID=$(echo "$RESPONSE" | python -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null)
+          echo "Create release response: $RESPONSE"
+
+          RELEASE_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null)
 
           if [ -z "$RELEASE_ID" ]; then
             echo "Failed to create Gitee release"
-            echo "Response: $RESPONSE"
             exit 1
           fi
 
           echo "Gitee Release ID: $RELEASE_ID"
 
+          # 上传附件
           curl -s -X POST \
             "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${RELEASE_ID}/attach_files" \
             -H "Content-Type: multipart/form-data" \
