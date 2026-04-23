@@ -7,6 +7,7 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    if: "!contains(github.event.head_commit.message, 'ci: update version info')"
 
     steps:
       - name: Checkout
@@ -26,11 +27,11 @@ jobs:
 
       - name: Get version
         id: version
-        shell: bash
+        shell: pwsh
         run: |
-          VERSION=$(cat Version/version.txt | tr -d '\r\n ')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
+          $ver = (Get-Content "Version\version.txt" -Raw).Trim()
+          echo "version=$ver" >> $env:GITHUB_OUTPUT
+          echo "Version: $ver"
 
       - name: Get commit message
         id: commit
@@ -39,45 +40,41 @@ jobs:
           MSG=$(git log -1 --pretty=%B | head -1)
           echo "message=$MSG" >> $GITHUB_OUTPUT
 
-      - name: Create full package
-        shell: bash
+      - name: Create packages
+        shell: pwsh
         run: |
-          VERSION=${{ steps.version.outputs.version }}
-          mkdir -p "release-staging/full"
-          cp -r bin/Release/* "release-staging/full/"
+          $ver = "${{ steps.version.outputs.version }}"
 
-      - name: Create update package
-        shell: bash
-        run: |
-          VERSION=${{ steps.version.outputs.version }}
-          mkdir -p "release-staging/update"
-          cd bin/Release
-          # 只复制 exe, dll, xml, pdb, config 文件（不含子目录的资源）
-          find . -maxdepth 1 -type f \( \
-            -name "*.exe" -o -name "*.dll" -o -name "*.xml" \
-            -o -name "*.pdb" -o -name "*.config" \
-          \) -exec cp {} "../../release-staging/update/" \;
+          # 全量包：bin/Release 全部内容
+          $fullZip = "晴跟打${ver}全量包.zip"
+          Compress-Archive -Path "bin\Release\*" -DestinationPath $fullZip -Force
+          echo "Created $fullZip"
 
-      - name: Zip packages
-        shell: bash
-        run: |
-          VERSION=${{ steps.version.outputs.version }}
-          cd release-staging/full && zip -r "../../晴跟打${VERSION}全量包.zip" . && cd ../..
-          cd release-staging/update && zip -r "../../晴跟打${VERSION}更新包.zip" . && cd ../..
+          # 更新包：只有根目录下的 exe, dll, xml, pdb, config
+          $updateDir = "release-staging\update"
+          New-Item -ItemType Directory -Path $updateDir -Force | Out-Null
+          Get-ChildItem "bin\Release" -File | Where-Object {
+            $_.Extension -in '.exe','.dll','.xml','.pdb','.config'
+          } | Copy-Item -Destination $updateDir
+          $updateZip = "晴跟打${ver}更新包.zip"
+          Compress-Archive -Path "$updateDir\*" -DestinationPath $updateZip -Force
+          echo "Created $updateZip"
 
       - name: Update update.json
-        shell: bash
+        shell: pwsh
         run: |
-          VERSION=${{ steps.version.outputs.version }}
-          MSG=$(git log -1 --pretty=%B)
-          cat > Version/update.json << JSONEOF
+          $ver = "${{ steps.version.outputs.version }}"
+          $msg = (git log -1 --pretty=%B) -join "`n"
+          $msgEscaped = $msg.Replace('\', '\\').Replace('"', '\"')
+          $json = @"
           {
-            "version": "${VERSION}",
-            "changelog": "${MSG}",
-            "update_url": "https://gitee.com/fuchuxuan/TypeSunny/releases/download/v${VERSION}/晴跟打${VERSION}更新包.zip",
-            "full_url": "https://gitee.com/fuchuxuan/TypeSunny/releases/download/v${VERSION}/晴跟打${VERSION}全量包.zip"
+            "version": "$ver",
+            "changelog": "$msgEscaped",
+            "update_url": "https://gitee.com/fuchuxuan/TypeSunny/releases/download/v$ver/晴跟打${ver}更新包.zip",
+            "full_url": "https://gitee.com/fuchuxuan/TypeSunny/releases/download/v$ver/晴跟打${ver}全量包.zip"
           }
-          JSONEOF
+          "@
+          $json | Set-Content -Path "Version\update.json" -Encoding UTF8
 
       - name: Commit update.json
         shell: bash
@@ -106,7 +103,6 @@ jobs:
           VERSION=${{ steps.version.outputs.version }}
           MSG="${{ steps.commit.outputs.message }}"
 
-          # 创建 Release
           RESPONSE=$(curl -s -X POST \
             "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases" \
             -H "Content-Type: application/json" \
@@ -128,14 +124,12 @@ jobs:
 
           echo "Gitee Release ID: $RELEASE_ID"
 
-          # 上传全量包
           curl -s -X POST \
             "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${RELEASE_ID}/attach_files" \
             -H "Content-Type: multipart/form-data" \
             -F "access_token=${{ secrets.GITEE_TOKEN }}" \
             -F "file=@晴跟打${VERSION}全量包.zip"
 
-          # 上传更新包
           curl -s -X POST \
             "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${RELEASE_ID}/attach_files" \
             -H "Content-Type: multipart/form-data" \
