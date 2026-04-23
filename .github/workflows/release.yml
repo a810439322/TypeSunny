@@ -68,8 +68,8 @@ jobs:
         shell: pwsh
         run: |
           $ver = "${{ steps.version.outputs.version }}"
-          $msg = (git log -1 --pretty=%B) -join "`n"
-          $msgEscaped = $msg.Replace('\', '\\').Replace('"', '\"')
+          $msg = (git log -1 --pretty=%s).Trim()
+          $msgEscaped = $msg.Replace('\', '\\').Replace('"', '\"').Replace("`r", '').Replace("`n", '\n')
           $json = @"
           {
             "version": "$ver",
@@ -78,7 +78,7 @@ jobs:
             "full_url": "https://gitee.com/fuchuxuan/TypeSunny/releases/download/v$ver/晴跟打${ver}全量包.zip"
           }
           "@
-          $json | Set-Content -Path "Version\update.json" -Encoding UTF8
+          $json.Trim() | Set-Content -Path "Version\update.json" -Encoding UTF8 -NoNewline
 
       - name: Commit update.json
         shell: bash
