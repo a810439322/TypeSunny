@@ -135,19 +135,31 @@ jobs:
           echo "Zip exists: $(Test-Path $zipFile)"
           echo "Zip size: $((Get-Item $zipFile).Length / 1MB) MB"
 
-          $form = @{
-            access_token = $token
-            file = Get-Item $zipFile
+          $uploaded = $false
+          for ($i = 1; $i -le 3; $i++) {
+            echo "Upload attempt $i/3..."
+            try {
+              $form = @{
+                access_token = $token
+                file = Get-Item $zipFile
+              }
+              Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${releaseId}/attach_files" `
+                -Method Post -Form $form
+              echo "Upload completed on attempt $i"
+              $uploaded = $true
+              break
+            } catch {
+              echo "Attempt $i failed: $($_.Exception.Message)"
+              if ($i -lt 3) {
+                echo "Waiting 10 seconds before retry..."
+                Start-Sleep -Seconds 10
+              }
+            }
           }
 
-          try {
-            Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${releaseId}/attach_files" `
-              -Method Post -Form $form
-            echo "Upload completed"
-          } catch {
-            echo "ERROR uploading: $($_.Exception.Message)"
-            echo "Response: $($_.ErrorDetails.Message)"
-            throw
+          if (-not $uploaded) {
+            echo "WARNING: Failed to upload zip after 3 attempts. Release was created but has no attachment."
+            echo "You can manually upload at: https://gitee.com/fuchuxuan/TypeSunny/releases"
           }
 
           echo "=== Gitee Release Done ==="

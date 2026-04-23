@@ -326,9 +326,9 @@
 
   <!-- 编译前自动更新 version.txt 为今天日期，然后读取并更新 GeneratedVersion.cs -->
   <Target Name="UpdateVersionFromTxt" BeforeTargets="CoreCompile">
-    <!-- 自动生成今天的日期作为版本号 (YYMMDD 格式) -->
+    <!-- 自动生成今天的日期作为版本号 (YYYYMMDD 格式) -->
     <PropertyGroup>
-      <TodayVersion>$([System.DateTime]::Now.ToString('yyMMdd'))</TodayVersion>
+      <TodayVersion>$([System.DateTime]::Now.ToString('yyyyMMdd'))</TodayVersion>
     </PropertyGroup>
     <!-- 写入 version.txt -->
     <WriteLinesToFile File="Version\version.txt" Lines="$(TodayVersion)" Overwrite="true" />
@@ -342,7 +342,7 @@
     <!-- 生成 GeneratedVersion.cs -->
     <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="true" Lines="// &lt;auto-generated/&gt;" />
     <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="// 此文件由 MSBuild 在编译时自动生成，请勿手动修改" />
-    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="// 来源：编译时自动生成的日期 (YYMMDD)" />
+    <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="// 来源：编译时自动生成的日期 (YYYYMMDD)" />
     <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="" />
     <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="namespace TypeSunny" />
     <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="{" />
