@@ -11,7 +11,7 @@ namespace TypeSunny
     internal class ArticleConfig
     {
         static public Dictionary<string, string> dicts = new Dictionary<string, string>();
-        static public string Path = "ArticleConfig.txt";
+        static public string Path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ArticleConfig.txt");
         static private readonly object _writeLock = new object();  // 写入锁
         static private Timer _writeTimer = null;  // 单一延迟写入Timer（防抖）
 

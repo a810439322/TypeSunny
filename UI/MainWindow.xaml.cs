@@ -2186,7 +2186,6 @@ namespace TypeSunny.UI
         private void win_size_change(object sender, SizeChangedEventArgs e)
         {
 
-
             if (StateManager.ConfigLoaded)
             {
                 Config.Set("窗口宽度", this.Width, 0);
@@ -2364,7 +2363,7 @@ namespace TypeSunny.UI
 
                 int total = CounterLog.GetTotalResultCount();
                 if (total > ResultRows.Count)
-                    sb.AppendLine("\n▼ 滚动查看更多 (" + (total - ResultRows.Count) + " 条)");
+                    sb.AppendLine("\n" + LoadMoreTag + " (" + (total - ResultRows.Count) + " 条)");
             }
 
             TbxResults.Text = sb.ToString();
@@ -8179,9 +8178,16 @@ public async Task SendArticle()
         private void TbxResults_Loaded(object sender, RoutedEventArgs e)
         {
             UpdateTypingStat();
-            var sv = GetScrollViewer(TbxResults);
-            if (sv != null)
-                sv.ScrollChanged += TbxResults_ScrollChanged;
+
+            var menu = new System.Windows.Controls.ContextMenu();
+            var copyItem = new System.Windows.Controls.MenuItem { Header = "复制本行成绩" };
+            copyItem.Click += (s, args) =>
+            {
+                int caretIdx = TbxResults.CaretIndex;
+                CopyLineAtCharIndex(caretIdx);
+            };
+            menu.Items.Add(copyItem);
+            TbxResults.ContextMenu = menu;
         }
 
         private static System.Windows.Controls.ScrollViewer GetScrollViewer(System.Windows.DependencyObject o)
@@ -8195,35 +8201,28 @@ public async Task SendArticle()
             return null;
         }
 
-        private void TbxResults_ScrollChanged(object sender, System.Windows.Controls.ScrollChangedEventArgs e)
-        {
-            var sv = sender as System.Windows.Controls.ScrollViewer;
-            if (sv == null) return;
-
-            // 滚到底部：加载更多
-            if (sv.VerticalOffset >= sv.ScrollableHeight - 1 && CounterLog.GetTotalResultCount() > ResultRows.Count)
-            {
-                var more = CounterLog.LoadMoreResults(ResultRows.Count, 30);
-                foreach (var r in more)
-                    ResultRows.Add((r.timestamp, Score.ParseReportLine(r.content)));
-                if (more.Count > 0)
-                    UpdateTypingStat();
-            }
-
-            // 滚到顶部：裁回30条
-            if (sv.VerticalOffset <= 0 && ResultRows.Count > 30)
-            {
-                ResultRows.RemoveRange(30, ResultRows.Count - 30);
-                UpdateTypingStat();
-            }
-        }
-
         private System.Windows.Threading.DispatcherTimer _longPressTimer;
         private int _longPressCharIndex = -1;
+        private System.Windows.Point _mouseDownPos;
+        private const string LoadMoreTag = "▼ 点击加载更多";
 
         private void TbxResults_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             _longPressCharIndex = TbxResults.GetCharacterIndexFromPoint(e.GetPosition(TbxResults), true);
+            _mouseDownPos = e.GetPosition(TbxResults);
+
+            // 点击"加载更多"行
+            if (_longPressCharIndex >= 0 && _longPressCharIndex < TbxResults.Text.Length)
+            {
+                int lineIdx = TbxResults.GetLineIndexFromCharacterIndex(_longPressCharIndex);
+                string clickedLine = TbxResults.GetLineText(lineIdx)?.TrimEnd('\r', '\n');
+                if (clickedLine != null && clickedLine.StartsWith(LoadMoreTag))
+                {
+                    LoadMoreResults();
+                    return;
+                }
+            }
+
             if (_longPressTimer == null)
             {
                 _longPressTimer = new System.Windows.Threading.DispatcherTimer();
@@ -8239,26 +8238,63 @@ public async Task SendArticle()
                 _longPressTimer.Stop();
         }
 
+        private void TbxResults_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            if (_longPressTimer != null && e.LeftButton == System.Windows.Input.MouseButtonState.Pressed)
+            {
+                var pos = e.GetPosition(TbxResults);
+                double dx = pos.X - _mouseDownPos.X;
+                double dy = pos.Y - _mouseDownPos.Y;
+                if (dx * dx + dy * dy > 25)
+                    _longPressTimer.Stop();
+            }
+        }
+
+        private void LoadMoreResults()
+        {
+            var more = CounterLog.LoadMoreResults(ResultRows.Count, 30);
+            foreach (var r in more)
+                ResultRows.Add((r.timestamp, Score.ParseReportLine(r.content)));
+            if (more.Count > 0)
+                UpdateTypingStat();
+        }
+
         private void LongPressTimer_Tick(object sender, EventArgs e)
         {
             _longPressTimer.Stop();
-            if (_longPressCharIndex < 0 || _longPressCharIndex >= TbxResults.Text.Length)
+            CopyLineAtCharIndex(_longPressCharIndex);
+        }
+
+        private void CopyLineAtCharIndex(int charIndex)
+        {
+            if (charIndex < 0 || charIndex >= TbxResults.Text.Length)
                 return;
 
-            int lineIndex = TbxResults.GetLineIndexFromCharacterIndex(_longPressCharIndex);
+            int lineIndex = TbxResults.GetLineIndexFromCharacterIndex(charIndex);
             if (lineIndex < 0)
                 return;
 
             string lineText = TbxResults.GetLineText(lineIndex)?.TrimEnd('\r', '\n');
-            if (string.IsNullOrWhiteSpace(lineText))
+            if (string.IsNullOrWhiteSpace(lineText) || lineText.StartsWith(LoadMoreTag))
                 return;
 
-            // 如果行首有时间前缀，去掉后再解析
+            string cleanText = CleanScoreLine(lineText);
+
+            try
+            {
+                System.Windows.Clipboard.SetText(cleanText);
+                ShowCopyTip(lineIndex);
+            }
+            catch (Exception) { }
+        }
+
+        private string CleanScoreLine(string lineText)
+        {
             string timeFormat = Config.GetString("成绩显示时间");
             if (timeFormat == "是") timeFormat = "MM-dd HH:mm";
             if (timeFormat != "否" && timeFormat != "关闭" && !string.IsNullOrEmpty(timeFormat))
             {
-                int prefixLen = DateTime.Now.ToString(timeFormat).Length + 2; // +2 for "  "
+                int prefixLen = DateTime.Now.ToString(timeFormat).Length + 2;
                 if (lineText.Length > prefixLen)
                 {
                     try
@@ -8272,14 +8308,7 @@ public async Task SendArticle()
             }
 
             var parts = Score.ParseReportLine(lineText);
-            string cleanText = string.Join(" ", parts);
-
-            try
-            {
-                System.Windows.Clipboard.SetText(cleanText);
-                ShowCopyTip(lineIndex);
-            }
-            catch (Exception) { }
+            return string.Join(" ", parts);
         }
 
         private async void ShowCopyTip(int lineIndex)
@@ -8846,6 +8875,15 @@ public async Task SendArticle()
             _copybookModeSplitterDragging = false;
             gridSplitterResults.ReleaseMouseCapture();
             e.Handled = true;
+
+            var grid_a = this.FindName("grid_a") as Grid;
+            if (grid_a != null)
+            {
+                double ah = grid_a.RowDefinitions[2].ActualHeight;
+                double rh = grid_a.RowDefinitions[6].ActualHeight;
+                if (ah > 0) grid_a.RowDefinitions[2].Height = new GridLength(ah, GridUnitType.Star);
+                if (rh > 0) grid_a.RowDefinitions[6].Height = new GridLength(rh, GridUnitType.Star);
+            }
 
             if (StateManager.ConfigLoaded)
             {

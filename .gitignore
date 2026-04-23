@@ -23,8 +23,16 @@ packages/
 project.lock.json
 project.fragment.lock.json
 
-# User configuration (contains personal settings)
+# Runtime-generated user data (created automatically on first run)
 config.txt
+TrainerConfig.txt
+ArticleConfig.txt
+统计.txt
+当日成绩.txt
+字集映射表.txt
+字集白名单.txt
+标顶键符映射.txt
+选重键符映射.txt
 
 # Rider/IDEA
 .idea/

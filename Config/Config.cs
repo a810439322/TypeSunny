@@ -9,7 +9,7 @@ namespace TypeSunny
     static internal  class Config
     {
         static public Dictionary<string, string> dicts = new Dictionary<string, string>();
-        static public string Path = "config.txt";
+        static public string Path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.txt");
 
         static Config()
         {

@@ -64,8 +64,8 @@ namespace TypeSunny.Utils
 
         static public void  Load()
         {
-            BiaoDing = Read("标顶键符映射.txt", DefautlBiaoDing);
-            Selection = Read("选重键符映射.txt", DefautlSelection);
+            BiaoDing = Read(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "标顶键符映射.txt"), DefautlBiaoDing);
+            Selection = Read(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "选重键符映射.txt"), DefautlSelection);
 
         }
 

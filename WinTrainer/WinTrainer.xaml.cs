@@ -1922,9 +1922,9 @@ namespace TypeSunny
         private void InitCfg()
         {
             char[] s2 = { '\t', '\r', '\n' };
-            if (File.Exists("TrainerConfig.txt"))
+            if (File.Exists(TrainerConfig.Path))
             {
-                StreamReader sr = new StreamReader("TrainerConfig.txt");
+                StreamReader sr = new StreamReader(TrainerConfig.Path);
                 string[] lines = sr.ReadToEnd().Split(new char[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
                 foreach (string line in lines)
                 {
@@ -2008,7 +2008,7 @@ namespace TypeSunny
 
             try
             {
-                string configPath = "TrainerConfig.txt";
+                string configPath = TrainerConfig.Path;
                 StreamWriter sr = new StreamWriter(configPath);
                 foreach (var item in cfg)
                 {

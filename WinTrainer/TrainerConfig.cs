@@ -11,7 +11,7 @@ namespace TypeSunny
     internal class TrainerConfig
     {
         static public Dictionary<string, string> dicts = new Dictionary<string, string>();
-        static public string Path = "TrainerConfig.txt";  // 修复：应该是 TrainerConfig.txt
+        static public string Path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TrainerConfig.txt");
         static private readonly object _writeLock = new object();  // 写入锁
         static private Timer _writeTimer = null;  // 单一延迟写入Timer（防抖）
 

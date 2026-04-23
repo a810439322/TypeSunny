@@ -9,8 +9,8 @@ namespace TypeSunny.Logs
 {
     static internal class CounterLog
     {
-        static public string Path = "统计.txt";
-        static public string ResultPath = "当日成绩.txt";
+        static public string Path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "统计.txt");
+        static public string ResultPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "当日成绩.txt");
         static public string SumKey = "合计";
         static public int HourThresh = 6;
         static public bool Loaded = false;

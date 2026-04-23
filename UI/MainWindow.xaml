@@ -699,7 +699,7 @@
 
         <!-- 成绩区（成绩显示） -->
         <Border Grid.Row="6" x:Name="resultsTextBoxGrid" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="15,5,15,10">
-            <TextBox Name="TbxResults" IsReadOnly="True" IsReadOnlyCaretVisible="True" Loaded="TbxResults_Loaded" Background="{Binding ElementName=MainWin,Path=Background}" Foreground="{Binding ElementName=MainWin,Path=Foreground}" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" FontSize="15" FontFamily="Consolas" FontWeight="Bold" PreviewMouseWheel="Control_PreviewMouseWheel" PreviewMouseLeftButtonDown="TbxResults_PreviewMouseLeftButtonDown" PreviewMouseLeftButtonUp="TbxResults_PreviewMouseLeftButtonUp">
+            <TextBox Name="TbxResults" IsReadOnly="True" IsReadOnlyCaretVisible="True" Loaded="TbxResults_Loaded" Background="{Binding ElementName=MainWin,Path=Background}" Foreground="{Binding ElementName=MainWin,Path=Foreground}" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" FontSize="15" FontFamily="Consolas" FontWeight="Bold" PreviewMouseWheel="Control_PreviewMouseWheel" PreviewMouseLeftButtonDown="TbxResults_PreviewMouseLeftButtonDown" PreviewMouseLeftButtonUp="TbxResults_PreviewMouseLeftButtonUp" PreviewMouseMove="TbxResults_PreviewMouseMove">
                 <TextBox.Resources>
                     <Style TargetType="{x:Type Border}">
                         <Setter Property="CornerRadius" Value="4"/>

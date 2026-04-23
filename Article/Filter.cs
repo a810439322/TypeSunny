@@ -131,7 +131,7 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz
         static private void Read ()
         {
 
-            string PathWhiteList = "字集白名单.txt";
+            string PathWhiteList = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "字集白名单.txt");
             if (File.Exists(PathWhiteList))
             {
                 StringInfo si = new StringInfo(File.ReadAllText(PathWhiteList));
@@ -158,7 +158,7 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz
                 File.WriteAllText(PathWhiteList,defaultWhiteList);
             }
 
-            string PathMap = "字集映射表.txt";
+            string PathMap = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "字集映射表.txt");
             if (File.Exists(PathMap))
             {
                 char[] sp1 = { '\n' };
