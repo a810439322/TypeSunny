@@ -695,10 +695,13 @@ namespace TypeSunny.UI.Modes
 
             _compositionText.Visibility = Visibility.Collapsed;
 
+            // 更新标题栏进度条和窗口标题
+            _main.UpdateDisplay(MainWindow.UpdateLevel.Progress);
+
             if (_currentIndex >= TextInfo.Words.Count
                 && TextInfo.wordStates[TextInfo.Words.Count - 1] == WordStates.RIGHT)
             {
-                _main.StopTyping();
+                ScheduleFinalVisualsAndStop();
             }
             else if (_currentIndex < TextInfo.Words.Count)
             {
@@ -827,6 +830,40 @@ namespace TypeSunny.UI.Modes
             long elapsedTicks = Stopwatch.GetTimestamp() - _lastImeCancelTicks;
             double elapsedMs = elapsedTicks * 1000.0 / Stopwatch.Frequency;
             return elapsedMs >= 0 && elapsedMs <= ImeBackspaceGuardMs;
+        }
+
+        private void ScheduleFinalVisualsAndStop()
+        {
+            _main.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!_isActive) return;
+
+                int lastIdx = _mirrorBlocks.Count - 1;
+                if (lastIdx >= 0 && _cursor != null)
+                {
+                    try
+                    {
+                        var grid = (Grid)_main.BdDisplay.Child;
+                        var mirrorBlock = _mirrorBlocks[lastIdx];
+                        mirrorBlock.UpdateLayout();
+                        var pos = mirrorBlock.TranslatePoint(new Point(0, 0), grid);
+                        double fs = MainWindow.DisplayFontSize;
+
+                        var fm = _main.GetCurrentFontFamily();
+                        double height = fs * (1.0 + Config.GetDouble("行距"));
+                        double availablePad = Math.Max(0, height - fs * fm.LineSpacing);
+                        double padTop = (availablePad / 2 + Math.Min((height - fs) / 2, availablePad)) / 2;
+
+                        double lineHeight = fs * fm.LineSpacing;
+                        _cursor.Height = lineHeight;
+                        Canvas.SetLeft(_cursor, pos.X + mirrorBlock.ActualWidth - 2);
+                        Canvas.SetTop(_cursor, pos.Y + padTop);
+                    }
+                    catch { }
+                }
+
+                _main.StopTyping();
+            }), System.Windows.Threading.DispatcherPriority.Input);
         }
 
         private void UpdatePosition()

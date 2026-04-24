@@ -398,33 +398,23 @@ namespace TypeSunny.UI.Modes
                 }
             }
 
-            // 禁用回改模式：回车强制当空格上屏
+            // 回车始终作为暂停，不插入任何字符
             if (e.Text == "\r")
             {
                 ClearImeCompositionState();
                 MarkImeCancel();
-                bool disableBackInEffect = Config.GetBool("禁用回改")
-                    && StateManager.txtSource != TxtSource.raceApi
-                    && StateManager.txtSource != TxtSource.jbs
-                    && StateManager.txtSource != TxtSource.jisucup;
-                if (disableBackInEffect)
-                {
-                    // 不return，下面的逐字比对会处理
-                }
-                else
-                {
-                    e.Handled = true;
-                    return;
-                }
+                _compositionText.Visibility = Visibility.Collapsed;
+                e.Handled = true;
+                return;
             }
 
-            // 禁用回改模式：空码/回车强制当空格处理
+            // 禁用回改模式：空码强制当空格处理
             string inputText = e.Text;
             bool disableBackActive = Config.GetBool("禁用回改")
                 && StateManager.txtSource != TxtSource.raceApi
                 && StateManager.txtSource != TxtSource.jbs
                 && StateManager.txtSource != TxtSource.jisucup;
-            if (disableBackActive && (string.IsNullOrEmpty(inputText) || inputText == "\r"))
+            if (disableBackActive && string.IsNullOrEmpty(inputText))
                 inputText = " ";
 
             ClearImeCompositionState();
@@ -500,11 +490,14 @@ namespace TypeSunny.UI.Modes
             // 隐藏编码显示
             _compositionText.Visibility = Visibility.Collapsed;
 
+            // 更新标题栏进度条和窗口标题
+            _main.UpdateDisplay(MainWindow.UpdateLevel.Progress);
+
             // 检查是否结束：必须打完且最后一个字正确才结算
             if (_currentIndex >= TextInfo.Words.Count
                 && TextInfo.wordStates[TextInfo.Words.Count - 1] == WordStates.RIGHT)
             {
-                _main.StopTyping();
+                ScheduleFinalVisualsAndStop();
             }
             else if (_currentIndex < TextInfo.Words.Count)
             {
@@ -575,9 +568,14 @@ namespace TypeSunny.UI.Modes
             // 按键统计（击键、键法、选重、标顶、退格等）
             _main.HandleKeyDownStats(e);
 
-            // 空格键不会触发 PreviewTextInput，需要在这里手动处理
-            if (inputKey == Key.Space)
+            // 直接按空格（非 IME 上屏）不会触发 PreviewTextInput，需要在这里手动处理
+            // IME 用空格选词时 e.Key == Key.ImeProcessed，提交的文字走 OnTextInput，这里不处理
+            if (inputKey == Key.Space && e.Key == Key.Space)
             {
+                ProcessInputText(" ");
+                _manualScrollActive = false;
+                ScheduleInputCaptureTrim();
+                e.Handled = true;
                 return;
             }
 
@@ -774,6 +772,43 @@ namespace TypeSunny.UI.Modes
 
             // 重新定位光标（TextBlocks 已被重建）
             ScheduleUpdatePosition();
+        }
+
+        private void ScheduleFinalVisualsAndStop()
+        {
+            _main.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!_isActive) return;
+
+                int lastIdx = TextInfo.Blocks.Count - 1;
+
+                // 1. 更新光标到最后一个字右侧
+                if (lastIdx >= 0 && _cursor != null)
+                {
+                    try
+                    {
+                        var grid = (Grid)_main.BdDisplay.Child;
+                        var block = TextInfo.Blocks[lastIdx];
+                        block.UpdateLayout();
+                        var pos = block.TranslatePoint(new Point(0, 0), grid);
+                        double fs = MainWindow.DisplayFontSize;
+
+                        var fm = _main.GetCurrentFontFamily();
+                        double height = fs * (1.0 + Config.GetDouble("行距"));
+                        double availablePad = Math.Max(0, height - fs * fm.LineSpacing);
+                        double padTop = (availablePad / 2 + Math.Min((height - fs) / 2, availablePad)) / 2;
+
+                        double lineHeight = fs * fm.LineSpacing;
+                        _cursor.Height = lineHeight;
+                        Canvas.SetLeft(_cursor, pos.X + block.ActualWidth - 2);
+                        Canvas.SetTop(_cursor, pos.Y + padTop);
+                    }
+                    catch { }
+                }
+
+                // 2. 结束（StopTyping 内部会刷新速度和速度跟随）
+                _main.StopTyping();
+            }), System.Windows.Threading.DispatcherPriority.Input);
         }
 
         private void UpdatePosition()

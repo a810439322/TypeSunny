@@ -120,17 +120,18 @@ static internal class Score
         {
             double rt = Speed;
 
-            if (Wrong > 0)
+            if (Config.GetBool("看打模式"))
             {
-                rt = (double)(InputWordCount - Wrong * 5) / Time.TotalMinutes;
-
+                int wr = Math.Max(More, Less);
+                if (wr > 0)
+                    rt = (double)(TotalWordCount - wr * 5) / Time.TotalMinutes;
             }
-            else
+            else if (Wrong > 0)
             {
-                rt = Speed;
+                rt = (double)(TotalWordCount - Wrong * 5) / Time.TotalMinutes;
             }
 
-            return rt;
+            return Math.Max(rt, 0);
         }
         public static double GetCorrection()
         {

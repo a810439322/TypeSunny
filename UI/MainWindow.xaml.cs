@@ -156,7 +156,7 @@ namespace TypeSunny.UI
         private bool _isCustomMaximized = false;
         private string currentDifficultyText = "";
 
-        private enum UpdateLevel
+        internal enum UpdateLevel
         {
 
             Progress = 1,
@@ -256,7 +256,7 @@ namespace TypeSunny.UI
             "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "'"
         };
 
-        private void UpdateDisplay(UpdateLevel updateLevel)
+        internal void UpdateDisplay(UpdateLevel updateLevel)
         {
             // 行距过小会导致文字溢出背景，强制最小0.5
             if (Config.GetDouble("行距") < 0.5)
@@ -686,8 +686,10 @@ namespace TypeSunny.UI
 
 
 
-                // 滚动和速度跟随提示
-                if (TextInfo.Blocks.Count > 0)
+                // 滚动和速度跟随提示（字帖/临摹模式各自处理，这里只处理普通模式）
+                if (TextInfo.Blocks.Count > 0
+                    && (_copybookMode == null || !_copybookMode.IsActive)
+                    && (_tracingMode == null || !_tracingMode.IsActive))
                 {
                     try
                     {
@@ -3132,6 +3134,12 @@ namespace TypeSunny.UI
             StateManager.LastType = true;
             Score.TotalWordCount = TextInfo.Words.Count;
             Score.Time = sw.Elapsed;
+
+            DisplayProgress();
+            int lastIdx = TextInfo.Blocks.Count - 1;
+            if (lastIdx >= 0)
+                UpdateSpeedFollowHint(lastIdx);
+
             timerProgress.Dispose();
             tm1 = new Timer(DelayStop, null, 150, Timeout.Infinite);
         }
@@ -4244,6 +4252,8 @@ public async Task SendArticle()
         }
         public void LoadText(string rawTxt, RetypeType retypeType, TxtSource source, bool switchBack = true, bool isAuto = false) //原文、来源、重打类型
         {
+            TbAcc.Visibility = Visibility.Hidden;
+
             if (Config.GetBool("禁止F3重打") && (retypeType == RetypeType.shuffle || retypeType == RetypeType.retype))
             {
                 return;
