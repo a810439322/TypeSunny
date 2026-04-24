@@ -142,36 +142,48 @@ jobs:
           $releaseId = $response.id
           echo "Gitee Release ID: $releaseId"
 
-          echo "--- Step 2: Uploading update zip ---"
-          $zipFile = "TypeSunny-${ver}-update.zip"
-          echo "Zip file: $zipFile"
-          echo "Zip exists: $(Test-Path $zipFile)"
-          echo "Zip size: $((Get-Item $zipFile).Length / 1MB) MB"
+          # 上传函数：带重试和计时
+          function Upload-Asset($filePath, $releaseId, $token, $maxRetry, $required) {
+            $fileName = Split-Path $filePath -Leaf
+            echo "--- Uploading $fileName (required=$required) ---"
+            echo "File size: $([math]::Round((Get-Item $filePath).Length / 1MB, 2)) MB"
 
-          $uploaded = $false
-          for ($i = 1; $i -le 10; $i++) {
-            echo "Upload attempt $i/10..."
-            try {
-              $form = @{
-                file = Get-Item $zipFile
+            $uploaded = $false
+            for ($i = 1; $i -le $maxRetry; $i++) {
+              echo "Attempt $i/${maxRetry}..."
+              $sw = [System.Diagnostics.Stopwatch]::StartNew()
+              try {
+                $form = @{ file = Get-Item $filePath }
+                Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${releaseId}/attach_files?access_token=${token}" `
+                  -Method Post -Form $form
+                $sw.Stop()
+                echo "$fileName uploaded in $([math]::Round($sw.Elapsed.TotalSeconds, 1))s"
+                $uploaded = $true
+                break
+              } catch {
+                $sw.Stop()
+                echo "Attempt $i failed after $([math]::Round($sw.Elapsed.TotalSeconds, 1))s: $($_.Exception.Message)"
+                if ($i -lt $maxRetry) {
+                  echo "Waiting 10 seconds before retry..."
+                  Start-Sleep -Seconds 10
+                }
               }
-              Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/${releaseId}/attach_files?access_token=${token}" `
-                -Method Post -Form $form
-              echo "Upload completed on attempt $i"
-              $uploaded = $true
-              break
-            } catch {
-              echo "Attempt $i failed: $($_.Exception.Message)"
-              if ($i -lt 10) {
-                echo "Waiting 10 seconds before retry..."
-                Start-Sleep -Seconds 10
+            }
+
+            if (-not $uploaded) {
+              if ($required) {
+                echo "ERROR: Failed to upload $fileName after $maxRetry attempts"
+                throw "Required upload failed: $fileName"
+              } else {
+                echo "WARNING: Failed to upload $fileName after $maxRetry attempts (optional, continuing)"
               }
             }
           }
 
-          if (-not $uploaded) {
-            echo "WARNING: Failed to upload zip after 3 attempts. Release was created but has no attachment."
-            echo "You can manually upload at: https://gitee.com/fuchuxuan/TypeSunny/releases"
-          }
+          # 更新包：必须成功，重试10次
+          Upload-Asset "TypeSunny-${ver}-update.zip" $releaseId $token 10 $true
+
+          # 全量包：可选，重试3次
+          Upload-Asset "TypeSunny-${ver}-full.zip" $releaseId $token 3 $false
 
           echo "=== Gitee Release Done ==="

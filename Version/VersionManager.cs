@@ -1,17 +1,28 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
 namespace TypeSunny
 {
+    public enum UpdateSource
+    {
+        Gitee,
+        GitHub
+    }
+
     public static class VersionManager
     {
         private const string GiteeReleaseApi = "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/latest";
+        private const string GitHubReleaseApi = "https://api.github.com/repos/a810439322/TypeSunny/releases/latest";
+        private const string GiteeReleasePage = "https://gitee.com/fuchuxuan/TypeSunny/releases";
+        private const string GitHubReleasePage = "https://github.com/a810439322/TypeSunny/releases";
 
         public static string CurrentVersion => GeneratedVersion.CurrentVersion;
+        public static UpdateSource PreferredSource { get; private set; } = UpdateSource.Gitee;
 
         public static string LatestVersion
         {
@@ -111,6 +122,9 @@ namespace TypeSunny
             }
         }
 
+        public static string ReleasePage =>
+            PreferredSource == UpdateSource.Gitee ? GiteeReleasePage : GitHubReleasePage;
+
         private static int CompareVersions(string v1, string v2)
         {
             v1 = System.Text.RegularExpressions.Regex.Replace(v1, "[^0-9]", "");
@@ -118,6 +132,42 @@ namespace TypeSunny
             if (int.TryParse(v1, out int num1) && int.TryParse(v2, out int num2))
                 return num1.CompareTo(num2);
             return string.Compare(v1, v2, StringComparison.Ordinal);
+        }
+
+        private static async Task<long> MeasureLatencyAsync(string url)
+        {
+            try
+            {
+                using (var client = new HttpClient(new HttpClientHandler { UseProxy = false }))
+                {
+                    client.Timeout = TimeSpan.FromSeconds(5);
+                    client.DefaultRequestHeaders.Add("User-Agent", "TypeSunny-Updater");
+                    var sw = Stopwatch.StartNew();
+                    var response = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, url));
+                    sw.Stop();
+                    Debug.WriteLine($"[VersionManager] {url} latency: {sw.ElapsedMilliseconds}ms, status: {response.StatusCode}");
+                    return sw.ElapsedMilliseconds;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[VersionManager] {url} unreachable: {ex.Message}");
+                return long.MaxValue;
+            }
+        }
+
+        private static async Task DetectBestSourceAsync()
+        {
+            var giteeTask = MeasureLatencyAsync("https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases");
+            var githubTask = MeasureLatencyAsync("https://api.github.com/repos/a810439322/TypeSunny/releases");
+
+            await Task.WhenAll(giteeTask, githubTask);
+
+            long giteeMs = giteeTask.Result;
+            long githubMs = githubTask.Result;
+
+            PreferredSource = giteeMs <= githubMs ? UpdateSource.Gitee : UpdateSource.GitHub;
+            Debug.WriteLine($"[VersionManager] 选择更新源: {PreferredSource} (Gitee={giteeMs}ms, GitHub={githubMs}ms)");
         }
 
         public static async Task<bool> CheckUpdateAsync(bool forceRefresh = false)
@@ -130,12 +180,16 @@ namespace TypeSunny
                     return false;
                 }
 
-                Debug.WriteLine($"[VersionManager] 开始检查更新，请求: {GiteeReleaseApi}");
+                await DetectBestSourceAsync();
+
+                string apiUrl = PreferredSource == UpdateSource.Gitee ? GiteeReleaseApi : GitHubReleaseApi;
+                Debug.WriteLine($"[VersionManager] 开始检查更新，请求: {apiUrl}");
 
                 using (var client = new HttpClient(new HttpClientHandler { UseProxy = false }))
                 {
                     client.Timeout = TimeSpan.FromSeconds(10);
-                    var response = await client.GetAsync(GiteeReleaseApi);
+                    client.DefaultRequestHeaders.Add("User-Agent", "TypeSunny-Updater");
+                    var response = await client.GetAsync(apiUrl);
                     if (!response.IsSuccessStatusCode)
                     {
                         Debug.WriteLine($"[VersionManager] HTTP请求失败: {response.StatusCode}");
@@ -145,7 +199,7 @@ namespace TypeSunny
                     string content = await response.Content.ReadAsStringAsync();
                     if (string.IsNullOrWhiteSpace(content))
                     {
-                        Debug.WriteLine("[VersionManager] 版本文件内容为空");
+                        Debug.WriteLine("[VersionManager] 返回内容为空");
                         return false;
                     }
 
@@ -178,7 +232,9 @@ namespace TypeSunny
                         }
                     }
                     UpdatePackageUrl = updateUrl;
-                    FullPackageUrl = $"https://github.com/a810439322/TypeSunny/releases/tag/v{latestVersion}";
+                    FullPackageUrl = PreferredSource == UpdateSource.Gitee
+                        ? $"{GiteeReleasePage}/tag/v{latestVersion}"
+                        : $"{GitHubReleasePage}/tag/v{latestVersion}";
                     LastCheckTime = DateTime.Now;
 
                     Debug.WriteLine($"[VersionManager] 获取到最新版本: {latestVersion}");

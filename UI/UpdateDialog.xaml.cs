@@ -142,7 +142,7 @@ namespace TypeSunny.UI
                     var result = MessageBox.Show("未找到 Updater.exe，需要下载全量包。\n是否打开下载页面？", "提示",
                         MessageBoxButton.YesNo);
                     if (result == MessageBoxResult.Yes)
-                        Process.Start("https://github.com/a810439322/TypeSunny/releases/latest");
+                        Process.Start(VersionManager.ReleasePage);
                     panelButtons.Visibility = Visibility.Visible;
                     gridProgress.Visibility = Visibility.Collapsed;
                     return;
