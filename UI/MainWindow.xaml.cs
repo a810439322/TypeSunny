@@ -156,7 +156,7 @@ namespace TypeSunny.UI
         private bool _isCustomMaximized = false;
         private string currentDifficultyText = "";
 
-        internal enum UpdateLevel
+        private enum UpdateLevel
         {
 
             Progress = 1,
@@ -256,7 +256,7 @@ namespace TypeSunny.UI
             "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "'"
         };
 
-        internal void UpdateDisplay(UpdateLevel updateLevel)
+        private void UpdateDisplay(UpdateLevel updateLevel)
         {
             // 行距过小会导致文字溢出背景，强制最小0.5
             if (Config.GetDouble("行距") < 0.5)
@@ -3593,6 +3593,19 @@ public async Task SendArticle()
             HandleTextInputStats(e);
         }
 
+        internal void UpdateTitleProgress(int typedWords)
+        {
+            int totalWords = TextInfo.Words.Count;
+            if (typedWords < 0) typedWords = 0;
+            if (typedWords > totalWords) typedWords = totalWords;
+
+            double percentage = totalWords > 0 ? (double)typedWords / totalWords : 0;
+            if (Config.GetBool("显示进度条"))
+                TitleProgressBar.Width = this.ActualWidth * percentage;
+
+            UpdateWindowTitle(typedWords, totalWords);
+        }
+
         private void DisplayProgress()
         {
             Score.Time = sw.Elapsed;
@@ -3605,16 +3618,15 @@ public async Task SendArticle()
 
             TbkStatusTop.Text = Score.Progress();
 
-            // 字帖模式下高频刷新速度跟随提示（复用已有的 250ms 定时器）
+            // 统一 250ms 刷新速度跟随提示（三个模式共用）
+            int hintIndex;
             if (_copybookMode != null && _copybookMode.IsActive)
-            {
-                UpdateSpeedFollowHint(_copybookMode.CurrentIndex);
-            }
-            // 临摹模式下高频刷新速度跟随提示
-            if (_tracingMode != null && _tracingMode.IsActive)
-            {
-                UpdateSpeedFollowHint(_tracingMode.CurrentIndex);
-            }
+                hintIndex = _copybookMode.CurrentIndex;
+            else if (_tracingMode != null && _tracingMode.IsActive)
+                hintIndex = _tracingMode.CurrentIndex;
+            else
+                hintIndex = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements - TextInfo.PageStartIndex;
+            UpdateSpeedFollowHint(hintIndex);
         }
 
         internal Timer timerProgress;

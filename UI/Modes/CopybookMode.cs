@@ -491,7 +491,7 @@ namespace TypeSunny.UI.Modes
             _compositionText.Visibility = Visibility.Collapsed;
 
             // 更新标题栏进度条和窗口标题
-            _main.UpdateDisplay(MainWindow.UpdateLevel.Progress);
+            _main.UpdateTitleProgress(_currentIndex);
 
             // 检查是否结束：必须打完且最后一个字正确才结算
             if (_currentIndex >= TextInfo.Words.Count

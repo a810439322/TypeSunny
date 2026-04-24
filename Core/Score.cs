@@ -124,11 +124,11 @@ static internal class Score
             {
                 int wr = Math.Max(More, Less);
                 if (wr > 0)
-                    rt = (double)(TotalWordCount - wr * 5) / Time.TotalMinutes;
+                    rt = Speed - (double)(wr * 5) / Time.TotalMinutes;
             }
             else if (Wrong > 0)
             {
-                rt = (double)(TotalWordCount - Wrong * 5) / Time.TotalMinutes;
+                rt = Speed - (double)(Wrong * 5) / Time.TotalMinutes;
             }
 
             return Math.Max(rt, 0);
