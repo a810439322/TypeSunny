@@ -113,6 +113,11 @@ namespace TypeSunny.UI
             string url = VersionManager.UpdatePackageUrl;
             if (string.IsNullOrEmpty(url))
             {
+                await VersionManager.CheckUpdateAsync(forceRefresh: true);
+                url = VersionManager.UpdatePackageUrl;
+            }
+            if (string.IsNullOrEmpty(url))
+            {
                 MessageBox.Show("更新地址为空，请前往 Gitee 手动下载。", "提示");
                 return;
             }
