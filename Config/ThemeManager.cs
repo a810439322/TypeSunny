@@ -10,8 +10,8 @@ namespace TypeSunny
     /// </summary>
     public static class ThemeManager
     {
-        private static readonly string ThemesFolder = "Resources/主题";
-        private static readonly string ThemeIndexFile = "Resources/主题/index.txt";
+        private static readonly string ThemesFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "主题");
+        private static readonly string ThemeIndexFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "主题", "index.txt");
 
         /// <summary>
         /// 主题颜色配置

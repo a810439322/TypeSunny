@@ -8,43 +8,80 @@ namespace Updater
 {
     class Program
     {
+        private static string _logPath;
+
+        static void Log(string msg)
+        {
+            string line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
+            Console.WriteLine(line);
+            try { File.AppendAllText(_logPath, line + Environment.NewLine); } catch { }
+        }
+
         static int Main(string[] args)
         {
+            _logPath = Path.Combine(Path.GetTempPath(), "TypeSunnyUpdater.log");
+            try { File.Delete(_logPath); } catch { }
+
+            Log($"Updater started, args count: {args.Length}");
+            for (int i = 0; i < args.Length; i++)
+                Log($"  args[{i}] = {args[i]}");
+
             if (args.Length < 4)
             {
-                Console.WriteLine("用法: Updater.exe <zip路径> <目标目录> <主程序PID> <主程序路径>");
+                Log("参数不足，需要: <zip路径> <目标目录> <主程序PID> <主程序路径>");
+                try { Console.ReadKey(); } catch { }
                 return 1;
             }
 
             string zipPath = args[0];
             string targetDir = args[1];
-            int pid = int.Parse(args[2]);
             string mainExePath = args[3];
 
-            Console.WriteLine("晴跟打 更新程序");
-            Console.WriteLine("==================");
+            if (!int.TryParse(args[2], out int pid))
+            {
+                Log($"PID 解析失败: {args[2]}");
+                try { Console.ReadKey(); } catch { }
+                return 1;
+            }
+
+            Log($"zip: {zipPath}");
+            Log($"target: {targetDir}");
+            Log($"pid: {pid}");
+            Log($"mainExe: {mainExePath}");
+            Log($"zip exists: {File.Exists(zipPath)}");
 
             try
             {
-                Console.WriteLine("等待主程序退出...");
-                try
+                Log("等待主程序退出...");
+                if (pid > 0)
                 {
-                    var process = Process.GetProcessById(pid);
-                    if (!process.WaitForExit(30000))
+                    try
                     {
-                        Console.WriteLine("主程序未在30秒内退出，强制结束...");
-                        process.Kill();
-                        process.WaitForExit(5000);
+                        var process = Process.GetProcessById(pid);
+                        if (!process.WaitForExit(30000))
+                        {
+                            Log("主程序未在30秒内退出，强制结束...");
+                            process.Kill();
+                            process.WaitForExit(5000);
+                        }
+                    }
+                    catch (ArgumentException)
+                    {
+                        Log("主程序已退出");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"等待主程序时出错: {ex.Message}");
                     }
                 }
-                catch (ArgumentException)
+                else
                 {
-                    // 进程已退出
+                    Log("PID 为 0，跳过等待");
                 }
 
                 Thread.Sleep(500);
 
-                Console.WriteLine("正在解压更新文件...");
+                Log("正在解压更新文件...");
                 using (var archive = ZipFile.OpenRead(zipPath))
                 {
                     foreach (var entry in archive.Entries)
@@ -57,28 +94,26 @@ namespace Updater
                         if (!Directory.Exists(destDir))
                             Directory.CreateDirectory(destDir);
 
-                        // 跳过自身
                         if (entry.Name.Equals("Updater.exe", StringComparison.OrdinalIgnoreCase))
                             continue;
 
-                        Console.WriteLine($"  更新: {entry.FullName}");
+                        Log($"  更新: {entry.FullName}");
                         entry.ExtractToFile(destPath, true);
                     }
                 }
 
-                Console.WriteLine("更新完成，正在启动主程序...");
+                Log("更新完成，正在启动主程序...");
                 Process.Start(mainExePath);
 
                 try { File.Delete(zipPath); } catch { }
 
+                Log("Done");
                 return 0;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"更新失败: {ex.Message}");
-                Console.WriteLine("请手动下载全量包进行更新。");
-                Console.WriteLine("按任意键退出...");
-                Console.ReadKey();
+                Log($"更新失败: {ex}");
+                try { Console.WriteLine("按任意键退出..."); Console.ReadKey(); } catch { }
                 return 1;
             }
         }

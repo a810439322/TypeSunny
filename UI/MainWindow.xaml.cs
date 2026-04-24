@@ -4952,20 +4952,18 @@ public async Task SendArticle()
             {
                 try
                 {
-                    bool hasUpdate = await VersionManager.CheckUpdateAsync();
-                    if (hasUpdate)
-                    {
-                        Dispatcher.Invoke(() =>
-                        {
-                            if (VersionManager.ShouldShowReminder)
-                                ShowUpdateReminder();
-                        });
-                    }
+                    await VersionManager.CheckUpdateAsync();
                 }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"版本检测失败: {ex.Message}");
                 }
+
+                Dispatcher.Invoke(() =>
+                {
+                    if (VersionManager.ShouldShowReminder)
+                        ShowUpdateReminder();
+                });
             });
 
             _versionCheckTimer = new System.Windows.Threading.DispatcherTimer();

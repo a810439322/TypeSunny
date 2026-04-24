@@ -353,6 +353,11 @@
     <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="}" />
   </Target>
 
+  <Target Name="BuildUpdater" AfterTargets="Build">
+    <MSBuild Projects="Updater\Updater.csproj" Properties="Configuration=$(Configuration);Platform=AnyCPU" />
+    <Copy SourceFiles="Updater\obj\$(Configuration)\Updater.exe" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
+
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
       <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>

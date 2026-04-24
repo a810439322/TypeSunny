@@ -150,7 +150,8 @@ namespace TypeSunny.UI
 
                 int pid = Process.GetCurrentProcess().Id;
                 string mainExe = Process.GetCurrentProcess().MainModule.FileName;
-                Process.Start(updaterPath, $"\"{zipPath}\" \"{appDir}\" {pid} \"{mainExe}\"");
+                string appDirClean = appDir.TrimEnd('\\');
+                Process.Start(updaterPath, $"\"{zipPath}\" \"{appDirClean}\" {pid} \"{mainExe}\"");
 
                 Application.Current.Shutdown();
             }
