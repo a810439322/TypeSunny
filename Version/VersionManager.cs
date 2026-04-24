@@ -21,7 +21,7 @@ namespace TypeSunny
         private const string GiteeReleasePage = "https://gitee.com/fuchuxuan/TypeSunny/releases";
         private const string GitHubReleasePage = "https://github.com/a810439322/TypeSunny/releases";
 
-        public static string CurrentVersion => "20260101";
+        public static string CurrentVersion => GeneratedVersion.CurrentVersion;
         public static UpdateSource PreferredSource { get; private set; } = UpdateSource.Gitee;
 
         public static string LatestVersion
