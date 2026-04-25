@@ -37,6 +37,9 @@ namespace TypeSunny
     internal static class  ArticleManager
     {
         const string FolderPath = "文章";
+        private const string SegmentModeConfigKey = "本地文章换段模式";
+        public const string SegmentModeAuto = "自动";
+        public const string SegmentModeManual = "手动";
 
        
 
@@ -180,6 +183,26 @@ namespace TypeSunny
                 UpdateWindows();
                 ArticleConfig.WriteConfig(500);
             }
+        }
+
+        public static string SegmentMode
+        {
+            get
+            {
+                string mode = ArticleConfig.GetString(SegmentModeConfigKey);
+                return mode == SegmentModeManual ? SegmentModeManual : SegmentModeAuto;
+            }
+            set
+            {
+                string mode = value == SegmentModeManual ? SegmentModeManual : SegmentModeAuto;
+                ArticleConfig.Set(SegmentModeConfigKey, mode);
+                ArticleConfig.WriteConfig(500);
+            }
+        }
+
+        public static bool IsManualSegmentMode
+        {
+            get { return SegmentMode == SegmentModeManual; }
         }
 
 
@@ -496,7 +519,8 @@ namespace TypeSunny
             (
                 "每段字数", "200",
                 "字集过滤", "是",
-                "去除空格", "是"
+                "去除空格", "是",
+                SegmentModeConfigKey, SegmentModeAuto
                 
             );
 

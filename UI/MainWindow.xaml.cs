@@ -2721,13 +2721,22 @@ namespace TypeSunny.UI
 
                 if (StateManager.txtSource == TxtSource.book) //书籍
                 {
-                    WriteDebugLog($"[本地文章] 进入分支，错字重打配置={Config.GetBool("错字重打")}, retypeType={StateManager.retypeType}, 错字数={TextInfo.WrongRec.Count}");
+                    bool localManualMode = ArticleManager.IsManualSegmentMode;
+                    WriteDebugLog($"[本地文章] 进入分支，换段模式={ArticleManager.SegmentMode}, 错字重打配置={Config.GetBool("错字重打")}, retypeType={StateManager.retypeType}, 错字数={TextInfo.WrongRec.Count}");
 
                     if (!Config.GetBool("错字重打")) //没有错字，或没有错字重打
                     {
-                        WriteDebugLog($"[本地文章] 执行: NextAndSendArticle(result)");
-                        await NextAndSendArticle(result);
-                        WriteDebugLog($"[本地文章] 完成: NextAndSendArticle(result)");
+                        if (localManualMode)
+                        {
+                            WriteDebugLog($"[本地文章] 手动换段：只发送成绩，不自动翻页");
+                            SendLocalArticleResultOnly(result, qqGroupName, 150);
+                        }
+                        else
+                        {
+                            WriteDebugLog($"[本地文章] 执行: NextAndSendArticle(result)");
+                            await NextAndSendArticle(result);
+                            WriteDebugLog($"[本地文章] 完成: NextAndSendArticle(result)");
+                        }
                     }
                     else //(Config.GetBool("错字重打"))
                     {
@@ -2735,9 +2744,16 @@ namespace TypeSunny.UI
                         {
                             if (TextInfo.WrongRec.Count == 0) //错字重打后无错字
                             {
-                                WriteDebugLog($"[本地文章] 执行: NextAndSendArticle() (错字重打完成)");
-                                await NextAndSendArticle();
-                                WriteDebugLog($"[本地文章] 完成: NextAndSendArticle()");
+                                if (localManualMode)
+                                {
+                                    WriteDebugLog($"[本地文章] 手动换段：错字重打完成，不自动翻页");
+                                }
+                                else
+                                {
+                                    WriteDebugLog($"[本地文章] 执行: NextAndSendArticle() (错字重打完成)");
+                                    await NextAndSendArticle();
+                                    WriteDebugLog($"[本地文章] 完成: NextAndSendArticle()");
+                                }
                             }
                             else
                             {
@@ -2748,9 +2764,17 @@ namespace TypeSunny.UI
                         {
                             if (TextInfo.WrongRec.Count == 0) //一次打对无错字
                             {
-                                WriteDebugLog($"[本地文章] 执行: NextAndSendArticle(result) (无错字)");
-                                await NextAndSendArticle(result);
-                                WriteDebugLog($"[本地文章] 完成: NextAndSendArticle(result)");
+                                if (localManualMode)
+                                {
+                                    WriteDebugLog($"[本地文章] 手动换段：无错字，只发送成绩");
+                                    SendLocalArticleResultOnly(result, qqGroupName, 150);
+                                }
+                                else
+                                {
+                                    WriteDebugLog($"[本地文章] 执行: NextAndSendArticle(result) (无错字)");
+                                    await NextAndSendArticle(result);
+                                    WriteDebugLog($"[本地文章] 完成: NextAndSendArticle(result)");
+                                }
                             }
                             else //有错字，发送成绩（后续通用逻辑会处理错字重打）
                             {
@@ -3195,6 +3219,22 @@ namespace TypeSunny.UI
                         Score.Wrong++;
                     }
                 }
+            }
+        }
+
+        private void SendLocalArticleResultOnly(string result, string qqGroupName, int delay = 0)
+        {
+            if (!Config.GetBool("自动发送成绩") || string.IsNullOrEmpty(result))
+                return;
+
+            if (qqGroupName != "")
+            {
+                QQHelper.SendQQMessage(qqGroupName, result, delay, this);
+            }
+            else
+            {
+                Win32SetText(result);
+                FocusInput();
             }
         }
 
@@ -5376,15 +5416,21 @@ public async Task SendArticle()
 
         private async void InternalHotkeyCtrlP(object sender, ExecutedRoutedEventArgs e)
         {
-            // 判断当前是文来模式还是本地文章模式
-            if (StateManager.txtSource == TxtSource.articlesender && articleCache.HasArticle())
+            // 只有当前来源明确是文来时，才允许使用文来缓存翻页。
+            if (StateManager.txtSource == TxtSource.articlesender)
             {
-                // 文来模式：调用API获取下一段
-                LoadNextSegment();
+                if (articleCache.HasArticle())
+                {
+                    LoadNextSegment();
+                }
             }
-            else
+            else if (StateManager.txtSource == TxtSource.book)
             {
-                // 本地文章模式：翻到下一页
+                ArticleManager.NextSection();
+                await SendArticle();
+            }
+            else if (ArticleManager.Title != "")
+            {
                 ArticleManager.NextSection();
                 await SendArticle();
             }
@@ -5392,15 +5438,21 @@ public async Task SendArticle()
 
         private async void InternalHotkeyCtrlO(object sender, ExecutedRoutedEventArgs e)
         {
-            // 判断当前是文来模式还是本地文章模式
-            if (StateManager.txtSource == TxtSource.articlesender && articleCache.HasArticle())
+            // 只有当前来源明确是文来时，才允许使用文来缓存翻页。
+            if (StateManager.txtSource == TxtSource.articlesender)
             {
-                // 文来模式：调用API获取上一段
-                LoadPreviousSegment();
+                if (articleCache.HasArticle())
+                {
+                    LoadPreviousSegment();
+                }
             }
-            else
+            else if (StateManager.txtSource == TxtSource.book)
             {
-                // 本地文章模式：翻到上一页
+                ArticleManager.PrevSection();
+                await SendArticle();
+            }
+            else if (ArticleManager.Title != "")
+            {
                 ArticleManager.PrevSection();
                 await SendArticle();
             }

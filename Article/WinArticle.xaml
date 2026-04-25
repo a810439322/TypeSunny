@@ -267,6 +267,11 @@
                                 <Button Content="▼" Click="SectionSizeDown" Style="{StaticResource NumberButtonStyle}"/>
                             </StackPanel>
                             <TextBlock Text="字/段" Foreground="{DynamicResource TextForeground}" FontSize="11" VerticalAlignment="Center" Margin="6,0,0,0" Opacity="0.7"/>
+                            <TextBlock Text="换段模式" Foreground="{DynamicResource TextForeground}" FontSize="12" VerticalAlignment="Center" Margin="18,0,8,0"/>
+                            <ComboBox x:Name="CbSegmentMode" Width="72" Height="26" SelectionChanged="CbSegmentMode_SelectionChanged">
+                                <ComboBoxItem Content="自动"/>
+                                <ComboBoxItem Content="手动"/>
+                            </ComboBox>
                         </StackPanel>
                     </Border>
                 </Grid>

@@ -49,6 +49,7 @@ namespace TypeSunny
             TbSectionSize.Text = ArticleManager.SectionSize.ToString();
             CbFilter.IsChecked = ArticleManager.EnableFilter;
             CbRemoveSpace.IsChecked = ArticleManager.RemoveSpace;
+            CbSegmentMode.SelectedIndex = ArticleManager.SegmentMode == ArticleManager.SegmentModeManual ? 1 : 0;
         }
 
         public void UpdateDisplay()
@@ -327,6 +328,30 @@ namespace TypeSunny
             {
                 ArticleManager.RemoveSpace = (CbRemoveSpace.IsChecked == true);
                 Reload();
+            }
+        }
+
+        private void CbSegmentMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!AllLoaded)
+                return;
+
+            string mode = CbSegmentMode.SelectedIndex == 1
+                ? ArticleManager.SegmentModeManual
+                : ArticleManager.SegmentModeAuto;
+
+            ArticleManager.SegmentMode = mode;
+
+            if (mode == ArticleManager.SegmentModeManual)
+            {
+                MessageBox.Show(
+                    "本地文章手动换段模式：\n\n" +
+                    "打完当前段后不会自动发送下一段。\n" +
+                    "可按 Ctrl+P 发下一段，Ctrl+O 发上一段。\n" +
+                    "也可以点击底部 < / > 按钮翻页。",
+                    "本地文章换段模式",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
             }
         }
 
