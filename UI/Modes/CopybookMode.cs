@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -26,14 +25,13 @@ namespace TypeSunny.UI.Modes
         private TextBlock _compositionText;
         private Border _cursor;
         private readonly List<FrameworkElement> _wrongCharHints = new List<FrameworkElement>();
+        private readonly ImeBackspacePolicy _imeBackspacePolicy = new ImeBackspacePolicy();
         private int _currentIndex;
         private bool _isActive;
         private bool _manualScrollActive;
         private int _visualAdvanceVersion;
         private bool _isImeComposing;
         private string _activeCompositionText = "";
-        private long _lastImeCancelTicks;
-        private const long ImeBackspaceGuardMs = 10;
         private GridLength _savedTypingRowHeight;
         private double _savedTypingRowMinHeight;
         private GridLength _savedSplitterRowHeight;
@@ -253,6 +251,7 @@ namespace TypeSunny.UI.Modes
             foreach (var hint in _wrongCharHints)
                 _overlay.Children.Remove(hint);
             _wrongCharHints.Clear();
+            _imeBackspacePolicy.Reset();
             ClearImeCompositionState();
             _compositionText.Visibility = Visibility.Collapsed;
             if (_inputCapture != null)
@@ -381,7 +380,6 @@ namespace TypeSunny.UI.Modes
             if (string.IsNullOrEmpty(e.Text))
             {
                 ClearImeCompositionState();
-                MarkImeCancel();
                 bool disableBackInEffect = Config.GetBool("禁用回改")
                     && StateManager.txtSource != TxtSource.raceApi
                     && StateManager.txtSource != TxtSource.jbs
@@ -402,7 +400,6 @@ namespace TypeSunny.UI.Modes
             if (e.Text == "\r")
             {
                 ClearImeCompositionState();
-                MarkImeCancel();
                 _compositionText.Visibility = Visibility.Collapsed;
                 e.Handled = true;
                 return;
@@ -542,6 +539,16 @@ namespace TypeSunny.UI.Modes
         {
             if (!_isActive) return;
             Key inputKey = e.Key == Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
+            bool isBackspace = inputKey == Key.Back;
+            bool shouldDeletePreviousWord = false;
+
+            if (isBackspace)
+            {
+                bool isImeProcessedBackspace = e.Key == Key.ImeProcessed && e.ImeProcessedKey == Key.Back;
+                shouldDeletePreviousWord = _imeBackspacePolicy.ShouldDeletePreviousWord(
+                    isImeProcessedBackspace,
+                    HasActiveComposition());
+            }
 
             // 禁用回改模式：拦截退格、Esc、Ctrl+Z（赛文模式不受限制，IME编码中放行退格）
             if (Config.GetBool("禁用回改")
@@ -549,9 +556,9 @@ namespace TypeSunny.UI.Modes
                 && StateManager.txtSource != TxtSource.jbs
                 && StateManager.txtSource != TxtSource.jisucup)
             {
-                if (inputKey == Key.Back)
+                if (isBackspace)
                 {
-                    if (!HasActiveComposition())
+                    if (shouldDeletePreviousWord)
                     {
                         e.Handled = true;
                         return;
@@ -579,12 +586,9 @@ namespace TypeSunny.UI.Modes
                 return;
             }
 
-            if (inputKey == Key.Back)
+            if (isBackspace)
             {
-                bool hasActiveComposition = HasActiveComposition();
-                bool isGuardedImeBackspace = IsWithinImeBackspaceGuard();
-
-                if (hasActiveComposition || isGuardedImeBackspace)
+                if (!shouldDeletePreviousWord)
                 {
                     return;
                 }
@@ -624,32 +628,21 @@ namespace TypeSunny.UI.Modes
 
         private void SetImeCompositionState(string composition)
         {
-            bool hadComposition = _isImeComposing || !string.IsNullOrEmpty(_activeCompositionText);
             _activeCompositionText = composition ?? "";
+            _imeBackspacePolicy.NotifyCompositionText(_activeCompositionText, IsPhysicalBackspaceDown());
             _isImeComposing = !string.IsNullOrEmpty(_activeCompositionText);
-            if (hadComposition && !_isImeComposing)
-                MarkImeCancel();
         }
 
         private void ClearImeCompositionState()
         {
             _activeCompositionText = "";
             _isImeComposing = false;
+            _imeBackspacePolicy.NotifyCompositionEnded();
         }
 
-        private void MarkImeCancel()
+        private bool IsPhysicalBackspaceDown()
         {
-            _lastImeCancelTicks = Stopwatch.GetTimestamp();
-        }
-
-        private bool IsWithinImeBackspaceGuard()
-        {
-            if (_lastImeCancelTicks == 0)
-                return false;
-
-            long elapsedTicks = Stopwatch.GetTimestamp() - _lastImeCancelTicks;
-            double elapsedMs = elapsedTicks * 1000.0 / Stopwatch.Frequency;
-            return elapsedMs >= 0 && elapsedMs <= ImeBackspaceGuardMs;
+            return TypeSunny.Utils.Win32.GetKeyState(TypeSunny.Utils.Win32.VK_BACK) < 0;
         }
 
         private void ShowWrongCharHint(string wrongChar, int index)

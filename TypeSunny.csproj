@@ -192,6 +192,7 @@
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="UI\Modes\ImeBackspacePolicy.cs" />
     <Compile Include="UI\Modes\SnakeMode.cs" />
     <Compile Include="UI\Modes\CopybookMode.cs" />
     <Compile Include="UI\Modes\TracingMode.cs" />
