@@ -26,6 +26,7 @@ namespace TypeSunny.UI.Modes
         private Border _cursor;
         private readonly List<FrameworkElement> _wrongCharHints = new List<FrameworkElement>();
         private readonly ImeBackspacePolicy _imeBackspacePolicy = new ImeBackspacePolicy();
+        private readonly FinishOnceGate _finishGate = new FinishOnceGate();
         private int _currentIndex;
         private bool _isActive;
         private bool _manualScrollActive;
@@ -150,6 +151,7 @@ namespace TypeSunny.UI.Modes
             // 注册事件
             _inputCapture.PreviewTextInput += OnTextInput;
             _inputCapture.PreviewKeyDown += OnPreviewKeyDown;
+            _inputCapture.PreviewKeyUp += OnPreviewKeyUp;
             _inputCapture.LostFocus += OnLostFocus;
             _inputCapture.GotFocus += OnGotFocus;
             _main.Activated += OnWindowActivated;
@@ -175,6 +177,7 @@ namespace TypeSunny.UI.Modes
             {
                 _inputCapture.PreviewTextInput -= OnTextInput;
                 _inputCapture.PreviewKeyDown -= OnPreviewKeyDown;
+                _inputCapture.PreviewKeyUp -= OnPreviewKeyUp;
                 _inputCapture.LostFocus -= OnLostFocus;
                 _inputCapture.GotFocus -= OnGotFocus;
                 _overlay.PreviewMouseWheel -= OnOverlayPreviewMouseWheel;
@@ -247,6 +250,7 @@ namespace TypeSunny.UI.Modes
         {
             if (!_isActive) return;
             _currentIndex = 0;
+            _finishGate.Reset();
             // 清除所有错字提示
             foreach (var hint in _wrongCharHints)
                 _overlay.Children.Remove(hint);
@@ -372,6 +376,11 @@ namespace TypeSunny.UI.Modes
         private void OnTextInput(object sender, TextCompositionEventArgs e)
         {
             if (!_isActive) return;
+            if (_finishGate.IsPending || StateManager.typingState == TypingState.end)
+            {
+                e.Handled = true;
+                return;
+            }
 
             // 统计（废码、打词率、提交记录、标顶等）
             _main.HandleTextInputStats(e);
@@ -539,6 +548,19 @@ namespace TypeSunny.UI.Modes
         {
             if (!_isActive) return;
             Key inputKey = e.Key == Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
+
+            if (_main.TryHandleFinishedActionFromKey(inputKey))
+            {
+                e.Handled = FinishedInputPolicy.ShouldHandlePreviewKeyDown(true);
+                return;
+            }
+
+            if (_finishGate.IsPending || StateManager.typingState == TypingState.end)
+            {
+                e.Handled = FinishedInputPolicy.ShouldHandlePreviewKeyDown(false);
+                return;
+            }
+
             bool isBackspace = inputKey == Key.Back;
             bool shouldDeletePreviousWord = false;
 
@@ -619,6 +641,13 @@ namespace TypeSunny.UI.Modes
                 }
                 e.Handled = true;
             }
+        }
+
+        private void OnPreviewKeyUp(object sender, KeyEventArgs e)
+        {
+            Key inputKey = e.Key == Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
+            if (inputKey == Key.Back)
+                _imeBackspacePolicy.NotifyPhysicalBackspaceReleased();
         }
 
         private bool HasActiveComposition()
@@ -769,6 +798,9 @@ namespace TypeSunny.UI.Modes
 
         private void ScheduleFinalVisualsAndStop()
         {
+            if (!_finishGate.TryBegin())
+                return;
+
             _main.Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (!_isActive) return;

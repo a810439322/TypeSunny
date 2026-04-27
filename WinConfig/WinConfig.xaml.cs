@@ -150,13 +150,11 @@ namespace TypeSunny
                         "慢字重打",
                         "  慢字标准(单位:秒)",
                         "  慢字重复次数",
+                        "重打跳转模式",
                         "贪吃蛇模式",
                         "  贪吃蛇前显字数",
                         "  贪吃蛇后显字数",
                         "字帖模式",
-                        "  字帖编码高度",
-                        "  字帖候选框高度",
-                        "  字帖错字高度",
                         "临摹模式",
                         "速度跟随提示",
                         "禁用回改",
@@ -910,6 +908,36 @@ namespace TypeSunny
                             "需要按 Ctrl+P 发下一段\n" +
                             "或按 Ctrl+O 发上一段",
                             "文来换段模式",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+                    }
+                };
+
+                valueControl = cb;
+            }
+            else if (itemKey == "重打跳转模式")
+            {
+                var cb = new ComboBox
+                {
+                    Width = 200,
+                    Margin = new Thickness(0, 8, 0, 8),
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Tag = "RetypeJumpMode"
+                };
+                cb.Items.Add("自动");
+                cb.Items.Add("手动");
+
+                string mode = Config.GetString("重打跳转模式");
+                cb.SelectedIndex = (mode == "手动") ? 1 : 0;
+                cb.SelectionChanged += (s, e) =>
+                {
+                    if (cb.SelectedIndex == 1)
+                    {
+                        MessageBox.Show(
+                            "手动重打跳转模式：\n\n" +
+                            "打完后如果触发错字重打或慢字重打，先停在成绩页\n" +
+                            "按空格或回车进入重打",
+                            "重打跳转模式",
                             MessageBoxButton.OK,
                             MessageBoxImage.Information);
                     }
@@ -2837,6 +2865,11 @@ namespace TypeSunny
                         value.Add("否");
                 }
                 else if (labelText == "文来换段模式")
+                {
+                    key.Add(labelText);
+                    value.Add(comboBox.SelectedIndex == 1 ? "手动" : "自动");
+                }
+                else if (labelText == "重打跳转模式")
                 {
                     key.Add(labelText);
                     value.Add(comboBox.SelectedIndex == 1 ? "手动" : "自动");

@@ -64,6 +64,9 @@ namespace TypeSunny.UI
         private readonly SnakeMode _snakeMode;
         internal CopybookMode _copybookMode;
         internal TracingMode _tracingMode;
+        private readonly PendingRetypeRequest _pendingRetypeRequest = new PendingRetypeRequest();
+        private readonly ArticleContinuationState _articleContinuationState = new ArticleContinuationState();
+        private bool _stopTypingPending;
 
         // 线程安全的调试日志锁对象
         private static readonly object _debugLogLock = new object();
@@ -2383,6 +2386,114 @@ namespace TypeSunny.UI
             get { return Config.GetBool("盲打模式") && StateManager.retypeType != RetypeType.wrongRetype; }
         }
 
+        private bool IsManualRetypeJumpMode()
+        {
+            return Config.GetString("重打跳转模式") == "手动";
+        }
+
+        private void QueuePendingRetype(string text, RetypeType retypeType)
+        {
+            _pendingRetypeRequest.Set(text, retypeType);
+            string label = retypeType == RetypeType.wrongRetype ? "错字重打" : "慢字重打";
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                TbkStatusTop.Text = "按空格或回车进入" + label + "\t" + Score.Progress();
+                if (_copybookMode != null && _copybookMode.IsActive)
+                    _copybookMode.FocusInputCapture();
+                else if (_tracingMode != null && _tracingMode.IsActive)
+                    _tracingMode.FocusInputCapture();
+                else
+                    TbxInput.Focus();
+            }));
+        }
+
+        private void QueuePendingArticleContinuation()
+        {
+            if (!_articleContinuationState.RequestPending())
+                return;
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                TbkStatusTop.Text = "按空格或回车继续\t" + Score.Progress();
+                if (_copybookMode != null && _copybookMode.IsActive)
+                    _copybookMode.FocusInputCapture();
+                else if (_tracingMode != null && _tracingMode.IsActive)
+                    _tracingMode.FocusInputCapture();
+                else
+                    TbxInput.Focus();
+            }));
+        }
+
+        private bool IsRetypeCompletion(RetypeType retypeType)
+        {
+            return retypeType == RetypeType.wrongRetype || retypeType == RetypeType.slowRetype;
+        }
+
+        internal bool TryHandleFinishedActionFromKey(Key inputKey)
+        {
+            bool shouldStart = inputKey == Key.Space || inputKey == Key.Enter;
+            string text;
+            RetypeType retypeType;
+
+            if (!_pendingRetypeRequest.TryConsume(shouldStart, out text, out retypeType))
+            {
+                ArticleContinuationAction action;
+                if (!_articleContinuationState.TryConsume(shouldStart, out action))
+                    return false;
+
+                ExecuteArticleContinuation(action);
+                return true;
+            }
+
+            _stopTypingPending = false;
+            LoadText(text, retypeType, TxtSource.unchange, true, true);
+            return true;
+        }
+
+        private void ExecuteArticleContinuation(ArticleContinuationAction action)
+        {
+            switch (action)
+            {
+                case ArticleContinuationAction.WenlaiRandom:
+                    LoadRandomArticle(true);
+                    break;
+                case ArticleContinuationAction.WenlaiNext:
+                    LoadNextSegment();
+                    break;
+                case ArticleContinuationAction.WenlaiPrevious:
+                    LoadPreviousSegment();
+                    break;
+                case ArticleContinuationAction.LocalNext:
+                    _ = ContinueLocalArticleAsync(next: true);
+                    break;
+                case ArticleContinuationAction.LocalPrevious:
+                    _ = ContinueLocalArticleAsync(next: false);
+                    break;
+            }
+        }
+
+        private async Task ContinueLocalArticleAsync(bool next)
+        {
+            if (next)
+            {
+                RecordLocalArticleContinuation(next: true);
+                ArticleManager.NextSection();
+            }
+            else
+            {
+                RecordLocalArticleContinuation(next: false);
+                ArticleManager.PrevSection();
+            }
+
+            await SendArticle();
+        }
+
+        internal void RecordLocalArticleContinuation(bool next)
+        {
+            _articleContinuationState.Record(next ? ArticleContinuationAction.LocalNext : ArticleContinuationAction.LocalPrevious);
+        }
+
         async Task StopHelper()
         {
             // 在非UI线程中，提前获取QQGroupName等UI相关属性
@@ -2726,7 +2837,11 @@ namespace TypeSunny.UI
 
                     if (!Config.GetBool("错字重打")) //没有错字，或没有错字重打
                     {
-                        if (localManualMode)
+                        if (IsManualRetypeJumpMode() && IsRetypeCompletion(savedRetypeType))
+                        {
+                            WriteDebugLog($"[本地文章] 手动重打跳转：等待空格/回车继续");
+                        }
+                        else if (localManualMode)
                         {
                             WriteDebugLog($"[本地文章] 手动换段：只发送成绩，不自动翻页");
                             SendLocalArticleResultOnly(result, qqGroupName, 150);
@@ -2744,7 +2859,11 @@ namespace TypeSunny.UI
                         {
                             if (TextInfo.WrongRec.Count == 0) //错字重打后无错字
                             {
-                                if (localManualMode)
+                                if (IsManualRetypeJumpMode())
+                                {
+                                    WriteDebugLog($"[本地文章] 手动重打跳转：等待空格/回车继续");
+                                }
+                                else if (localManualMode)
                                 {
                                     WriteDebugLog($"[本地文章] 手动换段：错字重打完成，不自动翻页");
                                 }
@@ -2764,7 +2883,11 @@ namespace TypeSunny.UI
                         {
                             if (TextInfo.WrongRec.Count == 0) //一次打对无错字
                             {
-                                if (localManualMode)
+                                if (IsManualRetypeJumpMode() && IsRetypeCompletion(savedRetypeType))
+                                {
+                                    WriteDebugLog($"[本地文章] 手动重打跳转：等待空格/回车继续");
+                                }
+                                else if (localManualMode)
                                 {
                                     WriteDebugLog($"[本地文章] 手动换段：无错字，只发送成绩");
                                     SendLocalArticleResultOnly(result, qqGroupName, 150);
@@ -2997,12 +3120,19 @@ namespace TypeSunny.UI
                         RetypeType retypeType = hasWrong ? RetypeType.wrongRetype : RetypeType.slowRetype;
                         try
                         {
-                            LoadText(sb.ToString(), retypeType, TxtSource.unchange, true, true);
+                            if (IsManualRetypeJumpMode())
+                                QueuePendingRetype(sb.ToString(), retypeType);
+                            else
+                                LoadText(sb.ToString(), retypeType, TxtSource.unchange, true, true);
                         }
                         catch (Exception ex)
                         {
                             throw ex;
                         }
+                    }
+                    else if (IsManualRetypeJumpMode() && IsRetypeCompletion(savedRetypeType))
+                    {
+                        QueuePendingArticleContinuation();
                     }
                     else if (savedTxtSource == TxtSource.articlesender)
                     {
@@ -3153,6 +3283,10 @@ namespace TypeSunny.UI
         /// </summary>
         internal void StopTyping()
         {
+            if (_stopTypingPending || StateManager.typingState == TypingState.end)
+                return;
+
+            _stopTypingPending = true;
             Trace.WriteLine("stop");
 
             StateManager.LastType = true;
@@ -3916,7 +4050,11 @@ public async Task SendArticle()
 
 
             if (TbxInput.IsReadOnly)
+            {
+                if (TryHandleFinishedActionFromKey(e.Key == Key.ImeProcessed ? e.ImeProcessedKey : e.Key))
+                    e.Handled = true;
                 return;
+            }
             //过滤热键
 
             if (e.Key == Key.F3 || e.Key == Key.F4 || e.Key == Key.F5)
@@ -4336,7 +4474,10 @@ public async Task SendArticle()
                 cacheLoadInfo = new CacheLoadInfo(rawTxt, retypeType, source, switchBack, isAuto);
                 return;
             }
-        
+
+            _pendingRetypeRequest.Clear();
+            _articleContinuationState.ClearPending();
+            _stopTypingPending = false;
 
 
             //设置states公共变量
@@ -5411,6 +5552,7 @@ public async Task SendArticle()
 
         private void InternalHotkeyCtrlR(object sender, ExecutedRoutedEventArgs e)
         {
+            _articleContinuationState.Record(ArticleContinuationAction.WenlaiRandom);
             LoadRandomArticle(true);
         }
 
@@ -5426,13 +5568,11 @@ public async Task SendArticle()
             }
             else if (StateManager.txtSource == TxtSource.book)
             {
-                ArticleManager.NextSection();
-                await SendArticle();
+                await ContinueLocalArticleAsync(next: true);
             }
             else if (ArticleManager.Title != "")
             {
-                ArticleManager.NextSection();
-                await SendArticle();
+                await ContinueLocalArticleAsync(next: true);
             }
         }
 
@@ -5448,13 +5588,11 @@ public async Task SendArticle()
             }
             else if (StateManager.txtSource == TxtSource.book)
             {
-                ArticleManager.PrevSection();
-                await SendArticle();
+                await ContinueLocalArticleAsync(next: false);
             }
             else if (ArticleManager.Title != "")
             {
-                ArticleManager.PrevSection();
-                await SendArticle();
+                await ContinueLocalArticleAsync(next: false);
             }
         }
 
@@ -7672,6 +7810,7 @@ public async Task SendArticle()
 
         private async void BtnRandomArticle_Click(object sender, RoutedEventArgs e)
         {
+            _articleContinuationState.Record(ArticleContinuationAction.WenlaiRandom);
             await LoadRandomArticleAsync(true);
         }
 
@@ -7902,12 +8041,14 @@ public async Task SendArticle()
 
         private void LoadRandomArticle(bool autoSend = false, string lastResult = "")
         {
+            _articleContinuationState.Record(ArticleContinuationAction.WenlaiRandom);
             // 调用异步版本，不等待结果
             _ = LoadRandomArticleAsync(autoSend, lastResult);
         }
 
         private async void LoadNextSegment()
         {
+            _articleContinuationState.Record(ArticleContinuationAction.WenlaiNext);
             if (!articleCache.HasArticle())
             {
                 MessageBox.Show("请先加载文章（Ctrl+R）", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -7946,6 +8087,7 @@ public async Task SendArticle()
 
         private async void LoadPreviousSegment()
         {
+            _articleContinuationState.Record(ArticleContinuationAction.WenlaiPrevious);
             if (!articleCache.HasArticle())
             {
                 MessageBox.Show("请先加载文章（Ctrl+R）", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -8034,6 +8176,7 @@ public async Task SendArticle()
 
         private async void BtnPrev_Click(object sender, RoutedEventArgs e)
         {
+            RecordLocalArticleContinuation(next: false);
             ArticleManager.PrevSection();
             string content = await ArticleManager.GetFormattedCurrentSection();
             LoadText(content, RetypeType.first, TxtSource.book, false);
@@ -8043,6 +8186,7 @@ public async Task SendArticle()
 
         private async void BtnNext_Click(object sender, RoutedEventArgs e)
         {
+            RecordLocalArticleContinuation(next: true);
             ArticleManager.NextSection();
             string content = await ArticleManager.GetFormattedCurrentSection();
             LoadText(content, RetypeType.first, TxtSource.book, false);

@@ -25,6 +25,11 @@ namespace TypeSunny.UI.Modes
             _hadComposition = false;
         }
 
+        public void NotifyPhysicalBackspaceReleased()
+        {
+            _protectNextRawBackspaceAfterEmptyComposition = false;
+        }
+
         public bool ShouldDeletePreviousWord(bool isImeProcessedBackspace, bool hasActiveComposition)
         {
             if (isImeProcessedBackspace || hasActiveComposition)
