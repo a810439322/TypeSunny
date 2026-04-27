@@ -34,6 +34,7 @@ using TypeSunny.Core;
 using TypeSunny.Logs;
 using TypeSunny.Utils;
 using TypeSunny.UI;
+using TypeSunny.Versioning;
 using TypeSunny.Difficulty;
 using TypeSunny.ArticleSender;
 using TypeSunny.UI.Modes;
@@ -5145,7 +5146,14 @@ public async Task SendArticle()
             {
                 try
                 {
-                    await VersionManager.CheckUpdateAsync();
+                    if (VersionCheckPolicy.ShouldCheck(
+                        VersionCheckTrigger.Startup,
+                        VersionManager.IsDismissedToday,
+                        VersionManager.ShouldCheckUpdate))
+                    {
+                        await VersionManager.CheckUpdateAsync(
+                            forceRefresh: VersionCheckPolicy.ShouldForceRefresh(VersionCheckTrigger.Startup));
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -5165,10 +5173,17 @@ public async Task SendArticle()
             {
                 try
                 {
-                    bool hasUpdate = await VersionManager.CheckUpdateAsync();
-                    if (hasUpdate && VersionManager.ShouldShowReminder)
+                    if (VersionCheckPolicy.ShouldCheck(
+                        VersionCheckTrigger.Timer,
+                        VersionManager.IsDismissedToday,
+                        VersionManager.ShouldCheckUpdate))
                     {
-                        ShowUpdateReminder();
+                        bool hasUpdate = await VersionManager.CheckUpdateAsync(
+                            forceRefresh: VersionCheckPolicy.ShouldForceRefresh(VersionCheckTrigger.Timer));
+                        if (hasUpdate && VersionManager.ShouldShowReminder)
+                        {
+                            ShowUpdateReminder();
+                        }
                     }
                 }
                 catch (Exception ex)

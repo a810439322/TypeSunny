@@ -19,6 +19,7 @@ using TypeSunny.Net;
 using TypeSunny.UI;
 using TypeSunny.Core;
 using TypeSunny.Utils;
+using TypeSunny.Versioning;
 
 
 namespace TypeSunny
@@ -1054,7 +1055,8 @@ namespace TypeSunny
                     tb.Text = "检查中...";
                     try
                     {
-                        await VersionManager.CheckUpdateAsync(forceRefresh: true);
+                        await VersionManager.CheckUpdateAsync(
+                            forceRefresh: VersionCheckPolicy.ShouldForceRefresh(VersionCheckTrigger.Manual));
                         tb.Text = VersionManager.LatestVersion;
                         updateBtn.Visibility = VersionManager.HasUpdate ? Visibility.Visible : Visibility.Collapsed;
                     }

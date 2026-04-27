@@ -147,7 +147,7 @@ namespace TypeSunny.UI.Modes
             // 注册事件
             _inputCapture.PreviewTextInput += OnTextInput;
             _inputCapture.PreviewKeyDown += OnPreviewKeyDown;
-            _inputCapture.PreviewKeyUp += OnPreviewKeyUp;
+            _inputCapture.AddHandler(Keyboard.PreviewKeyUpEvent, new KeyEventHandler(OnPreviewKeyUp), true);
             _inputCapture.LostFocus += OnLostFocus;
             _inputCapture.GotFocus += OnGotFocus;
             _main.Activated += OnWindowActivated;
@@ -172,7 +172,7 @@ namespace TypeSunny.UI.Modes
             {
                 _inputCapture.PreviewTextInput -= OnTextInput;
                 _inputCapture.PreviewKeyDown -= OnPreviewKeyDown;
-                _inputCapture.PreviewKeyUp -= OnPreviewKeyUp;
+                _inputCapture.RemoveHandler(Keyboard.PreviewKeyUpEvent, new KeyEventHandler(OnPreviewKeyUp));
                 _inputCapture.LostFocus -= OnLostFocus;
                 _inputCapture.GotFocus -= OnGotFocus;
                 _overlay.PreviewMouseWheel -= OnOverlayPreviewMouseWheel;

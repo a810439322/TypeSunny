@@ -89,6 +89,8 @@ namespace TypeSunny
             }
         }
 
+        public static bool IsDismissedToday => DismissUntil.Date == DateTime.Today;
+
         public static bool HasUpdate
         {
             get
@@ -117,7 +119,7 @@ namespace TypeSunny
             {
                 if (!HasUpdate) return false;
                 if (LatestVersion == IgnoredVersion) return false;
-                if (DismissUntil.Date == DateTime.Today) return false;
+                if (IsDismissedToday) return false;
                 return true;
             }
         }
