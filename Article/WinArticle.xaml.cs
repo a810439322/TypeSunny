@@ -261,6 +261,7 @@ namespace TypeSunny
 
         public void Prev()
         {
+            MainWindow.Current?.RecordLocalArticleContinuation(next: false);
             ArticleManager.PrevSection();
         }
 
@@ -271,6 +272,7 @@ namespace TypeSunny
 
         public void Next()
         {
+            MainWindow.Current?.RecordLocalArticleContinuation(next: true);
             ArticleManager.NextSection();
         }
 
