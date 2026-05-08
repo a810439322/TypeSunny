@@ -1,0 +1,68 @@
+<Window x:Class="TypeSunny.UI.ShuangMissingDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="晴双拼资源缺失" Height="300" Width="460" Icon="/Resources/ico/sunny.ico"
+        WindowStartupLocation="CenterOwner"
+        Background="Transparent"
+        AllowsTransparency="True"
+        WindowStyle="None"
+        ResizeMode="NoResize">
+    <Border x:Name="mainBorder"
+            CornerRadius="10"
+            BorderThickness="2"
+            Margin="5"
+            MouseLeftButtonDown="Border_MouseLeftButtonDown">
+        <Border.Effect>
+            <DropShadowEffect Color="Black" Opacity="0.3" BlurRadius="10" ShadowDepth="2"/>
+        </Border.Effect>
+        <Grid Margin="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" Margin="0,0,0,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="txtTitle" Grid.Column="0"
+                           Text="晴双拼资源缺失"
+                           FontSize="18" FontWeight="Bold"
+                           VerticalAlignment="Center"/>
+                <Button Grid.Column="1" Content="✕" Width="28" Height="28"
+                        FontSize="14" Background="Transparent" BorderThickness="0"
+                        Cursor="Hand" Click="BtnClose_Click"
+                        VerticalAlignment="Center"/>
+            </Grid>
+
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,10">
+                <StackPanel>
+                    <TextBlock x:Name="txtVersion" FontSize="13" Margin="0,0,0,5"/>
+                    <TextBlock x:Name="txtChangelog" TextWrapping="Wrap" FontSize="13" LineHeight="22"/>
+                </StackPanel>
+            </ScrollViewer>
+
+            <Grid x:Name="gridProgress" Grid.Row="2" Margin="0,0,0,10" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <ProgressBar x:Name="progressBar" Grid.Row="0" Height="6"
+                             Minimum="0" Maximum="100"/>
+                <TextBlock x:Name="txtProgress" Grid.Row="1" FontSize="12"
+                           HorizontalAlignment="Center" Margin="0,4,0,0"/>
+            </Grid>
+
+            <StackPanel x:Name="panelButtons" Grid.Row="3" Orientation="Horizontal"
+                        HorizontalAlignment="Right">
+                <Button x:Name="btnCancel" Content="取消" Width="80" Height="30"
+                        Margin="0,0,8,0" Cursor="Hand" Click="BtnCancel_Click"/>
+                <Button x:Name="btnConfirm" Content="下载并重启" Width="100" Height="30"
+                        Cursor="Hand" FontWeight="Bold" Click="BtnConfirm_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

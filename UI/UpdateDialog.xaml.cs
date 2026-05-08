@@ -1,12 +1,11 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.IO.Compression;
-using System.Net.Http;
-using System.Threading.Tasks;
+using System.Threading;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using TypeSunny.Utils;
 
 namespace TypeSunny.UI
 {
@@ -35,51 +34,12 @@ namespace TypeSunny.UI
 
         private void ApplyThemeColors()
         {
-            try
-            {
-                var windowBgStr = Config.GetString("窗体背景色");
-                var windowFgStr = Config.GetString("窗体字体色");
-                var btnBgStr = Config.GetString("按钮背景色");
-                var btnFgStr = Config.GetString("按钮字体色");
-
-                var bgColor = (Color)ColorConverter.ConvertFromString("#" + windowBgStr);
-                var fgColor = (Color)ColorConverter.ConvertFromString("#" + windowFgStr);
-                var btnBgColor = (Color)ColorConverter.ConvertFromString("#" + btnBgStr);
-                var btnFgColor = (Color)ColorConverter.ConvertFromString("#" + btnFgStr);
-
-                var bgBrush = new SolidColorBrush(bgColor);
-                var fgBrush = new SolidColorBrush(fgColor);
-                var btnBgBrush = new SolidColorBrush(btnBgColor);
-                var btnFgBrush = new SolidColorBrush(btnFgColor);
-
-                mainBorder.Background = bgBrush;
-
-                double brightness = (bgColor.R * 0.299 + bgColor.G * 0.587 + bgColor.B * 0.114) / 255.0;
-                bool isDark = brightness < 0.5;
-                var borderColor = isDark
-                    ? Color.FromRgb((byte)Math.Min(255, bgColor.R + 50), (byte)Math.Min(255, bgColor.G + 50), (byte)Math.Min(255, bgColor.B + 50))
-                    : Color.FromRgb((byte)Math.Max(0, bgColor.R - 30), (byte)Math.Max(0, bgColor.G - 30), (byte)Math.Max(0, bgColor.B - 30));
-                mainBorder.BorderBrush = new SolidColorBrush(borderColor);
-
-                txtTitle.Foreground = fgBrush;
-                txtVersion.Foreground = fgBrush;
-                txtChangelog.Foreground = fgBrush;
-                txtProgress.Foreground = fgBrush;
-
-                btnIgnore.Background = btnBgBrush;
-                btnIgnore.Foreground = btnFgBrush;
-                btnDismiss.Background = btnBgBrush;
-                btnDismiss.Foreground = btnFgBrush;
-
-                var accentColor = (Color)ColorConverter.ConvertFromString("#" + Config.GetString("标题栏进度条颜色"));
-                btnUpdate.Background = new SolidColorBrush(accentColor);
-                btnUpdate.Foreground = new SolidColorBrush(Colors.White);
-                progressBar.Foreground = new SolidColorBrush(accentColor);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[UpdateDialog] 主题应用失败: {ex.Message}");
-            }
+            DialogTheming.Apply(
+                mainBorder,
+                new[] { txtTitle, txtVersion, txtChangelog, txtProgress },
+                new[] { btnIgnore, btnDismiss },
+                btnUpdate,
+                progressBar);
         }
 
         private void Border_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -122,43 +82,39 @@ namespace TypeSunny.UI
                 return;
             }
 
+            string updaterPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Updater.exe");
+            if (!File.Exists(updaterPath))
+            {
+                var result = MessageBox.Show("未找到 Updater.exe，需要下载全量包。\n是否打开下载页面？", "提示",
+                    MessageBoxButton.YesNo);
+                if (result == MessageBoxResult.Yes)
+                    Process.Start(VersionManager.ReleasePage);
+                return;
+            }
+
             panelButtons.Visibility = Visibility.Collapsed;
             gridProgress.Visibility = Visibility.Visible;
             txtProgress.Text = "正在下载更新...";
 
             try
             {
-                string tempDir = Path.Combine(Path.GetTempPath(), "TypeSunnyUpdate");
-                if (Directory.Exists(tempDir))
-                    Directory.Delete(tempDir, true);
-                Directory.CreateDirectory(tempDir);
-
-                string zipPath = Path.Combine(tempDir, "update.zip");
-
-                await DownloadFileAsync(url, zipPath);
-
-                txtProgress.Text = "下载完成，正在启动更新...";
-
-                string appDir = AppDomain.CurrentDomain.BaseDirectory;
-                string updaterPath = Path.Combine(appDir, "Updater.exe");
-
-                if (!File.Exists(updaterPath))
+                var progress = new Progress<(long downloaded, long? total)>(value =>
                 {
-                    var result = MessageBox.Show("未找到 Updater.exe，需要下载全量包。\n是否打开下载页面？", "提示",
-                        MessageBoxButton.YesNo);
-                    if (result == MessageBoxResult.Yes)
-                        Process.Start(VersionManager.ReleasePage);
-                    panelButtons.Visibility = Visibility.Visible;
-                    gridProgress.Visibility = Visibility.Collapsed;
-                    return;
-                }
+                    long downloaded = value.downloaded;
+                    long? total = value.total;
+                    if (total.HasValue && total.Value > 0)
+                    {
+                        int percent = (int)(downloaded * 100 / total.Value);
+                        progressBar.Value = percent;
+                        txtProgress.Text = $"正在下载... {downloaded / 1024}KB / {total.Value / 1024}KB ({percent}%)";
+                    }
+                    else
+                    {
+                        txtProgress.Text = $"正在下载... {downloaded / 1024}KB";
+                    }
+                });
 
-                int pid = Process.GetCurrentProcess().Id;
-                string mainExe = Process.GetCurrentProcess().MainModule.FileName;
-                string appDirClean = appDir.TrimEnd('\\');
-                Process.Start(updaterPath, $"\"{zipPath}\" \"{appDirClean}\" {pid} \"{mainExe}\"");
-
-                Application.Current.Shutdown();
+                await UpdatePackageDownloader.DownloadAndApplyAsync(url, progress, CancellationToken.None);
             }
             catch (Exception ex)
             {
@@ -166,44 +122,6 @@ namespace TypeSunny.UI
                 MessageBox.Show($"更新失败：{ex.Message}\n请前往 Gitee 手动下载。", "提示");
                 panelButtons.Visibility = Visibility.Visible;
                 gridProgress.Visibility = Visibility.Collapsed;
-            }
-        }
-
-        private async Task DownloadFileAsync(string url, string filePath)
-        {
-            using (var client = new HttpClient(new HttpClientHandler { UseProxy = false }))
-            {
-                client.Timeout = TimeSpan.FromMinutes(5);
-                using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
-                {
-                    response.EnsureSuccessStatusCode();
-                    long? totalBytes = response.Content.Headers.ContentLength;
-
-                    using (var stream = await response.Content.ReadAsStreamAsync())
-                    using (var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
-                    {
-                        var buffer = new byte[8192];
-                        long downloaded = 0;
-                        int bytesRead;
-
-                        while ((bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                        {
-                            await fileStream.WriteAsync(buffer, 0, bytesRead);
-                            downloaded += bytesRead;
-
-                            if (totalBytes.HasValue && totalBytes.Value > 0)
-                            {
-                                int percent = (int)(downloaded * 100 / totalBytes.Value);
-                                progressBar.Value = percent;
-                                txtProgress.Text = $"正在下载... {downloaded / 1024}KB / {totalBytes.Value / 1024}KB ({percent}%)";
-                            }
-                            else
-                            {
-                                txtProgress.Text = $"正在下载... {downloaded / 1024}KB";
-                            }
-                        }
-                    }
-                }
             }
         }
     }

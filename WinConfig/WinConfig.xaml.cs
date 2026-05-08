@@ -143,6 +143,11 @@ namespace TypeSunny
                 },
                 new ConfigCategory
                 {
+                    Title = "首页",
+                    Items = new string[0]
+                },
+                new ConfigCategory
+                {
                     Title = "跟打",
                     Items = new[]
                     {
@@ -527,6 +532,13 @@ namespace TypeSunny
             if (category.Title == "成绩")
             {
                 AppendScoreItemsList(currentRow);
+            }
+
+            // 如果是"首页"分类，构建首页入口排序与显示设置
+            if (category.Title == "首页")
+            {
+                AppendHomeToolbarSettings(currentRow);
+                currentRow += 2;
             }
 
             // 如果是"过滤"分类，构建自定义过滤设置UI
@@ -2630,6 +2642,288 @@ namespace TypeSunny
         }
 
         /// <summary>
+        /// 在首页分类页面内嵌首页功能按钮拖拽排序列表。
+        /// </summary>
+        private void AppendHomeToolbarSettings(int startRow)
+        {
+            var optTitle = new TextBlock
+            {
+                Text = "首页按纽显示",
+                FontSize = 13,
+                Foreground = new SolidColorBrush(Color.FromRgb(100, 150, 200)),
+                Margin = new Thickness(0, 10, 0, 5)
+            };
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(optTitle, startRow);
+            Grid.SetColumnSpan(optTitle, 2);
+            ContentPanel.Children.Add(optTitle);
+
+            var visibility = HomeToolbarSettings.FeatureEntries.ToDictionary(
+                entry => entry.VisibilityConfigKey,
+                entry => Config.GetBool(entry.VisibilityConfigKey));
+            var currentOrder = HomeToolbarSettings.GetFeatureEntries(
+                Config.GetString(HomeToolbarSettings.FeatureOrderConfigKey));
+
+            var listBox = new ListBox
+            {
+                MinHeight = 150,
+                MaxHeight = 260,
+                AllowDrop = true,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Margin = new Thickness(0, 5, 0, 0)
+            };
+
+            var checkboxes = new Dictionary<string, CheckBox>();
+
+            foreach (var entry in currentOrder)
+            {
+                var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(2) };
+                row.Children.Add(new TextBlock
+                {
+                    Text = "☰",
+                    FontSize = 14,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 8, 0),
+                    Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120))
+                });
+
+                var chk = new CheckBox
+                {
+                    IsChecked = !visibility.ContainsKey(entry.VisibilityConfigKey) || visibility[entry.VisibilityConfigKey],
+                    Style = FindResource("ModernToggleStyle") as Style,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 4, 8, 4)
+                };
+                checkboxes[entry.Key] = chk;
+                row.Children.Add(chk);
+                var label = new TextBlock
+                {
+                    Text = entry.DisplayName,
+                    FontSize = 13,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                row.Children.Add(label);
+
+                var item = new ListBoxItem
+                {
+                    Content = row,
+                    Tag = entry.Key,
+                    AllowDrop = true,
+                    Padding = new Thickness(4, 2, 4, 2)
+                };
+                listBox.Items.Add(item);
+            }
+
+            Action saveConfig = () =>
+            {
+                var orderedNames = new List<string>();
+                foreach (ListBoxItem item in listBox.Items)
+                {
+                    var entry = HomeToolbarSettings.FindFeatureEntry(item.Tag as string);
+                    if (entry == null)
+                        continue;
+
+                    orderedNames.Add(entry.DisplayName);
+                    if (checkboxes.ContainsKey(entry.Key))
+                        Config.Set(entry.VisibilityConfigKey, checkboxes[entry.Key].IsChecked == true);
+                }
+
+                Config.Set(HomeToolbarSettings.FeatureOrderConfigKey, string.Join(",", orderedNames));
+                RefreshMainWindowHomeToolbar();
+            };
+
+            foreach (var chk in checkboxes.Values)
+            {
+                chk.Checked += (s, e) => saveConfig();
+                chk.Unchecked += (s, e) => saveConfig();
+            }
+
+            ListBoxItem draggedItem = null;
+            Point dragStartPoint = default;
+            DragAdorner currentAdorner = null;
+            InsertionLineAdorner insertionAdorner = null;
+
+            listBox.PreviewMouseLeftButtonDown += (s, e) =>
+            {
+                if (FindAncestor<CheckBox>((DependencyObject)e.OriginalSource) != null)
+                {
+                    draggedItem = null;
+                    return;
+                }
+
+                dragStartPoint = e.GetPosition(listBox);
+                draggedItem = FindAncestor<ListBoxItem>((DependencyObject)e.OriginalSource);
+            };
+
+            listBox.PreviewMouseMove += (s, e) =>
+            {
+                if (draggedItem == null || e.LeftButton != MouseButtonState.Pressed)
+                    return;
+
+                Point pos = e.GetPosition(listBox);
+                if (Math.Abs(pos.X - dragStartPoint.X) <= SystemParameters.MinimumHorizontalDragDistance &&
+                    Math.Abs(pos.Y - dragStartPoint.Y) <= SystemParameters.MinimumVerticalDragDistance)
+                    return;
+
+                var adornerLayer = AdornerLayer.GetAdornerLayer(listBox);
+                if (adornerLayer != null)
+                {
+                    currentAdorner = new DragAdorner(listBox, draggedItem, 0.6);
+                    adornerLayer.Add(currentAdorner);
+                }
+
+                draggedItem.Opacity = 0.3;
+                DragDrop.DoDragDrop(listBox, draggedItem, DragDropEffects.Move);
+
+                draggedItem.Opacity = 1.0;
+                if (currentAdorner != null && adornerLayer != null)
+                {
+                    adornerLayer.Remove(currentAdorner);
+                    currentAdorner = null;
+                }
+                if (insertionAdorner != null && adornerLayer != null)
+                {
+                    adornerLayer.Remove(insertionAdorner);
+                    insertionAdorner = null;
+                }
+                draggedItem = null;
+            };
+
+            listBox.DragOver += (s, e) =>
+            {
+                e.Effects = DragDropEffects.Move;
+                e.Handled = true;
+
+                if (currentAdorner != null)
+                    currentAdorner.UpdatePosition(e.GetPosition(listBox));
+
+                var adornerLayer = AdornerLayer.GetAdornerLayer(listBox);
+                if (adornerLayer == null)
+                    return;
+
+                if (insertionAdorner != null)
+                {
+                    adornerLayer.Remove(insertionAdorner);
+                    insertionAdorner = null;
+                }
+
+                var targetItem = FindAncestor<ListBoxItem>((DependencyObject)e.OriginalSource);
+                if (targetItem != null)
+                {
+                    Point posInTarget = e.GetPosition(targetItem);
+                    bool insertBefore = posInTarget.Y < targetItem.ActualHeight / 2;
+                    insertionAdorner = new InsertionLineAdorner(listBox, targetItem, insertBefore);
+                    adornerLayer.Add(insertionAdorner);
+                }
+            };
+
+            listBox.DragLeave += (s, e) =>
+            {
+                var adornerLayer = AdornerLayer.GetAdornerLayer(listBox);
+                if (insertionAdorner != null && adornerLayer != null)
+                {
+                    adornerLayer.Remove(insertionAdorner);
+                    insertionAdorner = null;
+                }
+            };
+
+            listBox.Drop += (s, e) =>
+            {
+                var adornerLayer = AdornerLayer.GetAdornerLayer(listBox);
+                if (insertionAdorner != null && adornerLayer != null)
+                {
+                    adornerLayer.Remove(insertionAdorner);
+                    insertionAdorner = null;
+                }
+
+                var source = e.Data.GetData(typeof(ListBoxItem)) as ListBoxItem;
+                if (source == null) return;
+
+                var targetItem = FindAncestor<ListBoxItem>((DependencyObject)e.OriginalSource);
+                if (targetItem == null || targetItem == source) return;
+
+                int sourceIndex = listBox.Items.IndexOf(source);
+                int targetIndex = listBox.Items.IndexOf(targetItem);
+                if (sourceIndex < 0 || targetIndex < 0) return;
+
+                Point posInTarget = e.GetPosition(targetItem);
+                bool insertBefore = posInTarget.Y < targetItem.ActualHeight / 2;
+
+                listBox.Items.RemoveAt(sourceIndex);
+                int finalIndex = listBox.Items.IndexOf(targetItem);
+                if (!insertBefore) finalIndex++;
+                listBox.Items.Insert(finalIndex, source);
+                saveConfig();
+            };
+
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(listBox, startRow + 1);
+            Grid.SetColumnSpan(listBox, 2);
+            ContentPanel.Children.Add(listBox);
+
+            AppendFixedHomeModuleSettings(startRow + 2);
+        }
+
+        private void AppendFixedHomeModuleSettings(int startRow)
+        {
+            var title = new TextBlock
+            {
+                Text = "固定模块",
+                FontSize = 13,
+                Foreground = new SolidColorBrush(Color.FromRgb(100, 150, 200)),
+                Margin = new Thickness(0, 12, 0, 5)
+            };
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(title, startRow);
+            Grid.SetColumnSpan(title, 2);
+            ContentPanel.Children.Add(title);
+
+            int rowIndex = startRow + 1;
+            foreach (var entry in HomeToolbarSettings.FixedModuleEntries)
+            {
+                ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto, MinHeight = 38 });
+
+                var row = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Margin = new Thickness(2, 2, 0, 2)
+                };
+                var chk = new CheckBox
+                {
+                    IsChecked = Config.GetBool(entry.VisibilityConfigKey),
+                    Style = FindResource("ModernToggleStyle") as Style,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 4, 8, 4)
+                };
+                var label = new TextBlock
+                {
+                    Text = entry.DisplayName,
+                    FontSize = 13,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                chk.Checked += (s, e) =>
+                {
+                    Config.Set(entry.VisibilityConfigKey, true);
+                    RefreshMainWindowHomeToolbar();
+                };
+                chk.Unchecked += (s, e) =>
+                {
+                    Config.Set(entry.VisibilityConfigKey, false);
+                    RefreshMainWindowHomeToolbar();
+                };
+
+                row.Children.Add(chk);
+                row.Children.Add(label);
+
+                Grid.SetRow(row, rowIndex);
+                Grid.SetColumnSpan(row, 2);
+                ContentPanel.Children.Add(row);
+                rowIndex++;
+            }
+        }
+
+        /// <summary>
         /// 向上查找指定类型的可视树祖先
         /// </summary>
         private static T FindAncestor<T>(DependencyObject current) where T : DependencyObject
@@ -3107,6 +3401,25 @@ namespace TypeSunny
                         mainWindow.Dispatcher.BeginInvoke(new Action(() =>
                         {
                             mainWindow.UpdateTypingStat();
+                        }), System.Windows.Threading.DispatcherPriority.Normal);
+                        break;
+                    }
+                }
+            }
+            catch (Exception) { }
+        }
+
+        private void RefreshMainWindowHomeToolbar()
+        {
+            try
+            {
+                foreach (Window window in Application.Current.Windows)
+                {
+                    if (window is MainWindow mainWindow)
+                    {
+                        mainWindow.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            mainWindow.ApplyHomeToolbarSettings();
                         }), System.Windows.Threading.DispatcherPriority.Normal);
                         break;
                     }

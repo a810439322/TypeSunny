@@ -220,23 +220,22 @@ namespace TypeSunny
                     Changelog = json["body"]?.ToString() ?? "";
 
                     string updateUrl = "";
+                    string fullUrl = "";
                     var assets = json["assets"] as JArray;
                     if (assets != null)
                     {
                         foreach (var asset in assets)
                         {
                             string name = asset["name"]?.ToString() ?? "";
-                            if (name.Contains("update"))
-                            {
-                                updateUrl = asset["browser_download_url"]?.ToString() ?? "";
-                                break;
-                            }
+                            string url = asset["browser_download_url"]?.ToString() ?? "";
+                            if (string.IsNullOrEmpty(fullUrl) && name.Contains("full"))
+                                fullUrl = url;
+                            else if (string.IsNullOrEmpty(updateUrl) && name.Contains("update"))
+                                updateUrl = url;
                         }
                     }
                     UpdatePackageUrl = updateUrl;
-                    FullPackageUrl = PreferredSource == UpdateSource.Gitee
-                        ? $"{GiteeReleasePage}/tag/v{latestVersion}"
-                        : $"{GitHubReleasePage}/tag/v{latestVersion}";
+                    FullPackageUrl = fullUrl;
                     LastCheckTime = DateTime.Now;
 
                     Debug.WriteLine($"[VersionManager] 获取到最新版本: {latestVersion}");

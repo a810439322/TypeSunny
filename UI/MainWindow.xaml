@@ -51,6 +51,75 @@
             </Setter>
         </Style>
 
+        <Style x:Key="HomeFeatureButtonStyle" TargetType="Button">
+            <Setter Property="Margin" Value="5,0,2,0"/>
+            <Setter Property="Padding" Value="6,3,6,3"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="#ADADAD"
+                                BorderThickness="1"
+                                Padding="{TemplateBinding Padding}"
+                                CornerRadius="5">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Opacity" Value="0.8"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Opacity" Value="0.6"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="TopBarGroupedButtonBorder" TargetType="Border">
+            <Setter Property="CornerRadius" Value="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Tag}"/>
+        </Style>
+
+        <Style x:Key="TopBarGroupedButtonStyle" TargetType="Button">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,0,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="#ADADAD"
+                                BorderThickness="1"
+                                Padding="{TemplateBinding Padding}"
+                                Style="{StaticResource TopBarGroupedButtonBorder}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Opacity" Value="0.8"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Opacity" Value="0.6"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
     </Window.Resources>
 
 
@@ -86,6 +155,31 @@
     <Grid>
         <!-- 主内容 -->
         <Border x:Name="MainBorder" Background="#F7F7F7" BorderThickness="1" BorderBrush="#ADADAD" CornerRadius="7" ClipToBounds="True" Margin="5">
+            <Border.ContextMenu>
+                <ContextMenu x:Name="MainContextMenu" Opened="MainContextMenu_Opened">
+                    <MenuItem Header="设置" Click="MenuItemOpenConfig_Click"/>
+                    <Separator/>
+                    <MenuItem x:Name="MenuHomeRetry" Header="重打F3" Click="BtnF3_Click"/>
+                    <MenuItem x:Name="MenuHomeClipboard" Header="剪贴板Ctrl+E" Click="BtnCtrlE_Click"/>
+                    <MenuItem x:Name="MenuHomeGroupArticle" Header="群载文F4" Click="BtnF4_Click"/>
+                    <MenuItem x:Name="MenuHomeGroupPicker" Header="选群F5" Click="BtnF5_Click"/>
+                    <Separator/>
+                    <MenuItem x:Name="MenuHomeWenlai" Header="文来Ctrl+R" Click="BtnRandomArticle_Click"/>
+                    <MenuItem x:Name="MenuHomeTrainer" Header="晴练单" Click="BtnTrainer_Click"/>
+                    <MenuItem x:Name="MenuHomeShuang" Header="晴双拼" Click="BtnShuang_Click"/>
+                    <MenuItem x:Name="MenuHomeRace" Header="赛文">
+                        <MenuItem x:Name="MenuHomeRaceProxy" Header="打开赛文菜单"/>
+                    </MenuItem>
+                    <MenuItem x:Name="MenuHomeLocalArticle" Header="本地文章" Click="BtnArticle_Click"/>
+                    <Separator/>
+                    <MenuItem x:Name="MenuHomePrev" Header="上一段Ctrl+O" Click="BtnPrev_Click"/>
+                    <MenuItem x:Name="MenuHomeNext" Header="下一段Ctrl+P" Click="BtnNext_Click"/>
+                    <MenuItem x:Name="MenuHomeSendArticle" Header="发文F2" Click="BtnSendArticle_Click"/>
+                    <MenuItem x:Name="MenuHomeToggleResults" Header="收起成绩" Click="BtnToggleResults_Click"/>
+                    <Separator/>
+                    <MenuItem x:Name="MenuHomeSuperCompact" Header="一键极简" IsCheckable="True" Click="MenuHomeSuperCompact_Click"/>
+                </ContextMenu>
+            </Border.ContextMenu>
         <Grid Name="grid_a" Margin="0">
 
         <Grid.RowDefinitions>
@@ -342,64 +436,15 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Name="stack1" Grid.Column="0" Orientation="Horizontal"  Margin="15,7,5,5" >
-                <Button  x:Name="BtnConfig" Content ="设置" Width="auto" HorizontalAlignment="Left" PreviewMouseUp="Tbk_PreviewMouseUp_1"  VerticalAlignment="Center" Margin="0,0,0,0" Padding="10,2,10,2" >
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}"
-                                    BorderBrush="#ADADAD"
-                                    BorderThickness="1"
-                                    Padding="{TemplateBinding Padding}"
-                                    CornerRadius="5,0,0,5">
-                                <ContentPresenter HorizontalAlignment="Center"
-                                                VerticalAlignment="Center"
-                                                TextBlock.Foreground="{TemplateBinding Foreground}"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Opacity" Value="0.8"/>
-                                </Trigger>
-                                <Trigger Property="IsPressed" Value="True">
-                                    <Setter Property="Opacity" Value="0.6"/>
-                                </Trigger>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Opacity" Value="0.5"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
+                <Button x:Name="BtnConfig" Content ="设置" Width="auto" PreviewMouseUp="Tbk_PreviewMouseUp_1" Padding="10,2,10,2" Style="{StaticResource TopBarGroupedButtonStyle}">
                 </Button>
-                <Button  x:Name="BtnF3" Grid.Column="1" Height="auto" Width="auto" VerticalAlignment="Center" Content="重打F3" Click="BtnF3_Click" Margin="0,0,0,0" HorizontalAlignment="Center" Padding="10,2,10,2">
+                <Button x:Name="BtnF3" Grid.Column="1" Height="auto" Width="auto" Content="重打F3" Click="BtnF3_Click" Padding="10,2,10,2" Style="{StaticResource TopBarGroupedButtonStyle}">
                 </Button>
-                <Button x:Name="BtnCtrlE" Grid.Column="1" Height="auto" Width="auto" VerticalAlignment="Center" Content="剪贴版载文"  ToolTip="Ctrl+E" Click="BtnCtrlE_Click"  Margin="0,0,0,0" HorizontalAlignment="Center" Padding="5,2,5,2" >
+                <Button x:Name="BtnCtrlE" Grid.Column="1" Height="auto" Width="auto" Content="剪贴板Ctrl+E" ToolTip="Ctrl+E" Click="BtnCtrlE_Click" Padding="5,2,5,2" Style="{StaticResource TopBarGroupedButtonStyle}">
                 </Button>
-                <Button x:Name="BtnF4" Grid.Column="1" Height="auto" Width="auto" VerticalAlignment="Center" Content="群载文F4"  Margin="0,0,0,0" HorizontalAlignment="Center" Padding="8,2,8,2" Click="BtnF4_Click" >
+                <Button x:Name="BtnF4" Grid.Column="1" Height="auto" Width="auto" Content="群载文F4" Padding="8,2,8,2" Click="BtnF4_Click" Style="{StaticResource TopBarGroupedButtonStyle}">
                 </Button>
-                <Button x:Name="BtnF5" Grid.Column="1" Height="auto" Width="auto" VerticalAlignment="Center" Content="选群F5"   Margin="0,0,0,0" HorizontalAlignment="Center" Padding="10,2,10,2" Click="BtnF5_Click" >
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}"
-                                    BorderBrush="#ADADAD"
-                                    BorderThickness="1"
-                                    Padding="{TemplateBinding Padding}"
-                                    CornerRadius="0,5,5,0">
-                                <ContentPresenter HorizontalAlignment="Center"
-                                                VerticalAlignment="Center"
-                                                TextBlock.Foreground="{TemplateBinding Foreground}"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Opacity" Value="0.8"/>
-                                </Trigger>
-                                <Trigger Property="IsPressed" Value="True">
-                                    <Setter Property="Opacity" Value="0.6"/>
-                                </Trigger>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Opacity" Value="0.5"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
-
+                <Button x:Name="BtnF5" Grid.Column="1" Height="auto" Width="auto" Content="选群F5" Padding="10,2,10,2" Click="BtnF5_Click" Style="{StaticResource TopBarGroupedButtonStyle}">
                     <Button.ContextMenu>
                         <ContextMenu Name="MenuQQGroup" Placement="Bottom" PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=Button}}">
                             <MenuItem Header="潜水" Click="MenuItem_Click" IsCheckable="True" ></MenuItem>
@@ -407,7 +452,7 @@
                         </ContextMenu>
                     </Button.ContextMenu>
                 </Button>
-                <TextBox x:Name="TbClip" Text="" TextChanged="TbClip_TextChanged" Width="50" AcceptsReturn="True" Height ="10" Visibility="Hidden" Focusable="False"></TextBox>
+                <TextBox x:Name="TbClip" Text="" TextChanged="TbClip_TextChanged" Width="50" AcceptsReturn="True" Height ="10" Visibility="Collapsed" Focusable="False"></TextBox>
 
 
 
@@ -476,25 +521,7 @@
 
             <!-- 按钮区2（成绩相关按钮） -->
             <DockPanel Grid.Row="1" x:Name="resultsButtonPanel" HorizontalAlignment="Stretch" Margin="15,5,15,0">
-                <Button x:Name="BtnRandomArticle" DockPanel.Dock="Left" Content="文来Ctrl+R" Width="auto" HorizontalAlignment="Left" Click="BtnRandomArticle_Click" VerticalAlignment="Center" Margin="0,0,0,0" Padding="6,3,6,3">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" BorderBrush="#ADADAD" BorderThickness="1" Padding="{TemplateBinding Padding}" CornerRadius="5,0,0,5">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Opacity" Value="0.8"/>
-                                </Trigger>
-                                <Trigger Property="IsPressed" Value="True">
-                                    <Setter Property="Opacity" Value="0.6"/>
-                                </Trigger>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Opacity" Value="0.5"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
+                <Button x:Name="BtnRandomArticle" DockPanel.Dock="Left" Content="文来Ctrl+R" Width="auto" HorizontalAlignment="Left" Click="BtnRandomArticle_Click" VerticalAlignment="Center" Margin="0,0,0,0" Padding="6,3,6,3" Style="{StaticResource HomeFeatureButtonStyle}">
                     <Button.ContextMenu>
                         <ContextMenu Name="MenuWenlai">
                             <ContextMenu.Resources>
@@ -522,26 +549,9 @@
                     </Button.ContextMenu>
                 </Button>
 
-                <Button x:Name="BtnTrainer" DockPanel.Dock="Left" Content="晴练单" HorizontalAlignment="Left" Click="BtnTrainer_Click" VerticalAlignment="Center" Padding="6,3,6,3">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" BorderBrush="#ADADAD" BorderThickness="1" Padding="{TemplateBinding Padding}" CornerRadius="0,5,5,0">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Opacity" Value="0.8"/>
-                                </Trigger>
-                                <Trigger Property="IsPressed" Value="True">
-                                    <Setter Property="Opacity" Value="0.6"/>
-                                </Trigger>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Opacity" Value="0.5"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
-                </Button>
+                <Button x:Name="BtnTrainer" DockPanel.Dock="Left" Content="晴练单" HorizontalAlignment="Left" Click="BtnTrainer_Click" VerticalAlignment="Center" Padding="6,3,6,3" Style="{StaticResource HomeFeatureButtonStyle}"/>
+
+                <Button x:Name="BtnShuang" DockPanel.Dock="Left" Content="晴双拼" HorizontalAlignment="Left" Click="BtnShuang_Click" VerticalAlignment="Center" Margin="5,0,0,0" Padding="6,3,6,3" Style="{StaticResource HomeFeatureButtonStyle}"/>
 
                 <!-- 统一的赛文菜单 -->
                 <Menu x:Name="MenuRace" DockPanel.Dock="Left" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="5,0,2,0" Background="Transparent" BorderThickness="0">

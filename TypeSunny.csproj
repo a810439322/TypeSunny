@@ -126,6 +126,7 @@
     <Compile Include="Diff\GroupedDiffRes.cs" />
     <Compile Include="Utils\IntStringDict.cs" />
     <Compile Include="Utils\PasswordCrypto.cs" />
+    <Compile Include="Utils\DialogTheming.cs" />
     <Compile Include="Net\AccountSystemManager.cs" />
     <Compile Include="Net\JBS.cs" />
     <Compile Include="Net\JbsHelper.cs" />
@@ -153,6 +154,8 @@
     <Compile Include="Diff\SplitedDiffRes.cs" />
     <Compile Include="Core\StateManager.cs" />
     <Compile Include="Utils\ZiTiHelper.cs" />
+    <Compile Include="Utils\ShuangToolLauncher.cs" />
+    <Compile Include="Utils\UpdatePackageDownloader.cs" />
     <Compile Include="Utils\StringToFontFamily.cs" />
     <Compile Include="Core\TextInfo.cs" />
     <Compile Include="Utils\Win32.cs" />
@@ -167,6 +170,9 @@
     </Compile>
     <Compile Include="UI\UpdateDialog.xaml.cs">
       <DependentUpon>UpdateDialog.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="UI\ShuangMissingDialog.xaml.cs">
+      <DependentUpon>ShuangMissingDialog.xaml</DependentUpon>
     </Compile>
     <Compile Include="WinTrainer\TrainerConfig.cs" />
     <Compile Include="WinTrainer\TrainerLog.cs" />
@@ -193,6 +199,7 @@
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="UI\HomeToolbarSettings.cs" />
     <Compile Include="UI\Modes\ArticleContinuationState.cs" />
     <Compile Include="UI\Modes\FinishOnceGate.cs" />
     <Compile Include="UI\Modes\FinishedInputPolicy.cs" />
@@ -214,6 +221,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="UI\UpdateDialog.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="UI\ShuangMissingDialog.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -270,6 +281,7 @@
     <Content Include="introimages\3.png" />
     <Content Include="introimages\4.png" />
     <Content Include="introimages\5.png" />
+    <Content Include="introimages\zitie.png" />
     <Content Include="Resources\DIC\0.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
@@ -313,6 +325,24 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Resources\ico\paindutch.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\Shuang\index.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\Shuang\LICENSE">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\Shuang\README.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\Shuang\build\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\Shuang\img\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\Shuang\src\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Resources\练单器\**\*.*">

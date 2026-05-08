@@ -68,6 +68,30 @@ namespace TypeSunny.UI
         private readonly PendingRetypeRequest _pendingRetypeRequest = new PendingRetypeRequest();
         private readonly ArticleContinuationState _articleContinuationState = new ArticleContinuationState();
         private bool _stopTypingPending;
+        private readonly Dictionary<string, FrameworkElement> _homeFeatureControls = new Dictionary<string, FrameworkElement>();
+        private static readonly Thickness TopButtonGroupMargin = new Thickness(15, 7, 5, 5);
+        private const double TopBarExpandedMinHeight = 40;
+        private const double TopBarCompactMinHeight = 20;
+        private const double NormalCollapsedBottomBorderHeight = 10;
+        private const string SuperCompactModeConfigKey = "一键极简";
+        private const string ContinuationShortcutHint = "（Ctrl+O上一段 / Ctrl+P下一段）";
+        private bool _isSuperCompactLayoutApplied;
+        private SuperCompactLayoutSnapshot _superCompactLayoutSnapshot;
+        private int _suppressWindowSizeChangeUpdatesDepth;
+        private int _resultsLayoutVersion;
+
+        private sealed class SuperCompactLayoutSnapshot
+        {
+            public bool ResultsExpanded { get; set; }
+            public double WindowHeight { get; set; }
+            public double TopButtonAreaHeight { get; set; }
+            public double ArticleAreaHeight { get; set; }
+            public double TypingAreaHeight { get; set; }
+            public double ResultsSplitterHeight { get; set; }
+            public double ResultsAreaHeight { get; set; }
+            public double BottomBorderHeight { get; set; }
+            public double BottomButtonRowHeight { get; set; }
+        }
 
         // 线程安全的调试日志锁对象
         private static readonly object _debugLogLock = new object();
@@ -1123,6 +1147,15 @@ namespace TypeSunny.UI
 
             InitializeComponent();
 
+            // 一键极简模式下：先透明，等 Window_Loaded 里布局套用完再恢复。
+            // 必须放在 ctor 同步早期（InitializeComponent 之后，任何 Show 发生之前）。
+            if (Config.GetBool(SuperCompactModeConfigKey))
+            {
+                this.Opacity = 0;
+            }
+
+            InitializeHomeFeatureControls();
+
             _snakeMode = new SnakeMode(this);
             _copybookMode = new CopybookMode(this);
             _tracingMode = new TracingMode(this);
@@ -1173,6 +1206,17 @@ namespace TypeSunny.UI
 
                     // 初始化文来菜单（动态生成）
                     InitializeWenlaiMenu();
+
+                    ApplyHomeToolbarSettings();
+
+                    // 一键极简模式下启动时窗口先透明，布局套用完成后恢复显示，避免闪"普通模式"
+                    if (this.Opacity < 1)
+                    {
+                        this.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            this.Opacity = 1;
+                        }), System.Windows.Threading.DispatcherPriority.Loaded);
+                    }
 
                     // 菜单创建完成后，更新Helper中的菜单项引用
                     if (jbsHelper != null)
@@ -1474,6 +1518,16 @@ namespace TypeSunny.UI
             this.Height = Config.GetDouble("窗口高度");
             this.Width = Config.GetDouble("窗口宽度");
 
+            // 一键极简模式下使用独立记忆的"一键极简后窗口高度"，避免压缩/拖动值污染普通模式的窗口高度
+            if (Config.GetBool(SuperCompactModeConfigKey))
+            {
+                double scH = Config.GetDouble("一键极简后窗口高度");
+                if (scH > 100 && scH < 4000)
+                {
+                    this.Height = scH;
+                }
+            }
+
             // 加载成绩面板展开状态
             var grid_a = this.FindName("grid_a") as Grid;
             if (grid_a != null)
@@ -1584,6 +1638,7 @@ namespace TypeSunny.UI
             */
 
             BtnF3.IsEnabled = !Config.GetBool("禁止F3重打");
+            ApplyHomeToolbarSettings();
 
             IntStringDict.Load();
 
@@ -1806,6 +1861,7 @@ namespace TypeSunny.UI
                         Tbk.IsEnabled = Config.GetBool("回放功能");
             */
             BtnF3.IsEnabled = !Config.GetBool("禁止F3重打");
+            ApplyHomeToolbarSettings();
             StateManager.ConfigLoaded = true;
             IntStringDict.Load();
 
@@ -1877,6 +1933,8 @@ namespace TypeSunny.UI
                 BtnRandomArticle.Foreground = buttonFg;
                 BtnTrainer.Background = buttonBg;
                 BtnTrainer.Foreground = buttonFg;
+                BtnShuang.Background = buttonBg;
+                BtnShuang.Foreground = buttonFg;
                 BtnNext.Background = buttonBg;
                 BtnNext.Foreground = buttonFg;
                 BtnSendArticle.Background = buttonBg;
@@ -1885,6 +1943,7 @@ namespace TypeSunny.UI
                 BtnArticleManager.Foreground = buttonFg;
                 BtnPrev.Background = buttonBg;
                 BtnPrev.Foreground = buttonFg;
+                ApplyHomeToolbarSettings();
 
                 // 应用标题栏背景色和字体色（自定义标题栏）
                 if (TitleBarGrid != null)
@@ -2012,6 +2071,605 @@ namespace TypeSunny.UI
             {
                 System.Diagnostics.Debug.WriteLine($"应用文来菜单颜色失败: {ex.Message}");
             }
+        }
+
+        private void InitializeHomeFeatureControls()
+        {
+            _homeFeatureControls["wenlai"] = BtnRandomArticle;
+            _homeFeatureControls["trainer"] = BtnTrainer;
+            _homeFeatureControls["shuang"] = BtnShuang;
+            _homeFeatureControls["race"] = MenuRace;
+        }
+
+        public void ApplyHomeToolbarSettings()
+        {
+            if (stack1 == null || resultsButtonPanel == null)
+                return;
+
+            var isSuperCompact = Config.GetBool(SuperCompactModeConfigKey);
+
+            if (!isSuperCompact && _isSuperCompactLayoutApplied)
+                ApplySuperCompactModeLayout(false);
+
+            BtnShuang.Content = "晴双拼";
+            BtnTrainer.Content = "晴练单";
+            BtnCtrlE.Content = "剪贴板Ctrl+E";
+            BtnCtrlE.ToolTip = "Ctrl+E";
+
+            BtnConfig.Visibility = Config.GetBool(HomeToolbarSettings.ShowSettingsConfigKey) ? Visibility.Visible : Visibility.Collapsed;
+            BtnF3.Visibility = Config.GetBool(HomeToolbarSettings.ShowRetryConfigKey) ? Visibility.Visible : Visibility.Collapsed;
+            BtnCtrlE.Visibility = Config.GetBool(HomeToolbarSettings.ShowClipboardConfigKey) ? Visibility.Visible : Visibility.Collapsed;
+            BtnF4.Visibility = Config.GetBool(HomeToolbarSettings.ShowGroupArticleConfigKey) ? Visibility.Visible : Visibility.Collapsed;
+            BtnF5.Visibility = Config.GetBool(HomeToolbarSettings.ShowGroupPickerConfigKey) ? Visibility.Visible : Visibility.Collapsed;
+            var localArticleVisibility = Config.GetBool(HomeToolbarSettings.ShowLocalArticleConfigKey)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            BtnArticleManager.Visibility = localArticleVisibility;
+            BtnPrev.Visibility = localArticleVisibility;
+            BtnNext.Visibility = localArticleVisibility;
+            BtnSendArticle.Visibility = localArticleVisibility;
+
+            foreach (var control in _homeFeatureControls.Values)
+            {
+                if (resultsButtonPanel.Children.Contains(control))
+                    resultsButtonPanel.Children.Remove(control);
+            }
+
+            var visibility = HomeToolbarSettings.FeatureEntries.ToDictionary(
+                entry => entry.VisibilityConfigKey,
+                entry => Config.GetBool(entry.VisibilityConfigKey));
+            var orderedEntries = HomeToolbarSettings.GetVisibleFeatureEntries(
+                Config.GetString(HomeToolbarSettings.FeatureOrderConfigKey),
+                visibility);
+
+            int insertIndex = 0;
+            foreach (var entry in orderedEntries)
+            {
+                FrameworkElement control;
+                if (!_homeFeatureControls.TryGetValue(entry.Key, out control))
+                    continue;
+
+                control.Visibility = Visibility.Visible;
+                DockPanel.SetDock(control, Dock.Left);
+                resultsButtonPanel.Children.Insert(insertIndex, control);
+                insertIndex++;
+            }
+
+            foreach (var entry in HomeToolbarSettings.FeatureEntries)
+            {
+                FrameworkElement control;
+                if (!_homeFeatureControls.TryGetValue(entry.Key, out control))
+                    continue;
+
+                if (!orderedEntries.Any(visible => visible.Key == entry.Key))
+                    control.Visibility = Visibility.Collapsed;
+            }
+
+            Config.dicts[HomeToolbarSettings.FeatureOrderConfigKey] =
+                HomeToolbarSettings.NormalizeFeatureOrder(Config.GetString(HomeToolbarSettings.FeatureOrderConfigKey));
+            ApplyTopBarButtonCornerRadius();
+            ApplyTopBarLayout();
+            if (isSuperCompact)
+                ApplySuperCompactModeLayout(true, true);
+            UpdateMainContextMenuVisibility();
+        }
+
+        private void BeginSuppressWindowSizeChangeUpdates()
+        {
+            _suppressWindowSizeChangeUpdatesDepth++;
+        }
+
+        private void EndSuppressWindowSizeChangeUpdatesLater()
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_suppressWindowSizeChangeUpdatesDepth > 0)
+                    _suppressWindowSizeChangeUpdatesDepth--;
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+
+        private void ApplyTopBarButtonCornerRadius()
+        {
+            var buttons = new[]
+            {
+                BtnConfig,
+                BtnF3,
+                BtnCtrlE,
+                BtnF4,
+                BtnF5
+            }.Where(button => button.Visibility == Visibility.Visible).ToList();
+
+            foreach (var button in new[] { BtnConfig, BtnF3, BtnCtrlE, BtnF4, BtnF5 })
+            {
+                button.Tag = new CornerRadius(0);
+            }
+
+            if (buttons.Count == 0)
+                return;
+
+            if (buttons.Count == 1)
+            {
+                buttons[0].Tag = new CornerRadius(5);
+                return;
+            }
+
+            buttons[0].Tag = new CornerRadius(5, 0, 0, 5);
+            buttons[buttons.Count - 1].Tag = new CornerRadius(0, 5, 5, 0);
+        }
+
+        private void ApplyTopBarLayout()
+        {
+            var hasVisibleTopButtons = new[]
+            {
+                BtnConfig,
+                BtnF3,
+                BtnCtrlE,
+                BtnF4,
+                BtnF5
+            }.Any(button => button.Visibility == Visibility.Visible);
+
+            stack1.Visibility = hasVisibleTopButtons ? Visibility.Visible : Visibility.Collapsed;
+            stack1.Margin = hasVisibleTopButtons ? TopButtonGroupMargin : new Thickness(0);
+            buttonArea1.Height = GridLength.Auto;
+            buttonArea1.MinHeight = hasVisibleTopButtons ? TopBarExpandedMinHeight : TopBarCompactMinHeight;
+        }
+
+        private int BeginResultsLayoutChange()
+        {
+            return ++_resultsLayoutVersion;
+        }
+
+        private bool IsStaleResultsLayoutChange(int layoutVersion)
+        {
+            return layoutVersion != _resultsLayoutVersion;
+        }
+
+        private void ApplySuperCompactModeLayout(bool isSuperCompact, bool forceRefresh = false)
+        {
+            if (isSuperCompact && !forceRefresh && _isSuperCompactLayoutApplied && _superCompactLayoutSnapshot != null)
+            {
+                return;
+            }
+
+            BeginResultsLayoutChange();
+            BeginSuppressWindowSizeChangeUpdates();
+            try
+            {
+                if (isSuperCompact)
+                {
+                    var snapshot = CaptureSuperCompactLayoutSnapshot();
+                    TrimSuperCompactBottomButtonRow();
+                    stack1.Visibility = Visibility.Collapsed;
+                    stack1.Margin = new Thickness(0);
+                    buttonArea1.MinHeight = TopBarCompactMinHeight;
+                    buttonArea1.Height = new GridLength(TopBarCompactMinHeight, GridUnitType.Pixel);
+                    // 启动阶段 this.Height 已经是小尺寸（来自 Config 上次关闭保存），不再二次压缩，避免闪烁
+                    // 同时：如果已经是一键极简布局状态（_isSCApplied=true），也不再压缩，避免 reapply 把用户拖大的窗口压回去
+                    bool adjustHeight = StateManager.ConfigLoaded && !_isSuperCompactLayoutApplied;
+                    ApplySuperCompactCollapsedLayout(snapshot, adjustHeight);
+                    _isSuperCompactLayoutApplied = true;
+                    _superCompactLayoutSnapshot = snapshot;
+                    return;
+                }
+                else
+                {
+                    RestoreSuperCompactBottomButtonRow();
+                    // 退出一键极简时复位跟打区容器底部 margin
+                    if (typingAreaAndButtonsGrid != null)
+                        typingAreaAndButtonsGrid.Margin = new Thickness(0);
+                }
+
+                if (_isSuperCompactLayoutApplied)
+                {
+                    var snapshot = _superCompactLayoutSnapshot;
+                    bool shouldRestoreResultsExpanded = snapshot != null ? snapshot.ResultsExpanded : _isResultsExpanded;
+                    _isSuperCompactLayoutApplied = false;
+                    if (snapshot != null)
+                    {
+                        this.Height = snapshot.WindowHeight;
+                    }
+                    buttonArea1.Height = GridLength.Auto;
+                    buttonArea1.ClearValue(RowDefinition.MinHeightProperty);
+                    _superCompactLayoutSnapshot = null;
+                    ApplyTopBarLayout();
+                    _isResultsExpanded = shouldRestoreResultsExpanded;
+                    Config.dicts["成绩面板展开"] = shouldRestoreResultsExpanded ? "是" : "否";
+
+                    if (shouldRestoreResultsExpanded)
+                        ExpandResultsPanelLayout(false);
+                    else
+                        CollapseResultsPanelLayout(false, false, NormalCollapsedBottomBorderHeight);
+                    return;
+                }
+
+                if (_isResultsExpanded)
+                    ExpandResultsPanelLayout(false);
+                else
+                    CollapseResultsPanelLayout(false, false, NormalCollapsedBottomBorderHeight);
+            }
+            finally
+            {
+                EndSuppressWindowSizeChangeUpdatesLater();
+            }
+        }
+
+        private bool IsResultsPanelVisuallyExpanded(Grid mainGrid)
+        {
+            if (mainGrid == null || mainGrid.RowDefinitions.Count <= 6)
+                return _isResultsExpanded;
+
+            var resultsRow = mainGrid.RowDefinitions[6];
+            bool rowCanShowResults =
+                resultsRow.ActualHeight > 0 ||
+                (resultsRow.Height.GridUnitType == GridUnitType.Star && resultsRow.Height.Value > 0) ||
+                (resultsRow.Height.GridUnitType == GridUnitType.Pixel && resultsRow.Height.Value > 0);
+
+            return rowCanShowResults &&
+                   resultsTextBoxGrid.Visibility == Visibility.Visible &&
+                   gridSplitterResults.Visibility == Visibility.Visible;
+        }
+
+        private SuperCompactLayoutSnapshot CaptureSuperCompactLayoutSnapshot()
+        {
+            if (_isSuperCompactLayoutApplied && _superCompactLayoutSnapshot != null)
+                return _superCompactLayoutSnapshot;
+
+            var mainGrid = this.FindName("grid_a") as Grid;
+            var snapshot = new SuperCompactLayoutSnapshot
+            {
+                ResultsExpanded = IsResultsPanelVisuallyExpanded(mainGrid),
+                WindowHeight = this.ActualHeight > 0 ? this.ActualHeight : this.Height
+            };
+
+            // 启动阶段 this.Height 已经是压缩后的小值（来自 Config["一键极简后窗口高度"]），
+            // snapshot.WindowHeight 需记录"切回普通模式时要恢复到的大尺寸"，直接用 Config["窗口高度"]。
+            if (!StateManager.ConfigLoaded)
+            {
+                double normalH = Config.GetDouble("窗口高度");
+                if (normalH > 200 && normalH < 4000)
+                    snapshot.WindowHeight = normalH;
+            }
+
+            if (mainGrid != null)
+            {
+                snapshot.TopButtonAreaHeight = mainGrid.RowDefinitions[1].ActualHeight;
+                snapshot.ArticleAreaHeight = mainGrid.RowDefinitions[2].ActualHeight;
+                snapshot.TypingAreaHeight = mainGrid.RowDefinitions[4].ActualHeight;
+                snapshot.ResultsSplitterHeight = mainGrid.RowDefinitions[5].ActualHeight;
+                snapshot.ResultsAreaHeight = mainGrid.RowDefinitions[6].ActualHeight;
+                snapshot.BottomBorderHeight = mainGrid.RowDefinitions[7].ActualHeight;
+            }
+
+            if (typingAreaAndButtonsGrid != null && typingAreaAndButtonsGrid.RowDefinitions.Count > 1)
+            {
+                var bottomButtonRow = typingAreaAndButtonsGrid.RowDefinitions[1];
+                snapshot.BottomButtonRowHeight = bottomButtonRow.ActualHeight;
+                if (snapshot.BottomButtonRowHeight <= 0 && resultsButtonPanel != null)
+                    snapshot.BottomButtonRowHeight = resultsButtonPanel.DesiredSize.Height;
+            }
+
+            if (snapshot.ResultsAreaHeight > 0)
+                _collapsedResultsHeight = snapshot.ResultsAreaHeight;
+            if (snapshot.ArticleAreaHeight > 0)
+                _collapsedArticleHeight = snapshot.ArticleAreaHeight;
+            if (snapshot.TypingAreaHeight > 0)
+                _collapsedTypingHeight = snapshot.TypingAreaHeight;
+
+            return snapshot;
+        }
+
+        private void TrimSuperCompactBottomButtonRow()
+        {
+            if (resultsButtonPanel == null)
+                return;
+
+            if (typingAreaAndButtonsGrid != null && typingAreaAndButtonsGrid.RowDefinitions.Count > 1)
+            {
+                typingAreaAndButtonsGrid.RowDefinitions[1].MinHeight = 0;
+                typingAreaAndButtonsGrid.RowDefinitions[1].Height = new GridLength(0, GridUnitType.Pixel);
+            }
+
+            resultsButtonPanel.Margin = new Thickness(0);
+            resultsButtonPanel.Visibility = Visibility.Collapsed;
+        }
+
+        private void RestoreSuperCompactBottomButtonRow()
+        {
+            if (resultsButtonPanel == null)
+                return;
+
+            if (typingAreaAndButtonsGrid != null && typingAreaAndButtonsGrid.RowDefinitions.Count > 1)
+            {
+                var bottomButtonRow = typingAreaAndButtonsGrid.RowDefinitions[1];
+                bottomButtonRow.Height = GridLength.Auto;
+                bottomButtonRow.ClearValue(RowDefinition.MinHeightProperty);
+            }
+
+            resultsButtonPanel.ClearValue(FrameworkElement.HeightProperty);
+            resultsButtonPanel.ClearValue(FrameworkElement.MinHeightProperty);
+            resultsButtonPanel.Margin = new Thickness(15, 5, 15, 0);
+            resultsButtonPanel.Visibility = Visibility.Visible;
+        }
+
+        private void ApplySuperCompactCollapsedLayout(SuperCompactLayoutSnapshot snapshot, bool adjustWindowHeight)
+        {
+            var mainGrid = this.FindName("grid_a") as Grid;
+            if (mainGrid == null || snapshot == null)
+                return;
+
+            double articleHeight = snapshot.ArticleAreaHeight > 0 ? snapshot.ArticleAreaHeight : mainGrid.RowDefinitions[2].ActualHeight;
+            double typingHeight = snapshot.TypingAreaHeight > 0 ? snapshot.TypingAreaHeight : mainGrid.RowDefinitions[4].ActualHeight;
+            if (articleHeight <= 0) articleHeight = 1;
+            if (typingHeight <= 0) typingHeight = 1;
+
+            mainGrid.RowDefinitions[2].Height = new GridLength(articleHeight, GridUnitType.Star);
+            if ((_copybookMode == null || !_copybookMode.IsActive) &&
+                (_tracingMode == null || !_tracingMode.IsActive))
+            {
+                mainGrid.RowDefinitions[4].Height = new GridLength(typingHeight, GridUnitType.Star);
+            }
+
+            resultsTextBoxGrid.Margin = new Thickness(0);
+            resultsTextBoxGrid.MinHeight = 0;
+            resultsTextBoxGrid.Height = 0;
+            resultsTextBoxGrid.Visibility = Visibility.Collapsed;
+
+            mainGrid.RowDefinitions[5].Height = new GridLength(0, GridUnitType.Pixel);
+            mainGrid.RowDefinitions[5].MinHeight = 0;
+            mainGrid.RowDefinitions[6].Height = new GridLength(0, GridUnitType.Pixel);
+            mainGrid.RowDefinitions[6].MinHeight = 0;
+            mainGrid.RowDefinitions[7].Height = new GridLength(0, GridUnitType.Pixel);
+
+            var bottomBorder = this.FindName("bottomBorder") as Border;
+            if (bottomBorder != null)
+                bottomBorder.Visibility = Visibility.Collapsed;
+
+            gridSplitterResults.Visibility = Visibility.Collapsed;
+            gridSplitterResults.IsEnabled = false;
+
+            // 一键极简下跟打区贴到窗口底，给容器加底部 margin，让底边与左右侧视觉等宽
+            if (typingAreaAndButtonsGrid != null)
+                typingAreaAndButtonsGrid.Margin = new Thickness(0, 0, 0, 10);
+
+            var tbxResults = this.FindName("TbxResults") as TextBox;
+            if (tbxResults != null)
+            {
+                tbxResults.MinHeight = 0;
+                tbxResults.Margin = new Thickness(0);
+                tbxResults.Height = 0;
+                tbxResults.Padding = new Thickness(0);
+                tbxResults.Visibility = Visibility.Collapsed;
+            }
+
+            BtnToggleResults.Content = "▲";
+
+            if (adjustWindowHeight && snapshot.WindowHeight > 0)
+            {
+                double removedHeight = 0;
+                if (snapshot.ResultsExpanded)
+                {
+                    removedHeight += snapshot.ResultsAreaHeight;
+                    removedHeight += snapshot.ResultsSplitterHeight > 0 ? snapshot.ResultsSplitterHeight : 5;
+                }
+                removedHeight += Math.Max(0, snapshot.BottomBorderHeight);
+                removedHeight += Math.Max(0, snapshot.BottomButtonRowHeight);
+                removedHeight += Math.Max(0, snapshot.TopButtonAreaHeight - TopBarCompactMinHeight);
+
+                if (snapshot.ResultsExpanded && snapshot.WindowHeight > 300)
+                    _expandedWindowHeight = snapshot.WindowHeight;
+
+                double targetHeight = snapshot.WindowHeight - removedHeight;
+                double minimumHeight = titlebar.Height.Value + TopBarCompactMinHeight + 50 + 5 + 50 + MainBorder.Margin.Top + MainBorder.Margin.Bottom + 10 + 10;
+                if (targetHeight < minimumHeight)
+                    targetHeight = minimumHeight;
+
+                this.Height = targetHeight;
+            }
+
+            ScheduleModeLayoutRefresh();
+        }
+
+        private void ExpandResultsPanelLayout(bool adjustWindowHeight)
+        {
+            var mainGrid = this.FindName("grid_a") as Grid;
+            if (mainGrid == null)
+                return;
+
+            int layoutVersion = BeginResultsLayoutChange();
+            BtnToggleResults.Content = "▼";
+
+            var bottomBorder = this.FindName("bottomBorder") as Border;
+            if (bottomBorder != null)
+            {
+                mainGrid.RowDefinitions[7].Height = new GridLength(0, GridUnitType.Pixel);
+                bottomBorder.Visibility = Visibility.Collapsed;
+            }
+
+            mainGrid.RowDefinitions[5].Height = new GridLength(5, GridUnitType.Pixel);
+            mainGrid.RowDefinitions[5].ClearValue(RowDefinition.MinHeightProperty);
+            mainGrid.RowDefinitions[6].ClearValue(RowDefinition.MinHeightProperty);
+
+            resultsTextBoxGrid.Margin = new Thickness(15, 5, 15, 10);
+            resultsTextBoxGrid.ClearValue(FrameworkElement.MinHeightProperty);
+            resultsTextBoxGrid.ClearValue(FrameworkElement.HeightProperty);
+
+            var tbxResults = this.FindName("TbxResults") as TextBox;
+            if (tbxResults != null)
+            {
+                tbxResults.ClearValue(FrameworkElement.MinHeightProperty);
+                tbxResults.Margin = new Thickness(0);
+                tbxResults.ClearValue(FrameworkElement.HeightProperty);
+                tbxResults.Padding = new Thickness(10, 5, 10, 10);
+                tbxResults.Visibility = Visibility.Visible;
+            }
+
+            bool isCopybookOrTracing = (_copybookMode != null && _copybookMode.IsActive) ||
+                                       (_tracingMode != null && _tracingMode.IsActive);
+            double currentArticleH = mainGrid.RowDefinitions[2].ActualHeight;
+            double currentTypingH = mainGrid.RowDefinitions[4].ActualHeight;
+            double resultsH = _collapsedResultsHeight > 0
+                ? _collapsedResultsHeight
+                : currentArticleH * 0.25;
+            if (resultsH < 50) resultsH = 50;
+
+            if (adjustWindowHeight)
+            {
+                mainGrid.RowDefinitions[2].Height = new GridLength(currentArticleH > 0 ? currentArticleH : 1, GridUnitType.Pixel);
+                if (!isCopybookOrTracing)
+                    mainGrid.RowDefinitions[4].Height = new GridLength(currentTypingH > 0 ? currentTypingH : 1, GridUnitType.Pixel);
+                mainGrid.RowDefinitions[6].Height = new GridLength(resultsH, GridUnitType.Pixel);
+                this.Height = this.ActualHeight + resultsH + 5 - 10;
+            }
+            else
+            {
+                ApplyDisplayInputRatio();
+            }
+
+            resultsTextBoxGrid.Visibility = Visibility.Visible;
+            gridSplitterResults.Visibility = Visibility.Visible;
+            gridSplitterArticleTyping.IsEnabled = true;
+            gridSplitterResults.IsEnabled = true;
+
+            this.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (IsStaleResultsLayoutChange(layoutVersion))
+                    return;
+
+                double ah = mainGrid.RowDefinitions[2].ActualHeight;
+                double th = mainGrid.RowDefinitions[4].ActualHeight;
+                double rh = mainGrid.RowDefinitions[6].ActualHeight;
+                var r2u = mainGrid.RowDefinitions[2].Height.GridUnitType;
+                var r4u = mainGrid.RowDefinitions[4].Height.GridUnitType;
+                var r6u = mainGrid.RowDefinitions[6].Height.GridUnitType;
+                // 只把 Pixel 固定值转成 Star 权重，避免把 Auto 强制变成 Star（Auto 往往是跟打区/按钮区的语义）
+                if (r2u == GridUnitType.Pixel && ah > 0)
+                    mainGrid.RowDefinitions[2].Height = new GridLength(ah, GridUnitType.Star);
+                if (r4u == GridUnitType.Pixel && th > 0)
+                    mainGrid.RowDefinitions[4].Height = new GridLength(th, GridUnitType.Star);
+                if (r6u == GridUnitType.Pixel && rh > 0)
+                    mainGrid.RowDefinitions[6].Height = new GridLength(rh, GridUnitType.Star);
+                ScheduleModeLayoutRefresh();
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+
+        private void CollapseResultsPanelLayout(
+            bool adjustWindowHeight,
+            bool saveExpandedHeight,
+            double collapsedBottomBorderHeight = NormalCollapsedBottomBorderHeight)
+        {
+            var mainGrid = this.FindName("grid_a") as Grid;
+            if (mainGrid == null)
+                return;
+
+            int layoutVersion = BeginResultsLayoutChange();
+            if (saveExpandedHeight)
+            {
+                _expandedWindowHeight = this.ActualHeight;
+                Config.dicts["展开窗口高度"] = _expandedWindowHeight.ToString("F0");
+            }
+            else if (adjustWindowHeight)
+            {
+                _expandedWindowHeight = this.ActualHeight;
+            }
+
+            double gridContentHeight = 0;
+            if (adjustWindowHeight)
+            {
+                for (int i = 0; i < mainGrid.RowDefinitions.Count; i++)
+                    gridContentHeight += mainGrid.RowDefinitions[i].ActualHeight;
+            }
+
+            double resultsAreaHeight = mainGrid.RowDefinitions[6].ActualHeight;
+            double articleHeight = mainGrid.RowDefinitions[2].ActualHeight;
+            double typingHeight = mainGrid.RowDefinitions[4].ActualHeight;
+            if (articleHeight <= 0) articleHeight = 1;
+            if (typingHeight <= 0) typingHeight = 1;
+
+            mainGrid.RowDefinitions[2].Height = new GridLength(articleHeight, GridUnitType.Pixel);
+            mainGrid.RowDefinitions[4].Height = new GridLength(typingHeight, GridUnitType.Pixel);
+
+            _collapsedArticleHeight = articleHeight;
+            _collapsedTypingHeight = typingHeight;
+            if (resultsAreaHeight > 0)
+                _collapsedResultsHeight = resultsAreaHeight;
+
+            var tbxResults = this.FindName("TbxResults") as TextBox;
+            var bottomBorder = this.FindName("bottomBorder") as Border;
+
+            resultsTextBoxGrid.Margin = new Thickness(0);
+            mainGrid.RowDefinitions[6].Height = new GridLength(0, GridUnitType.Pixel);
+            mainGrid.RowDefinitions[6].MinHeight = 0;
+            mainGrid.RowDefinitions[5].Height = new GridLength(0, GridUnitType.Pixel);
+            mainGrid.RowDefinitions[5].MinHeight = 0;
+
+            if (bottomBorder != null)
+            {
+                mainGrid.RowDefinitions[7].Height = new GridLength(collapsedBottomBorderHeight, GridUnitType.Pixel);
+                bottomBorder.Visibility = collapsedBottomBorderHeight > 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            resultsTextBoxGrid.Visibility = Visibility.Collapsed;
+            gridSplitterResults.Visibility = Visibility.Collapsed;
+            gridSplitterResults.IsEnabled = false;
+
+            if (tbxResults != null)
+            {
+                tbxResults.MinHeight = 0;
+                tbxResults.Margin = new Thickness(0);
+                tbxResults.Height = 0;
+                tbxResults.VerticalContentAlignment = System.Windows.VerticalAlignment.Stretch;
+                tbxResults.Padding = new Thickness(0);
+                tbxResults.Visibility = Visibility.Collapsed;
+            }
+
+            resultsTextBoxGrid.MinHeight = 0;
+            resultsTextBoxGrid.Height = 0;
+            BtnToggleResults.Content = "▲";
+
+            if (adjustWindowHeight && gridContentHeight > 0 && resultsAreaHeight > 0)
+            {
+                double expandedHeight = saveExpandedHeight ? _expandedWindowHeight : this.ActualHeight;
+                double collapsedGridHeight = gridContentHeight - resultsAreaHeight - 5 + collapsedBottomBorderHeight;
+                double windowOffset = expandedHeight - gridContentHeight;
+                double collapsedHeight = collapsedGridHeight + windowOffset;
+                this.Height = collapsedHeight;
+            }
+
+            this.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (IsStaleResultsLayoutChange(layoutVersion))
+                    return;
+
+                mainGrid.RowDefinitions[2].Height = new GridLength(_collapsedArticleHeight, GridUnitType.Star);
+                if ((_copybookMode == null || !_copybookMode.IsActive) &&
+                    (_tracingMode == null || !_tracingMode.IsActive))
+                {
+                    mainGrid.RowDefinitions[4].Height = new GridLength(_collapsedTypingHeight, GridUnitType.Star);
+                }
+                ScheduleModeLayoutRefresh();
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+
+        private void ScheduleModeLayoutRefresh()
+        {
+            if (_copybookMode != null && _copybookMode.IsActive)
+                _copybookMode.ScheduleUpdatePosition();
+            if (_tracingMode != null && _tracingMode.IsActive)
+                _tracingMode.ScheduleInsertMirrorBlocks();
+        }
+
+        private void UpdateMainContextMenuVisibility()
+        {
+            if (MainContextMenu == null)
+                return;
+
+            MenuHomeSuperCompact.IsChecked = Config.GetBool(SuperCompactModeConfigKey);
+            MenuHomePrev.IsEnabled = BtnPrev.IsEnabled;
+            MenuHomeNext.IsEnabled = BtnNext.IsEnabled;
+            MenuHomeSendArticle.IsEnabled = BtnSendArticle.IsEnabled;
+            MenuHomeSendArticle.Header = BtnSendArticle.Content ?? "发文F2";
+            MenuHomeToggleResults.Header = _isResultsExpanded ? "收起成绩" : "展开成绩";
+            MenuHomeToggleResults.IsEnabled = !Config.GetBool(SuperCompactModeConfigKey);
         }
 
 
@@ -2191,11 +2849,21 @@ namespace TypeSunny.UI
 
         private void win_size_change(object sender, SizeChangedEventArgs e)
         {
+            if (_suppressWindowSizeChangeUpdatesDepth > 0)
+                return;
 
             if (StateManager.ConfigLoaded)
             {
                 Config.Set("窗口宽度", this.Width, 0);
-                Config.Set("窗口高度", this.Height, 0);
+                if (Config.GetBool(SuperCompactModeConfigKey))
+                {
+                    // 一键极简模式下，窗口高度变化只写入"一键极简后窗口高度"，不污染普通模式的"窗口高度"
+                    Config.Set("一键极简后窗口高度", this.Height, 0);
+                }
+                else
+                {
+                    Config.Set("窗口高度", this.Height, 0);
+                }
                 // UpdateDisplay(UpdateLevel.PageArrange);
                 DelayUpdateDisplay(500, UpdateLevel.PageArrange);
             }
@@ -2233,7 +2901,28 @@ namespace TypeSunny.UI
         public void UpdateTrainerStat(string statText)
         {
             trainerStatText = statText;
+            ApplyTrainerTitleText();
             UpdateTypingStat();
+        }
+
+        private string GetTrainerTitleText()
+        {
+            if (string.IsNullOrEmpty(trainerStatText))
+                return "";
+
+            return "[练单] " + trainerStatText;
+        }
+
+        private bool ApplyTrainerTitleText()
+        {
+            string trainerTitleText = GetTrainerTitleText();
+            if (StateManager.txtSource == TxtSource.trainer && !string.IsNullOrEmpty(trainerTitleText))
+            {
+                TbkTitle.Text = trainerTitleText;
+                return true;
+            }
+
+            return false;
         }
 
         public void UpdateTypingStat(string newReport)
@@ -2271,8 +2960,6 @@ namespace TypeSunny.UI
                 sb.Append("   [练单] ");
                 sb.Append(trainerStatText);
             }
-
-
 
             // 第二行：当日详细统计（读取文章日志获取）
             var todayRecords = ArticleLog.ReadRecords(DateTime.Today);
@@ -2416,7 +3103,7 @@ namespace TypeSunny.UI
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                TbkStatusTop.Text = "按空格或回车继续\t" + Score.Progress();
+                TbkStatusTop.Text = "按空格或回车继续" + ContinuationShortcutHint + "\t" + Score.Progress();
                 if (_copybookMode != null && _copybookMode.IsActive)
                     _copybookMode.FocusInputCapture();
                 else if (_tracingMode != null && _tracingMode.IsActive)
@@ -2424,6 +3111,24 @@ namespace TypeSunny.UI
                 else
                     TbxInput.Focus();
             }));
+        }
+
+        private void QueuePendingArticleContinuationFor(TxtSource source)
+        {
+            if (source == TxtSource.articlesender)
+            {
+                _articleContinuationState.Record(ArticleContinuationAction.WenlaiNext);
+            }
+            else if (source == TxtSource.book)
+            {
+                _articleContinuationState.Record(ArticleContinuationAction.LocalNext);
+            }
+            else
+            {
+                return;
+            }
+
+            QueuePendingArticleContinuation();
         }
 
         private bool IsRetypeCompletion(RetypeType retypeType)
@@ -3131,9 +3836,9 @@ namespace TypeSunny.UI
                             throw ex;
                         }
                     }
-                    else if (IsManualRetypeJumpMode() && IsRetypeCompletion(savedRetypeType))
+                    else if (IsManualRetypeJumpMode())
                     {
-                        QueuePendingArticleContinuation();
+                        QueuePendingArticleContinuationFor(savedTxtSource);
                     }
                     else if (savedTxtSource == TxtSource.articlesender)
                     {
@@ -4396,6 +5101,9 @@ public async Task SendArticle()
         /// </summary>
         private void UpdateWindowTitle(int typedWords, int totalWords)
         {
+            if (ApplyTrainerTitleText())
+                return;
+
             if (totalWords == 0)
             {
                 // 没有加载文本时，只显示基本标题
@@ -5382,9 +6090,17 @@ public async Task SendArticle()
 
             }
 
-            // 设置菜单位置在按钮下方
-            MenuQQGroup.PlacementTarget = BtnF5;
-            MenuQQGroup.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            // 设置菜单位置在按钮下方；如果按钮被隐藏，仍允许右键菜单/快捷键打开选群菜单
+            if (BtnF5.Visibility == Visibility.Visible)
+            {
+                MenuQQGroup.PlacementTarget = BtnF5;
+                MenuQQGroup.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            }
+            else
+            {
+                MenuQQGroup.PlacementTarget = MainBorder;
+                MenuQQGroup.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+            }
 
             MenuQQGroup.IsOpen = true;
 
@@ -5732,8 +6448,18 @@ public async Task SendArticle()
 
             Config.Set("窗口坐标X", this.Left, 0);
             Config.Set("窗口坐标Y", this.Top, 0);
-            Config.Set("窗口高度", this.Height, 0);
+            // 分流保存：一键极简下 this.Height 是小尺寸，不能覆盖普通模式的"窗口高度"
+            if (Config.GetBool(SuperCompactModeConfigKey))
+            {
+                Config.Set("一键极简后窗口高度", this.Height, 0);
+                // 普通模式的"窗口高度"保留不变
+            }
+            else
+            {
+                Config.Set("窗口高度", this.Height, 0);
+            }
             Config.Set("窗口宽度", this.Width, 0);
+
             SaveDisplayInputRatio();
             Config.WriteConfig(0);
 
@@ -7745,6 +8471,83 @@ public async Task SendArticle()
             return false;
         }
 
+        private void MainContextMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            UpdateMainContextMenuVisibility();
+            RebuildRaceContextMenu();
+        }
+
+        private void MenuItemOpenConfig_Click(object sender, RoutedEventArgs e)
+        {
+            Tbk_PreviewMouseUp_1(sender, null);
+        }
+
+        private void MenuHomeSuperCompact_Click(object sender, RoutedEventArgs e)
+        {
+            Config.Set(SuperCompactModeConfigKey, MenuHomeSuperCompact.IsChecked);
+            ApplyHomeToolbarSettings();
+        }
+
+        private void RebuildRaceContextMenu()
+        {
+            if (MenuHomeRace == null || MenuItemRace == null)
+                return;
+
+            if (MenuItemRace.Items.Count == 0)
+                InitializeRaceMenu();
+
+            MenuHomeRace.Items.Clear();
+            foreach (var item in MenuItemRace.Items)
+            {
+                if (item is MenuItem menuItem)
+                {
+                    MenuHomeRace.Items.Add(CloneMenuItem(menuItem));
+                }
+                else if (item is Separator)
+                {
+                    MenuHomeRace.Items.Add(new Separator());
+                }
+            }
+
+            if (MenuHomeRace.Items.Count == 0)
+            {
+                var empty = new MenuItem
+                {
+                    Header = "暂无赛文",
+                    IsEnabled = false
+                };
+                MenuHomeRace.Items.Add(empty);
+            }
+        }
+
+        private MenuItem CloneMenuItem(MenuItem source)
+        {
+            var clone = new MenuItem
+            {
+                Header = source.Header,
+                IsEnabled = source.IsEnabled
+            };
+
+            foreach (var item in source.Items)
+            {
+                if (item is MenuItem child)
+                {
+                    clone.Items.Add(CloneMenuItem(child));
+                }
+                else if (item is Separator)
+                {
+                    clone.Items.Add(new Separator());
+                }
+            }
+
+            if (source.Items.Count == 0 && source.IsEnabled)
+            {
+                clone.Click += (s, e) => source.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent, source));
+            }
+
+            return clone;
+        }
+
 
         private void BtnJbs_Click(object sender, RoutedEventArgs e) //锦标赛
         {
@@ -8554,6 +9357,25 @@ public async Task SendArticle()
             ShowWinTrainer();
         }
 
+        private void BtnShuang_Click(object sender, RoutedEventArgs e)
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            if (ShuangToolLauncher.IsAvailable(baseDir))
+            {
+                try
+                {
+                    ShuangToolLauncher.Open(baseDir);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message, "双拼练习", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                return;
+            }
+
+            new ShuangMissingDialog(this).ShowDialog();
+        }
+
         // 成绩面板展开/收起状态
         private bool _isResultsExpanded = true;
 
@@ -8569,180 +9391,15 @@ public async Task SendArticle()
         {
             _isResultsExpanded = !_isResultsExpanded;
 
-            // 获取主Grid（通过FindName）
-            var grid_a = this.FindName("grid_a") as Grid;
-            if (grid_a == null) return;
-
             if (_isResultsExpanded)
             {
-                // 展开：恢复成绩区，所有区域都使用 * 自动分配空间
-                BtnToggleResults.Content = "▼";
                 Config.Set("成绩面板展开", true);
-
-                // 隐藏底边框
-                var bottomBorder = this.FindName("bottomBorder") as Border;
-                if (bottomBorder != null)
-                {
-                    grid_a.RowDefinitions[7].Height = new GridLength(0, GridUnitType.Pixel);
-                    bottomBorder.Visibility = Visibility.Collapsed;
-                }
-
-                // 恢复Row 5和Row 6的MinHeight（清除MinHeight设置，使用默认值）
-                grid_a.RowDefinitions[5].ClearValue(RowDefinition.MinHeightProperty);
-                grid_a.RowDefinitions[6].ClearValue(RowDefinition.MinHeightProperty);
-
-                // 恢复成绩区 Border 的 margin
-                resultsTextBoxGrid.Margin = new Thickness(15, 5, 15, 10);
-                resultsTextBoxGrid.ClearValue(FrameworkElement.MinHeightProperty);
-                resultsTextBoxGrid.ClearValue(FrameworkElement.HeightProperty);
-
-                // 恢复TbxResults的属性
-                var tbxResults = this.FindName("TbxResults") as TextBox;
-                if (tbxResults != null)
-                {
-                    tbxResults.ClearValue(FrameworkElement.MinHeightProperty);
-                    tbxResults.Margin = new Thickness(0);  // 保持0
-                    tbxResults.ClearValue(FrameworkElement.HeightProperty);
-                    tbxResults.Padding = new Thickness(10, 5, 10, 10);
-                    tbxResults.Visibility = Visibility.Visible;
-                }
-
-                // 展开成绩区
-                bool isCopybookOrTracing = (_copybookMode != null && _copybookMode.IsActive) ||
-                                           (_tracingMode != null && _tracingMode.IsActive);
-
-                double currentArticleH = grid_a.RowDefinitions[2].ActualHeight;
-                double currentTypingH = grid_a.RowDefinitions[4].ActualHeight;
-
-                double resultsH = _collapsedResultsHeight > 0
-                    ? _collapsedResultsHeight
-                    : currentArticleH * 0.25;
-                if (resultsH < 50) resultsH = 50;
-
-                // 先锁定 Row 2 为像素值，防止窗口变大时 Row 2 跟着撑大
-                grid_a.RowDefinitions[2].Height = new GridLength(currentArticleH, GridUnitType.Pixel);
-                if (!isCopybookOrTracing)
-                {
-                    grid_a.RowDefinitions[4].Height = new GridLength(currentTypingH, GridUnitType.Pixel);
-                }
-
-                // 先设好 Row 5/6，再改窗口高度
-                grid_a.RowDefinitions[5].Height = new GridLength(5, GridUnitType.Pixel);
-                grid_a.RowDefinitions[5].ClearValue(RowDefinition.MinHeightProperty);
-                grid_a.RowDefinitions[6].Height = new GridLength(resultsH, GridUnitType.Pixel);
-                resultsTextBoxGrid.Visibility = Visibility.Visible;
-                gridSplitterResults.Visibility = Visibility.Visible;
-
-                gridSplitterArticleTyping.IsEnabled = true;
-                gridSplitterResults.IsEnabled = true;
-
-                // 窗口高度 = 当前高度 + 成绩区高度 + splitter(5) - bottomBorder(10)
-                this.Height = this.ActualHeight + resultsH + 5 - 10;
-
-                // 转回 Star
-                this.Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    double ah = grid_a.RowDefinitions[2].ActualHeight;
-                    double th = grid_a.RowDefinitions[4].ActualHeight;
-                    double rh = grid_a.RowDefinitions[6].ActualHeight;
-                    if (ah > 0) grid_a.RowDefinitions[2].Height = new GridLength(ah, GridUnitType.Star);
-                    if (th > 0) grid_a.RowDefinitions[4].Height = new GridLength(th, GridUnitType.Star);
-                    if (rh > 0) grid_a.RowDefinitions[6].Height = new GridLength(rh, GridUnitType.Star);
-                }), System.Windows.Threading.DispatcherPriority.Loaded);
+                ExpandResultsPanelLayout(true);
             }
             else
             {
-                // 收起：先获取各区域的比例，然后隐藏成绩区，最后调整窗口高度
-                _expandedWindowHeight = this.ActualHeight;
-                Config.dicts["展开窗口高度"] = _expandedWindowHeight.ToString("F0");
-                double gridContentHeight = 0;
-                for (int i = 0; i < grid_a.RowDefinitions.Count; i++)
-                {
-                    gridContentHeight += grid_a.RowDefinitions[i].ActualHeight;
-                }
-
-                // 计算成绩区高度
-                double resultsAreaHeight = grid_a.RowDefinitions[6].ActualHeight;
-
-                // 关键：在收起前，先把Row 2和Row 4固定为当前高度
-                // 这样收起后它们的大小不会改变
-                double articleHeight = grid_a.RowDefinitions[2].ActualHeight;
-                double typingHeight = grid_a.RowDefinitions[4].ActualHeight;
-                grid_a.RowDefinitions[2].Height = new GridLength(articleHeight, GridUnitType.Pixel);
-                grid_a.RowDefinitions[4].Height = new GridLength(typingHeight, GridUnitType.Pixel);
-
-                // 保存收起时的高度，用于展开时恢复
-                _collapsedArticleHeight = articleHeight;
-                _collapsedTypingHeight = typingHeight;
-
-                // 计算收起前Row 6的实际高度并保存
-                double row6ActualHeightBefore = grid_a.RowDefinitions[6].ActualHeight;
-                _collapsedResultsHeight = row6ActualHeightBefore;
-
-                // 获取内部的TbxResults TextBox
-                var tbxResults = this.FindName("TbxResults") as TextBox;
-                var bottomBorder = this.FindName("bottomBorder") as Border;
-
-                // 然后设置成绩区高度为0并隐藏
-                resultsTextBoxGrid.Margin = new Thickness(0);
-                // 方案1：设置Row 6的Height=0和MinHeight=0（关键修复！）
-                grid_a.RowDefinitions[6].Height = new GridLength(0, GridUnitType.Pixel);
-                grid_a.RowDefinitions[6].MinHeight = 0;  // 关键！必须设置MinHeight=0
-                grid_a.RowDefinitions[5].Height = new GridLength(0, GridUnitType.Pixel);
-                grid_a.RowDefinitions[5].MinHeight = 0;  // 也设置Row 5的MinHeight=0
-
-                // 显示底边框：设置Row 7的高度为10px
-                if (bottomBorder != null)
-                {
-                    grid_a.RowDefinitions[7].Height = new GridLength(10, GridUnitType.Pixel);
-                    bottomBorder.Visibility = Visibility.Visible;
-                }
-
-                resultsTextBoxGrid.Visibility = Visibility.Collapsed;
-                gridSplitterResults.Visibility = Visibility.Collapsed;
-                gridSplitterResults.IsEnabled = false;
-
-                // 方案2：设置TextBox的属性，确保不占用空间
-                if (tbxResults != null)
-                {
-                    tbxResults.MinHeight = 0;
-                    tbxResults.Margin = new Thickness(0);  // 方案2：设置Margin=0
-                    tbxResults.Height = 0;
-                    // 方案3：设置VerticalContentAlignment和Padding
-                    tbxResults.VerticalContentAlignment = System.Windows.VerticalAlignment.Stretch;
-                    tbxResults.Padding = new Thickness(0);
-                    tbxResults.Visibility = Visibility.Collapsed;
-                }
-                resultsTextBoxGrid.MinHeight = 0;
-                resultsTextBoxGrid.Height = 0;
-
-                // 强制更新布局，获取Row 6收起后的实际高度
-                this.UpdateLayout();
-                double row6ActualHeightAfter = grid_a.RowDefinitions[6].ActualHeight;
-
-                // 计算新的窗口高度
-                // 收起后grid_a的高度 = 原grid_a高度 - 成绩区高度 - 分隔条高度(5) + 底边框高度(10)
-                double collapsedGridHeight = gridContentHeight - resultsAreaHeight - 5 + 10;
-                // 收起后的窗口高度 = collapsedGridHeight + 窗口与grid_a的高度差
-                double windowOffset = _expandedWindowHeight - gridContentHeight;
-                double collapsedHeight = collapsedGridHeight + windowOffset;
-
-                BtnToggleResults.Content = "▲";
                 Config.Set("成绩面板展开", false);
-
-                this.Height = collapsedHeight;
-
-                // 延迟将发文区和跟打区改为Star，让它们可以自适应窗口调整
-                this.Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    grid_a.RowDefinitions[2].Height = new GridLength(_collapsedArticleHeight, GridUnitType.Star);
-                    if ((_copybookMode == null || !_copybookMode.IsActive) &&
-                        (_tracingMode == null || !_tracingMode.IsActive))
-                    {
-                        grid_a.RowDefinitions[4].Height = new GridLength(_collapsedTypingHeight, GridUnitType.Star);
-                    }
-                }), System.Windows.Threading.DispatcherPriority.Loaded);
-
+                CollapseResultsPanelLayout(true, true);
             }
         }
 
@@ -8925,7 +9582,8 @@ public async Task SendArticle()
             if (grid_a != null)
             {
                 double resultsRatio = Config.GetDouble("成绩区高度比例");
-                if (resultsRatio <= 0 || resultsRatio >= 1)
+                // 合理范围 [0.05, 0.7]：太小会让成绩区看不见，太大会挤没跟打区
+                if (resultsRatio < 0.05 || resultsRatio > 0.7)
                     resultsRatio = 0.2;
 
                 bool isCopybookOrTracing = (_copybookMode != null && _copybookMode.IsActive) ||
@@ -8935,12 +9593,15 @@ public async Task SendArticle()
                 {
                     double articleRatio = 1 - resultsRatio;
                     grid_a.RowDefinitions[2].Height = new GridLength(articleRatio, GridUnitType.Star);
+                    // 临摹/跟随模式下跟打区是 Auto（由内容决定高度），复位避免被历史 Star 权重污染
+                    grid_a.RowDefinitions[4].Height = GridLength.Auto;
                     grid_a.RowDefinitions[6].Height = new GridLength(resultsRatio, GridUnitType.Star);
                 }
                 else
                 {
                     double articleTypingRatio = Config.GetDouble("发文区跟打区比例");
-                    if (articleTypingRatio <= 0 || articleTypingRatio >= 1)
+                    // 合理范围 [0.2, 0.9]：超出一般是 bug 写入的坏值
+                    if (articleTypingRatio < 0.2 || articleTypingRatio > 0.9)
                         articleTypingRatio = 0.56;
 
                     double articleRatio = (1 - resultsRatio) * articleTypingRatio;
@@ -8955,6 +9616,9 @@ public async Task SendArticle()
 
         private void SaveDisplayInputRatio()
         {
+            if (_isSuperCompactLayoutApplied || _suppressWindowSizeChangeUpdatesDepth > 0)
+                return;
+
             var grid_a = this.FindName("grid_a") as Grid;
             if (grid_a != null)
             {
@@ -8971,17 +9635,22 @@ public async Task SendArticle()
                     if (!isCopybookOrTracing)
                     {
                         double articleTypingTotal = articleHeight + typingHeight;
-                        if (articleTypingTotal > 0)
+                        // 只有当发文区和跟打区都有合理高度时才保存，避免过渡/异常布局污染 Config
+                        if (articleTypingTotal > 0 && articleHeight >= 30 && typingHeight >= 30)
                         {
                             double articleTypingRatio = articleHeight / articleTypingTotal;
                             Config.dicts["发文区跟打区比例"] = articleTypingRatio.ToString("F6");
                         }
                     }
 
-                    if (_isResultsExpanded && resultsHeight > 0)
+                    // 只有当成绩区有合理高度时才保存，避免极小值被当作用户偏好持久化
+                    if (_isResultsExpanded && resultsHeight >= 20)
                     {
                         double resultsRatio = resultsHeight / total;
-                        Config.dicts["成绩区高度比例"] = resultsRatio.ToString("F6");
+                        if (resultsRatio >= 0.05 && resultsRatio <= 0.7)
+                        {
+                            Config.dicts["成绩区高度比例"] = resultsRatio.ToString("F6");
+                        }
                     }
 
                     Config.WriteConfig(0);
