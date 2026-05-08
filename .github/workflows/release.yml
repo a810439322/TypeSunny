@@ -37,11 +37,11 @@ jobs:
           echo "Version: $ver"
 
       - name: Get commit message
-        id: commit
         shell: pwsh
         run: |
-          $msg = (git log -1 --pretty=%s)
-          echo "message=$msg" >> $env:GITHUB_OUTPUT
+          git log -1 --pretty=%B | Set-Content -Path "commit_message.txt" -Encoding UTF8 -NoNewline
+          echo "--- commit_message.txt ---"
+          Get-Content "commit_message.txt"
 
       - name: Create packages
         shell: pwsh
@@ -73,10 +73,9 @@ jobs:
         shell: bash
         run: |
           VERSION=${{ steps.version.outputs.version }}
-          MSG="${{ steps.commit.outputs.message }}"
           gh release create "v${VERSION}" \
             --title "晴跟打 v${VERSION}" \
-            --notes "${MSG}" \
+            --notes-file commit_message.txt \
             --target master \
             "TypeSunny-${VERSION}-full.zip" \
             "TypeSunny-${VERSION}-update.zip"
@@ -92,7 +91,7 @@ jobs:
           $OutputEncoding = [System.Text.Encoding]::UTF8
 
           $ver = "${{ steps.version.outputs.version }}"
-          $msg = "${{ steps.commit.outputs.message }}"
+          $msg = Get-Content "commit_message.txt" -Raw
           $token = $env:GITEE_TOKEN
 
           echo "=== Gitee Release ==="
