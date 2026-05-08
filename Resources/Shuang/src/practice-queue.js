@@ -8,7 +8,10 @@ class ShuangPracticeQueue {
     this.stateKey = ''
     this.engine = null
     this.completedRound = false
+    this.progressCompleted = false
     this.retryWord = null
+    this.pendingSaveTimer = null
+    this.deferredSaveDelay = 250
   }
 
   isQueueMode(mode = Shuang.app.setting.config.mode) {
@@ -16,17 +19,12 @@ class ShuangPracticeQueue {
   }
 
   next(answerResult = null) {
-    if (this.completedRound && answerResult == null) {
-      this.resetProgress()
-    }
-
     const engine = this.sync()
     if (!engine) return null
 
-    const current = engine.getNextWord()
+    let current = engine.getNextWord()
     if (!current) {
-      this.resetProgress()
-      return this.currentModel()
+      return this.startNextCycle({ keepProgressComplete: true, immediateSave: true })
     }
 
     if (typeof answerResult === 'boolean') {
@@ -37,11 +35,10 @@ class ShuangPracticeQueue {
         engine.processAnswer(answeredWord, answerResult)
       }
       this.retryWord = answerResult ? null : answeredWord
-      this.save()
       if (!engine.getNextWord()) {
-        this.completedRound = true
-        return null
+        return this.startNextCycle({ keepProgressComplete: true, immediateSave: true })
       }
+      this.saveDeferred()
     }
 
     return this.currentModel()
@@ -56,14 +53,15 @@ class ShuangPracticeQueue {
       return this.engine
     }
 
+    this.flushSave()
     this.stateKey = stateKey
     const pool = this.buildPool(range)
     const state = this.readState(stateKey)
     const words = state ? pool : this.shuffle([...pool])
     this.engine = new Shuang.core.nextWordEngine(words, state)
-    this.completedRound = this.engine.getNextWord() == null
+    this.progressCompleted = !!(state && state.progressCompleted) || this.engine.getNextWord() == null
+    this.completedRound = false
     this.retryWord = null
-    this.save()
     return this.engine
   }
 
@@ -77,8 +75,9 @@ class ShuangPracticeQueue {
     this.stateKey = this.getStateKey(range)
     this.engine = new Shuang.core.nextWordEngine(pool)
     this.completedRound = false
+    this.progressCompleted = false
     this.retryWord = null
-    this.save()
+    this.saveImmediate()
     return this.engine
   }
 
@@ -87,7 +86,11 @@ class ShuangPracticeQueue {
     if (!engine) {
       return { completed: 0, total: 0 }
     }
-    return engine.getProgress()
+    const progress = engine.getProgress()
+    if (this.progressCompleted && progress.total > 0) {
+      return { completed: progress.total, total: progress.total }
+    }
+    return progress
   }
 
   currentModel() {
@@ -100,6 +103,22 @@ class ShuangPracticeQueue {
 
     const [sheng, yun] = this.decode(current.word)
     return new Shuang.core.model(sheng, yun)
+  }
+
+  startNextCycle({ keepProgressComplete = true, immediateSave = false } = {}) {
+    const range = this.normalizeRange(Shuang.app.setting.config.mode)
+    const pool = this.shuffle(this.buildPool(range))
+    this.stateKey = this.getStateKey(range)
+    this.engine = new Shuang.core.nextWordEngine(pool)
+    this.completedRound = false
+    this.progressCompleted = keepProgressComplete && pool.length > 0
+    this.retryWord = null
+    if (immediateSave) {
+      this.saveImmediate()
+    } else {
+      this.saveDeferred()
+    }
+    return this.currentModel()
   }
 
   buildPool(range) {
@@ -161,17 +180,47 @@ class ShuangPracticeQueue {
     try {
       localStorage.setItem(this.stateKey, JSON.stringify(Object.assign({
         version: this.storageVersion,
+        progressCompleted: this.progressCompleted,
       }, this.engine.getState())))
     } catch (_) {
       // Browser storage can be disabled; the queue still works for the current page.
     }
   }
 
+  saveDeferred() {
+    if (this.pendingSaveTimer) {
+      clearTimeout(this.pendingSaveTimer)
+    }
+    this.pendingSaveTimer = setTimeout(() => {
+      this.pendingSaveTimer = null
+      this.save()
+    }, this.deferredSaveDelay)
+  }
+
+  saveImmediate() {
+    this.cancelPendingSave()
+    this.save()
+  }
+
+  flushSave() {
+    if (!this.pendingSaveTimer) return
+    clearTimeout(this.pendingSaveTimer)
+    this.pendingSaveTimer = null
+    this.save()
+  }
+
+  cancelPendingSave() {
+    if (!this.pendingSaveTimer) return
+    clearTimeout(this.pendingSaveTimer)
+    this.pendingSaveTimer = null
+  }
+
   getScore() {
     const state = this.readScoreState()
     return {
       score: state.score,
-      combo: state.combo
+      combo: state.combo,
+      maxCombo: state.maxCombo
     }
   }
 
@@ -181,6 +230,7 @@ class ShuangPracticeQueue {
 
     if (isCorrect) {
       state.combo++
+      state.maxCombo = Math.max(state.maxCombo, state.combo)
       delta = this.calculateCorrectScore(state.combo)
       state.score += delta
     } else {
@@ -198,7 +248,7 @@ class ShuangPracticeQueue {
   }
 
   resetScore() {
-    const state = { score: 0, combo: 0 }
+    const state = { score: 0, combo: 0, maxCombo: 0 }
     this.saveScoreState(state)
     return state
   }
@@ -220,23 +270,27 @@ class ShuangPracticeQueue {
   readScoreState() {
     try {
       const raw = localStorage.getItem(this.getScoreKey())
-      if (!raw) return { score: 0, combo: 0 }
+      if (!raw) return { score: 0, combo: 0, maxCombo: 0 }
 
       const state = JSON.parse(raw)
+      const combo = Math.max(0, Math.floor(Number(state.combo) || 0))
       return {
         score: Math.max(0, Math.floor(Number(state.score) || 0)),
-        combo: Math.max(0, Math.floor(Number(state.combo) || 0))
+        combo,
+        maxCombo: Math.max(combo, Math.floor(Number(state.maxCombo) || 0))
       }
     } catch (_) {
-      return { score: 0, combo: 0 }
+      return { score: 0, combo: 0, maxCombo: 0 }
     }
   }
 
   saveScoreState(state) {
     try {
+      const combo = Math.max(0, Math.floor(Number(state.combo) || 0))
       localStorage.setItem(this.getScoreKey(), JSON.stringify({
         score: Math.max(0, Math.floor(Number(state.score) || 0)),
-        combo: Math.max(0, Math.floor(Number(state.combo) || 0))
+        combo,
+        maxCombo: Math.max(combo, Math.floor(Number(state.maxCombo) || 0))
       }))
     } catch (_) {
       // Score display still works for the current page when storage is unavailable.

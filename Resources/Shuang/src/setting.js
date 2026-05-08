@@ -150,18 +150,24 @@ Shuang.app.setting = {
     const percent = $('#practice-progress-percent')
     const score = $('#practice-score')
     const combo = $('#practice-combo')
+    const maxCombo = $('#practice-max-combo')
     if (!progress || !percent || !score || !combo) return
 
     const queue = Shuang.core.practiceQueue
     const isQueueMode = queue && queue.isQueueMode()
     const { completed, total } = isQueueMode ? queue.getProgress() : { completed: 0, total: 0 }
-    const { score: totalScore, combo: currentCombo } = isQueueMode ? queue.getScore() : { score: 0, combo: 0 }
+    const { score: totalScore, combo: currentCombo, maxCombo: bestCombo } = isQueueMode
+      ? queue.getScore()
+      : { score: 0, combo: 0, maxCombo: 0 }
     const ratio = total > 0 ? Math.floor((completed / total) * 100) : 0
 
     progress.innerText = `${completed}/${total} 组`
     percent.innerText = `${ratio}%`
     score.innerText = `${totalScore} 分`
     combo.innerText = `${currentCombo} 连击`
+    if (maxCombo) {
+      maxCombo.innerText = `${bestCombo || 0} 连击`
+    }
 
     if (scoreChange && scoreChange.delta) {
       this.flashPracticeScore(scoreChange.delta)

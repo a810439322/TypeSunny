@@ -111,6 +111,11 @@ Shuang.app.action = {
       this.judge()
     })
     window.addEventListener('resize', Shuang.app.setting.updateKeysHintLayoutRatio)
+    window.addEventListener('beforeunload', () => {
+      if (Shuang.core.practiceQueue && typeof Shuang.core.practiceQueue.flushSave === 'function') {
+        Shuang.core.practiceQueue.flushSave()
+      }
+    })
     window.resizeTo(window.outerWidth, window.outerHeight)
 
     /** Simulate Keyboard */
@@ -236,17 +241,7 @@ Shuang.app.action = {
         Shuang.core.current = Shuang.core.practiceQueue.next(answerResult)
         break
     }
-    if (!Shuang.core.current) {
-      if (Shuang.core.practiceQueue && Shuang.core.practiceQueue.completedRound) {
-        Shuang.app.setting.updatePracticeProgress(scoreChange)
-        $('#q').style.display = 'block'
-        $('#q').innerText = '本轮完成'
-        $('#dict').innerText = '点击按钮开始下一轮'
-        $('#btn').onclick = () => this.next(noFocus)
-        $('#btn').innerText = Shuang.resource.emoji.right
-      }
-      return
-    }
+    if (!Shuang.core.current) return
 
     // Update Keys Hint
     Shuang.app.setting.updateQAndDict()

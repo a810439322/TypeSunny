@@ -50,7 +50,7 @@ function progressCountsMasteredWords() {
   assert.deepStrictEqual(engine.getProgress(), { completed: 1, total: 2 })
 }
 
-function queueKeepsCompletedProgressUntilNextRoundStarts() {
+function queueAutoContinuesAfterCompletionAndKeepsProgressComplete() {
   const storage = {}
   global.localStorage = {
     getItem: key => Object.prototype.hasOwnProperty.call(storage, key) ? storage[key] : null,
@@ -83,13 +83,18 @@ function queueKeepsCompletedProgressUntilNextRoundStarts() {
   assert.deepStrictEqual(queue.getProgress(), { completed: 0, total: 1 })
   assert.notStrictEqual(queue.next(true), null)
   assert.deepStrictEqual(queue.getProgress(), { completed: 0, total: 1 })
-  assert.strictEqual(queue.next(true), null)
+  assert.notStrictEqual(queue.next(true), null)
   assert.deepStrictEqual(queue.getProgress(), { completed: 1, total: 1 })
-  assert.strictEqual(queue.completedRound, true)
-
-  assert.notStrictEqual(queue.next(), null)
-  assert.deepStrictEqual(queue.getProgress(), { completed: 0, total: 1 })
   assert.strictEqual(queue.completedRound, false)
+  assert.strictEqual(queue.progressCompleted, true)
+
+  assert.notStrictEqual(queue.next(true), null)
+  assert.deepStrictEqual(queue.getProgress(), { completed: 1, total: 1 })
+  assert.strictEqual(queue.completedRound, false)
+
+  queue.resetProgress()
+  assert.deepStrictEqual(queue.getProgress(), { completed: 0, total: 1 })
+  assert.strictEqual(queue.progressCompleted, false)
 }
 
 function queueShareRangePoolAcrossPinyinModes() {
@@ -175,6 +180,126 @@ function queueRetriedWrongWordDoesNotCreditNextQueueHead() {
   assert.deepStrictEqual(words(queue.engine), ['s|b', 's|c', 's|d', 's|a'])
 }
 
+function queueDefersLargeStateWritesDuringAnswerFlow() {
+  const storage = {}
+  const stateWrites = []
+  const pendingTimers = []
+  const originalSetTimeout = global.setTimeout
+  const originalClearTimeout = global.clearTimeout
+  global.setTimeout = (callback) => {
+    pendingTimers.push(callback)
+    return pendingTimers.length
+  }
+  global.clearTimeout = () => {}
+  global.localStorage = {
+    getItem: key => Object.prototype.hasOwnProperty.call(storage, key) ? storage[key] : null,
+    setItem: (key, value) => {
+      storage[key] = value
+      if (key.startsWith('shuang-next-word:')) {
+        stateWrites.push(value)
+      }
+    }
+  }
+  global.Shuang = {
+    app: {
+      setting: {
+        config: { mode: 'all', scheme: 'test', withoutPinyin: 'false' }
+      }
+    },
+    resource: {
+      dict: {
+        s: { a: '萨', b: '色', list: ['a', 'b'] },
+        list: ['s']
+      }
+    },
+    core: {
+      nextWordEngine: NextWordEngine,
+      model: function Model(sheng, yun) {
+        this.sheng = sheng
+        this.yun = yun
+      }
+    }
+  }
+
+  try {
+    const queue = new ShuangPracticeQueue()
+    queue.shuffle = words => words
+
+    queue.next()
+    queue.next(true)
+
+    assert.strictEqual(stateWrites.length, 0)
+    assert.strictEqual(pendingTimers.length, 1)
+
+    pendingTimers.shift()()
+
+    assert.strictEqual(stateWrites.length, 1)
+  } finally {
+    global.setTimeout = originalSetTimeout
+    global.clearTimeout = originalClearTimeout
+  }
+}
+
+function queueFlushesDeferredStateBeforeReplacingEngine() {
+  const storage = {}
+  const stateWrites = []
+  const pendingTimers = []
+  const originalSetTimeout = global.setTimeout
+  const originalClearTimeout = global.clearTimeout
+  global.setTimeout = (callback) => {
+    pendingTimers.push(callback)
+    return pendingTimers.length
+  }
+  global.clearTimeout = () => {}
+  global.localStorage = {
+    getItem: key => Object.prototype.hasOwnProperty.call(storage, key) ? storage[key] : null,
+    setItem: (key, value) => {
+      storage[key] = value
+      if (key.startsWith('shuang-next-word:')) {
+        stateWrites.push({ key, value })
+      }
+    }
+  }
+  global.Shuang = {
+    app: {
+      setting: {
+        config: { mode: 'all', scheme: 'one', withoutPinyin: 'false' }
+      }
+    },
+    resource: {
+      dict: {
+        s: { a: '萨', b: '色', list: ['a', 'b'] },
+        list: ['s']
+      }
+    },
+    core: {
+      nextWordEngine: NextWordEngine,
+      model: function Model(sheng, yun) {
+        this.sheng = sheng
+        this.yun = yun
+      }
+    }
+  }
+
+  try {
+    const queue = new ShuangPracticeQueue()
+    queue.shuffle = words => words
+
+    queue.next()
+    queue.next(true)
+    assert.strictEqual(stateWrites.length, 0)
+
+    Shuang.app.setting.config.scheme = 'two'
+    queue.sync()
+
+    assert.strictEqual(stateWrites.length, 1)
+    assert.strictEqual(stateWrites[0].key, 'shuang-next-word:1:one:all')
+  } finally {
+    global.setTimeout = originalSetTimeout
+    global.clearTimeout = originalClearTimeout
+  }
+}
+
 function resetProgressStartsCurrentRangeAgain() {
   const storage = {}
   global.localStorage = {
@@ -237,15 +362,17 @@ function scoreIsStoredPerSchemeWithComboRules() {
     assert.deepStrictEqual(queue.recordScore(true), { delta: 2, score: i * 2, combo: i })
   }
   assert.deepStrictEqual(queue.recordScore(true), { delta: 4, score: 22, combo: 10 })
+  assert.deepStrictEqual(queue.getScore(), { score: 22, combo: 10, maxCombo: 10 })
 
   assert.deepStrictEqual(queue.recordScore(false), { delta: -2, score: 20, combo: 0 })
+  assert.deepStrictEqual(queue.getScore(), { score: 20, combo: 0, maxCombo: 10 })
 
   Shuang.app.setting.config.scheme = 'two'
-  assert.deepStrictEqual(queue.getScore(), { score: 0, combo: 0 })
+  assert.deepStrictEqual(queue.getScore(), { score: 0, combo: 0, maxCombo: 0 })
   assert.deepStrictEqual(queue.recordScore(true), { delta: 2, score: 2, combo: 1 })
 
   Shuang.app.setting.config.scheme = 'one'
-  assert.deepStrictEqual(queue.getScore(), { score: 20, combo: 0 })
+  assert.deepStrictEqual(queue.getScore(), { score: 20, combo: 0, maxCombo: 10 })
 }
 
 function scoreBonusCapsAtTwentyPoints() {
@@ -272,6 +399,78 @@ function scoreBonusCapsAtTwentyPoints() {
 
   assert.strictEqual(result.delta, 20)
   assert.strictEqual(result.combo, 50)
+  assert.strictEqual(queue.getScore().maxCombo, 50)
+}
+
+function maxComboSurvivesMistakesAndMigratesStoredCombo() {
+  const storage = {}
+  global.localStorage = {
+    getItem: key => Object.prototype.hasOwnProperty.call(storage, key) ? storage[key] : null,
+    setItem: (key, value) => { storage[key] = value }
+  }
+  global.Shuang = {
+    app: {
+      setting: {
+        config: { mode: 'hard', scheme: 'test', withoutPinyin: 'false' }
+      }
+    },
+    resource: { dict: { list: [] } },
+    core: { nextWordEngine: NextWordEngine }
+  }
+  const queue = new ShuangPracticeQueue()
+
+  queue.recordScore(true)
+  queue.recordScore(true)
+  queue.recordScore(false)
+  queue.recordScore(true)
+
+  assert.deepStrictEqual(queue.getScore(), { score: 4, combo: 1, maxCombo: 2 })
+
+  storage[queue.getScoreKey()] = JSON.stringify({ score: 100, combo: 7 })
+  assert.deepStrictEqual(queue.getScore(), { score: 100, combo: 7, maxCombo: 7 })
+}
+
+function practiceProgressDisplaysMaxCombo() {
+  const elements = {
+    '#practice-progress': { innerText: '' },
+    '#practice-progress-percent': { innerText: '' },
+    '#practice-score': { innerText: '' },
+    '#practice-combo': { innerText: '' },
+    '#practice-max-combo': { innerText: '' }
+  }
+  global.document = {
+    querySelector: selector => elements[selector] || null,
+    querySelectorAll: () => []
+  }
+  global.$ = selector => global.document.querySelector(selector)
+  global.$$ = selector => global.document.querySelectorAll(selector)
+  global.localStorage = {
+    getItem: () => null,
+    setItem: () => {}
+  }
+  global.window = {}
+  global.Shuang = {
+    app: { setting: {}, modeList: {} },
+    core: {
+      practiceQueue: {
+        isQueueMode: () => true,
+        getProgress: () => ({ completed: 3, total: 3 }),
+        getScore: () => ({ score: 28, combo: 2, maxCombo: 8 })
+      }
+    },
+    resource: { keyboardLayout: {} }
+  }
+
+  delete require.cache[require.resolve('../Resources/Shuang/src/setting.js')]
+  require('../Resources/Shuang/src/setting.js')
+
+  Shuang.app.setting.updatePracticeProgress()
+
+  assert.strictEqual(elements['#practice-progress'].innerText, '3/3 组')
+  assert.strictEqual(elements['#practice-progress-percent'].innerText, '100%')
+  assert.strictEqual(elements['#practice-score'].innerText, '28 分')
+  assert.strictEqual(elements['#practice-combo'].innerText, '2 连击')
+  assert.strictEqual(elements['#practice-max-combo'].innerText, '8 连击')
 }
 
 function wrongAnswerRevealRespectsUserVisibilitySettings() {
@@ -345,6 +544,8 @@ function wrongAnswerRevealRespectsUserVisibilitySettings() {
     }
   }
 
+  delete require.cache[require.resolve('../Resources/Shuang/src/setting.js')]
+  delete require.cache[require.resolve('../Resources/Shuang/src/action.js')]
   require('../Resources/Shuang/src/setting.js')
   require('../Resources/Shuang/src/action.js')
 
@@ -423,6 +624,7 @@ function wrongPenaltyUsesTwoPercent() {
   storage[queue.getScoreKey()] = JSON.stringify({ score: 100, combo: 3 })
 
   assert.deepStrictEqual(queue.recordScore(false), { delta: -2, score: 98, combo: 0 })
+  assert.deepStrictEqual(queue.getScore(), { score: 98, combo: 0, maxCombo: 3 })
 }
 
 function run(name, test) {
@@ -440,11 +642,15 @@ run('wrong answer keeps smart review order', wrongAnswerKeepsSmartReviewOrder)
 run('correct answer delays word by offset', correctAnswerDelaysWordByOffset)
 run('second correct answer marks word mastered', secondCorrectAnswerMarksWordMastered)
 run('progress counts mastered words', progressCountsMasteredWords)
-run('queue keeps completed progress until next round starts', queueKeepsCompletedProgressUntilNextRoundStarts)
+run('queue auto-continues after completion and keeps progress complete', queueAutoContinuesAfterCompletionAndKeepsProgressComplete)
 run('queue shares range pool across pinyin modes', queueShareRangePoolAcrossPinyinModes)
 run('queue retried wrong word does not credit next queue head', queueRetriedWrongWordDoesNotCreditNextQueueHead)
+run('queue defers large state writes during answer flow', queueDefersLargeStateWritesDuringAnswerFlow)
+run('queue flushes deferred state before replacing engine', queueFlushesDeferredStateBeforeReplacingEngine)
 run('reset progress starts current range again', resetProgressStartsCurrentRangeAgain)
 run('score is stored per scheme with combo rules', scoreIsStoredPerSchemeWithComboRules)
 run('score bonus caps at twenty points', scoreBonusCapsAtTwentyPoints)
+run('max combo survives mistakes and migrates stored combo', maxComboSurvivesMistakesAndMigratesStoredCombo)
+run('practice progress displays max combo', practiceProgressDisplaysMaxCombo)
 run('wrong answer reveal respects user visibility settings', wrongAnswerRevealRespectsUserVisibilitySettings)
 run('wrong penalty uses two percent', wrongPenaltyUsesTwoPercent)
