@@ -3079,6 +3079,15 @@ namespace TypeSunny.UI
             return Config.GetString("重打跳转模式") == "手动";
         }
 
+        private bool IsManualSegmentModeFor(TxtSource source)
+        {
+            if (source == TxtSource.book)
+                return ArticleManager.IsManualSegmentMode;
+            if (source == TxtSource.articlesender)
+                return Config.GetString("文来换段模式") == "手动";
+            return false;
+        }
+
         private void QueuePendingRetype(string text, RetypeType retypeType)
         {
             _pendingRetypeRequest.Set(text, retypeType);
@@ -3543,14 +3552,11 @@ namespace TypeSunny.UI
 
                     if (!Config.GetBool("错字重打")) //没有错字，或没有错字重打
                     {
-                        if (IsManualRetypeJumpMode() && IsRetypeCompletion(savedRetypeType))
-                        {
-                            WriteDebugLog($"[本地文章] 手动重打跳转：等待空格/回车继续");
-                        }
-                        else if (localManualMode)
+                        if (localManualMode)
                         {
                             WriteDebugLog($"[本地文章] 手动换段：只发送成绩，不自动翻页");
                             SendLocalArticleResultOnly(result, qqGroupName, 150);
+                            QueuePendingArticleContinuationFor(savedTxtSource);
                         }
                         else
                         {
@@ -3565,13 +3571,10 @@ namespace TypeSunny.UI
                         {
                             if (TextInfo.WrongRec.Count == 0) //错字重打后无错字
                             {
-                                if (IsManualRetypeJumpMode())
-                                {
-                                    WriteDebugLog($"[本地文章] 手动重打跳转：等待空格/回车继续");
-                                }
-                                else if (localManualMode)
+                                if (localManualMode)
                                 {
                                     WriteDebugLog($"[本地文章] 手动换段：错字重打完成，不自动翻页");
+                                    QueuePendingArticleContinuationFor(savedTxtSource);
                                 }
                                 else
                                 {
@@ -3589,14 +3592,11 @@ namespace TypeSunny.UI
                         {
                             if (TextInfo.WrongRec.Count == 0) //一次打对无错字
                             {
-                                if (IsManualRetypeJumpMode() && IsRetypeCompletion(savedRetypeType))
-                                {
-                                    WriteDebugLog($"[本地文章] 手动重打跳转：等待空格/回车继续");
-                                }
-                                else if (localManualMode)
+                                if (localManualMode)
                                 {
                                     WriteDebugLog($"[本地文章] 手动换段：无错字，只发送成绩");
                                     SendLocalArticleResultOnly(result, qqGroupName, 150);
+                                    QueuePendingArticleContinuationFor(savedTxtSource);
                                 }
                                 else
                                 {
@@ -3663,6 +3663,7 @@ namespace TypeSunny.UI
                                     Win32SetText(result);
                                 }
                             }
+                            QueuePendingArticleContinuationFor(savedTxtSource);
                         }
                         else
                         {
@@ -3829,14 +3830,15 @@ namespace TypeSunny.UI
                             if (IsManualRetypeJumpMode())
                                 QueuePendingRetype(sb.ToString(), retypeType);
                             else
-                                LoadText(sb.ToString(), retypeType, TxtSource.unchange, true, true);
+                                await Dispatcher.InvokeAsync(() => LoadText(sb.ToString(), retypeType, TxtSource.unchange, true, true));
                         }
                         catch (Exception ex)
                         {
-                            throw ex;
+                            WriteDebugLog($"[StopHelper] 错字/慢字重打加载失败: {ex}");
+                            throw;
                         }
                     }
-                    else if (IsManualRetypeJumpMode())
+                    else if (IsManualSegmentModeFor(savedTxtSource))
                     {
                         QueuePendingArticleContinuationFor(savedTxtSource);
                     }
@@ -3948,7 +3950,7 @@ namespace TypeSunny.UI
             }
             catch (Exception ex)
             {
-                // 异常已被上层处理
+                WriteDebugLog($"[StopHelper] 异常: {ex}");
             }
 
 

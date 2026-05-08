@@ -39,7 +39,8 @@ jobs:
       - name: Get commit message
         shell: pwsh
         run: |
-          git log -1 --pretty=%B | Set-Content -Path "commit_message.txt" -Encoding UTF8 -NoNewline
+          $msg = (git log -1 --pretty=%B | Out-String).TrimEnd()
+          [System.IO.File]::WriteAllText("$PWD\commit_message.txt", $msg, [System.Text.UTF8Encoding]::new($false))
           echo "--- commit_message.txt ---"
           Get-Content "commit_message.txt"
 

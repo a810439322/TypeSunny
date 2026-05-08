@@ -42,6 +42,7 @@ Resources/主题/
 # VS Code
 .vscode/
 .claude/
+.codex/
 .worktrees/
 
 # Windows

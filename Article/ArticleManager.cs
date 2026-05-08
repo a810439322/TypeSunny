@@ -520,7 +520,7 @@ namespace TypeSunny
                 "每段字数", "200",
                 "字集过滤", "是",
                 "去除空格", "是",
-                SegmentModeConfigKey, SegmentModeAuto
+                SegmentModeConfigKey, SegmentModeManual
                 
             );
 
