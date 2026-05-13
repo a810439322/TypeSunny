@@ -100,6 +100,7 @@
     <Compile Include="Version\VersionCheckPolicy.cs" />
     <Compile Include="Version\VersionManager.cs" />
     <Compile Include="Article\ArticleConfig.cs" />
+    <Compile Include="Article\LocalArticleDifficultyPolicy.cs" />
     <Compile Include="Article\ArticleManager.cs" />
     <Compile Include="Article\Filter.cs" />
     <Compile Include="Article\RegexFilter.cs" />
@@ -175,6 +176,7 @@
       <DependentUpon>ShuangMissingDialog.xaml</DependentUpon>
     </Compile>
     <Compile Include="WinTrainer\TrainerConfig.cs" />
+    <Compile Include="WinTrainer\TrainerAutoSendPolicy.cs" />
     <Compile Include="WinTrainer\TrainerLog.cs" />
     <Compile Include="WinTrainer\WinTrainer.xaml.cs">
       <DependentUpon>WinTrainer.xaml</DependentUpon>

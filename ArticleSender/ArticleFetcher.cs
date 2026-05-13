@@ -27,6 +27,15 @@ namespace TypeSunny.ArticleSender
     }
 
     /// <summary>
+    /// 难度计算结果
+    /// </summary>
+    public class DifficultyCalculationResult
+    {
+        public string Text { get; set; }
+        public bool DisableFutureRequests { get; set; }
+    }
+
+    /// <summary>
     /// 文章获取器，通过 ApiClient 获取文章
     /// </summary>
     public class ArticleFetcher
@@ -81,19 +90,37 @@ namespace TypeSunny.ArticleSender
         {
             if (apiClient != null)
             {
-                // 如果已有 client 但没有认证，尝试补上 JWT
-                if (apiClient.AuthProvider == null || string.IsNullOrWhiteSpace((apiClient.AuthProvider as JwtAuthProvider)?.AccessToken))
+                // 检查配置中的地址是否已变更
+                string currentUrl = Config.GetString("文来接口地址");
+                if (!string.IsNullOrWhiteSpace(currentUrl))
                 {
-                    var acctMgr = new TypeSunny.Net.AccountSystemManager();
-                    var acct = acctMgr.GetAccount("文来");
-                    if (acct != null && !string.IsNullOrWhiteSpace(acct.JwtToken))
+                    currentUrl = currentUrl.TrimEnd('/');
+                    if (currentUrl.EndsWith("/api/get_text"))
+                        currentUrl = currentUrl.Substring(0, currentUrl.Length - "/api/get_text".Length);
+
+                    if (apiClient.BaseUrl != currentUrl)
                     {
-                        var jwtAuth = new JwtAuthProvider(acct.JwtToken);
-                        apiClient = new ApiClient(apiClient.BaseUrl, jwtAuth);
-                        System.Diagnostics.Debug.WriteLine("[ArticleFetcher] 已补充 JWT 认证");
+                        System.Diagnostics.Debug.WriteLine($"[ArticleFetcher] 检测到地址变更: {apiClient.BaseUrl} -> {currentUrl}");
+                        apiClient = null;
                     }
                 }
-                return apiClient;
+
+                if (apiClient != null)
+                {
+                    // 如果已有 client 但没有认证，尝试补上 JWT
+                    if (apiClient.AuthProvider == null || string.IsNullOrWhiteSpace((apiClient.AuthProvider as JwtAuthProvider)?.AccessToken))
+                    {
+                        var acctMgr = new TypeSunny.Net.AccountSystemManager();
+                        var acct = acctMgr.GetAccount("文来");
+                        if (acct != null && !string.IsNullOrWhiteSpace(acct.JwtToken))
+                        {
+                            var jwtAuth = new JwtAuthProvider(acct.JwtToken);
+                            apiClient = new ApiClient(apiClient.BaseUrl, jwtAuth);
+                            System.Diagnostics.Debug.WriteLine("[ArticleFetcher] 已补充 JWT 认证");
+                        }
+                    }
+                    return apiClient;
+                }
             }
 
             string apiUrl = Config.GetString("文来接口地址");
@@ -620,10 +647,21 @@ namespace TypeSunny.ArticleSender
         /// <returns>格式化的难度文本，如 "普(1.23)"，失败返回空字符串</returns>
         public static async Task<string> CalcDifficultyFromApiAsync(string content)
         {
+            var result = await CalcDifficultyFromApiWithStatusAsync(content);
+            return result.Text;
+        }
+
+        /// <summary>
+        /// 从接口计算文本难度，并返回超时状态
+        /// </summary>
+        /// <param name="content">待计算难度的文本内容</param>
+        /// <returns>格式化难度文本及是否超时</returns>
+        public static async Task<DifficultyCalculationResult> CalcDifficultyFromApiWithStatusAsync(string content)
+        {
             if (string.IsNullOrWhiteSpace(content))
             {
                 System.Diagnostics.Trace.WriteLine("[难度] content为空，跳过");
-                return "";
+                return new DifficultyCalculationResult { Text = "", DisableFutureRequests = false };
             }
 
             try
@@ -632,7 +670,7 @@ namespace TypeSunny.ArticleSender
                 if (client == null)
                 {
                     System.Diagnostics.Trace.WriteLine("[难度] EnsureClient返回null");
-                    return "";
+                    return new DifficultyCalculationResult { Text = "", DisableFutureRequests = false };
                 }
 
                 var response = await client.PostAsync("/api/texts/calcDifficulty", new { text = content });
@@ -645,14 +683,16 @@ namespace TypeSunny.ArticleSender
                     string label = data["difficultyLabel"]?.ToString() ?? "";
                     System.Diagnostics.Trace.WriteLine($"[难度] 解析结果: score={score}, label={label}");
                     if (!string.IsNullOrEmpty(label))
-                        return $"{label}({score:F2})";
+                        return new DifficultyCalculationResult { Text = $"{label}({score:F2})", DisableFutureRequests = false };
                 }
+
+                return new DifficultyCalculationResult { Text = "", DisableFutureRequests = true };
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Trace.WriteLine($"[难度] 接口调用失败: {ex.Message}");
             }
-            return "";
+            return new DifficultyCalculationResult { Text = "", DisableFutureRequests = true };
         }
     }
 

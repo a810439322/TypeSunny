@@ -47,6 +47,7 @@ namespace TypeSunny
 
         public static Dictionary <string,Article> Articles = new Dictionary<string,Article> ();
         private static DifficultyDict difficultyDict = new DifficultyDict();
+        private static readonly LocalArticleDifficultyPolicy difficultyPolicy = new LocalArticleDifficultyPolicy();
 
 
    
@@ -278,7 +279,25 @@ namespace TypeSunny
 
         public static async Task<string> GetFormattedCurrentSection()
         {
-            return GetPreviewCurrentSection(await ArticleFetcher.CalcDifficultyFromApiAsync(GetCurrentSection()));
+            string difficultyText = null;
+            if (difficultyPolicy.ShouldRequestRemoteDifficulty)
+            {
+                var result = await ArticleFetcher.CalcDifficultyFromApiWithStatusAsync(GetCurrentSection());
+                difficultyPolicy.RecordRemoteDifficultyResult(result.DisableFutureRequests);
+                difficultyText = result.Text;
+            }
+
+            return GetPreviewCurrentSection(difficultyText);
+        }
+
+        public static bool ShouldRequestRemoteDifficulty()
+        {
+            return difficultyPolicy.ShouldRequestRemoteDifficulty;
+        }
+
+        public static void RecordRemoteDifficultyResult(bool timedOut)
+        {
+            difficultyPolicy.RecordRemoteDifficultyResult(timedOut);
         }
 
         public static string GetPreviewCurrentSection(string difficultyText = null)

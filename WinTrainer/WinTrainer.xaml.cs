@@ -109,6 +109,7 @@ namespace TypeSunny
 
         bool CfgInit;
         bool SliderInit;
+        private readonly TrainerAutoSendPolicy autoSendPolicy = new TrainerAutoSendPolicy();
 
    //     List<string> InputWords = new List<string>();
         bool Jumped = false;
@@ -1033,7 +1034,15 @@ namespace TypeSunny
         /// </summary>
         public void RefreshFileList()
         {
-            UpdateFileList();
+            autoSendPolicy.BeginProgrammaticRefresh();
+            try
+            {
+                UpdateFileList();
+            }
+            finally
+            {
+                autoSendPolicy.EndProgrammaticRefresh();
+            }
         }
 
         /// <summary>
@@ -1077,8 +1086,6 @@ namespace TypeSunny
             // 更新本轮统计显示
             UpdateRoundStatus();
         }
-        private bool suppressInitialSendToMainWindow = false;
-
         private void InitGroup(bool skipInGroupRand = false) //初始化组
         {
             // 不要重置 RetypeCount 和 MaxHitRate，因为 LoadArticleStatistics() 可能已经恢复了它们
@@ -1093,8 +1100,7 @@ namespace TypeSunny
             if (!skipInGroupRand)
                 InGroupRand();
             ShowWords();
-            LoadText(!suppressInitialSendToMainWindow);
-            suppressInitialSendToMainWindow = false;
+            LoadText(autoSendPolicy.ConsumeShouldSendToMainWindow());
 
             WriteCfg();
 
@@ -1644,7 +1650,7 @@ namespace TypeSunny
             // 加载持久化的统计数据
             LoadStatisticsFromFile();
 
-            suppressInitialSendToMainWindow = true;
+            autoSendPolicy.SuppressNextGroupSend();
             ReadTxt();
             ShowWords();
             LoadText(false);

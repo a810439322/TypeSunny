@@ -1094,6 +1094,39 @@ namespace TypeSunny
 
                 valueControl = panel;
             }
+            else if (itemKey == "文来接口地址" || itemKey == "赛文服务器地址")
+            {
+                var panel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Margin = new Thickness(0, 5, 0, 5)
+                };
+
+                var tb = new TextBox
+                {
+                    Text = itemValue,
+                    Width = 200,
+                    Height = 28,
+                    Margin = new Thickness(0, 3, 5, 3),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                panel.Children.Add(tb);
+
+                var resetBtn = new Button
+                {
+                    Content = "恢复默认",
+                    Width = 65,
+                    Height = 28,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                resetBtn.Click += (s, e) =>
+                {
+                    tb.Text = "https://qingfawen.fcxxz.com/";
+                };
+                panel.Children.Add(resetBtn);
+
+                valueControl = panel;
+            }
             else
             {
                 var tb = new TextBox
@@ -3207,54 +3240,64 @@ namespace TypeSunny
             }
             else if (item is StackPanel panel)
             {
-                // 处理主题模式的 StackPanel（包含 ComboBox + Button）
-                var cb = panel.Children.OfType<ComboBox>().FirstOrDefault();
-                if (cb != null && labelText == "主题模式")
+                // 处理包含 TextBox + 按钮的 StackPanel（如文来接口地址、赛文服务器地址）
+                var textBox = panel.Children.OfType<TextBox>().FirstOrDefault();
+                if (textBox != null && (labelText == "文来接口地址" || labelText == "赛文服务器地址"))
                 {
                     key.Add(labelText);
-                    value.Add(cb.SelectedIndex >= 0 && cb.SelectedIndex < cb.Items.Count
-                        ? cb.Items[cb.SelectedIndex].ToString()
-                        : "明");
+                    value.Add(textBox.Text);
                 }
-                // 处理文来难度的 StackPanel（包含加载中状态的 ComboBox 或登录按钮）
-                else if (cb != null && labelText == "文来难度")
+                else
                 {
-                    key.Add(labelText);
+                    // 处理主题模式的 StackPanel（包含 ComboBox + Button）
+                    var cb = panel.Children.OfType<ComboBox>().FirstOrDefault();
+                    if (cb != null && labelText == "主题模式")
+                    {
+                        key.Add(labelText);
+                        value.Add(cb.SelectedIndex >= 0 && cb.SelectedIndex < cb.Items.Count
+                            ? cb.Items[cb.SelectedIndex].ToString()
+                            : "明");
+                    }
+                    // 处理文来难度的 StackPanel（包含加载中状态的 ComboBox 或登录按钮）
+                    else if (cb != null && labelText == "文来难度")
+                    {
+                        key.Add(labelText);
 
-                    // 检查是否有映射表（已登录状态）
-                    if (cb.Tag is Dictionary<int, int> difficultyMapping)
-                    {
-                        // 从映射表获取实际的难度ID
-                        if (difficultyMapping.ContainsKey(cb.SelectedIndex))
+                        // 检查是否有映射表（已登录状态）
+                        if (cb.Tag is Dictionary<int, int> difficultyMapping)
                         {
-                            int difficultyId = difficultyMapping[cb.SelectedIndex];
-                            value.Add(difficultyId == 0 ? "" : difficultyId.ToString());
+                            // 从映射表获取实际的难度ID
+                            if (difficultyMapping.ContainsKey(cb.SelectedIndex))
+                            {
+                                int difficultyId = difficultyMapping[cb.SelectedIndex];
+                                value.Add(difficultyId == 0 ? "" : difficultyId.ToString());
+                            }
+                            else
+                            {
+                                value.Add(""); // 默认随机
+                            }
                         }
                         else
                         {
-                            value.Add(""); // 默认随机
-                        }
-                    }
-                    else
-                    {
-                        // 未登录状态或加载中，保持空值
-                        value.Add("");
-                    }
-                }
-                // 处理文来分类的 StackPanel
-                else if (cb != null && labelText == "文来分类")
-                {
-                    key.Add(labelText);
-                    if (cb.Tag is Dictionary<int, string> codeMapping)
-                    {
-                        if (codeMapping.ContainsKey(cb.SelectedIndex))
-                            value.Add(codeMapping[cb.SelectedIndex]);
-                        else
+                            // 未登录状态或加载中，保持空值
                             value.Add("");
+                        }
                     }
-                    else
+                    // 处理文来分类的 StackPanel
+                    else if (cb != null && labelText == "文来分类")
                     {
-                        value.Add("");
+                        key.Add(labelText);
+                        if (cb.Tag is Dictionary<int, string> codeMapping)
+                        {
+                            if (codeMapping.ContainsKey(cb.SelectedIndex))
+                                value.Add(codeMapping[cb.SelectedIndex]);
+                            else
+                                value.Add("");
+                        }
+                        else
+                        {
+                            value.Add("");
+                        }
                     }
                 }
             }

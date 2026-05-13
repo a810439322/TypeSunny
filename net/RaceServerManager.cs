@@ -369,6 +369,24 @@ namespace TypeSunny.Net
         }
 
         /// <summary>
+        /// 同步默认服务器地址（设置中"赛文服务器地址"变更时调用）
+        /// </summary>
+        public void SyncDefaultServerUrl()
+        {
+            string newUrl = Config.GetString("赛文服务器地址");
+            if (string.IsNullOrWhiteSpace(newUrl))
+                return;
+
+            var defaultServer = servers?.FirstOrDefault(s => s.Name == "默认服务器");
+            if (defaultServer != null && defaultServer.Url != newUrl)
+            {
+                defaultServer.Url = newUrl;
+                SaveToConfig();
+                System.Diagnostics.Debug.WriteLine($"[RaceServerManager] 默认服务器地址已同步: {newUrl}");
+            }
+        }
+
+        /// <summary>
         /// 更新服务器配置
         /// </summary>
         public bool UpdateServer(RaceServer server)

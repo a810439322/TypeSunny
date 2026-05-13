@@ -1710,6 +1710,9 @@ namespace TypeSunny.UI
 
             StateManager.ConfigLoaded = false;
 
+            // 同步赛文服务器地址到 RaceServerManager
+            raceHelperV2?.GetServerManager()?.SyncDefaultServerUrl();
+
             MainBorder.Background = Colors.FromString(Config.GetString("窗体背景色"));
             this.Foreground = Colors.FromString(Config.GetString("窗体字体色"));
             BdDisplay.Background = Colors.FromString(Config.GetString("跟打区背景色"));
@@ -5376,21 +5379,32 @@ public async Task SendArticle()
                     }
                     else
                     {
-                        // 其他模式，调用接口获取难度（异步）
+                        // 本地文章模式：首次远程难度超时后，本次运行不再请求难度，避免服务不可用时拖慢发文。
                         string currentText = String.Join("", TextInfo.Words);
-                        Task.Run(async () =>
+                        if (source == TxtSource.book && !ArticleManager.ShouldRequestRemoteDifficulty())
                         {
-                            string difficulty = await ArticleFetcher.CalcDifficultyFromApiAsync(currentText);
-                            Dispatcher.Invoke(() =>
+                            currentDifficultyText = "";
+                            Score.DifficultyText = "";
+                        }
+                        else
+                        {
+                            Task.Run(async () =>
                             {
-                                if (!string.IsNullOrEmpty(difficulty))
+                                var result = await ArticleFetcher.CalcDifficultyFromApiWithStatusAsync(currentText);
+                                if (source == TxtSource.book)
+                                    ArticleManager.RecordRemoteDifficultyResult(result.DisableFutureRequests);
+
+                                Dispatcher.Invoke(() =>
                                 {
-                                    currentDifficultyText = "难度：" + difficulty;
-                                    Score.DifficultyText = difficulty;
-                                    UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
-                                }
+                                    if (!string.IsNullOrEmpty(result.Text))
+                                    {
+                                        currentDifficultyText = "难度：" + result.Text;
+                                        Score.DifficultyText = result.Text;
+                                        UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
+                                    }
+                                });
                             });
-                        });
+                        }
                     }
 
                     // 更新字提显示
@@ -9515,10 +9529,10 @@ public async Task SendArticle()
 
             if (WinTrainer.Current != null)
             {
-                WinTrainer.Current.RefreshFileList();
                 WinTrainer.Current.Show();
                 WinTrainer.Current.Focus();
                 WinTrainer.Current.Activate();
+                WinTrainer.Current.RefreshFileList();
             }
             else
             {
