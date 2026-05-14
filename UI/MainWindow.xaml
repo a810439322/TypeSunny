@@ -19,6 +19,7 @@
         <RoutedUICommand x:Key="CtrlR" Text="CtrlR"/>
         <RoutedUICommand x:Key="CtrlP" Text="CtrlP"/>
         <RoutedUICommand x:Key="CtrlO" Text="CtrlO"/>
+        <RoutedUICommand x:Key="CtrlB" Text="CtrlB"/>
 
         <!-- Button样式，确保Background和Foreground能够正常应用 -->
         <Style TargetType="Button">
@@ -134,6 +135,7 @@
         <KeyBinding Gesture="Ctrl+R"  Command="{StaticResource CtrlR}" />
         <KeyBinding Gesture="Ctrl+P"  Command="{StaticResource CtrlP}" />
         <KeyBinding Gesture="Ctrl+O"  Command="{StaticResource CtrlO}" />
+        <KeyBinding Gesture="Ctrl+B"  Command="{StaticResource CtrlB}" />
 
     </Window.InputBindings>
 
@@ -147,6 +149,7 @@
         <CommandBinding Command="{StaticResource CtrlR}" Executed="InternalHotkeyCtrlR"/>
         <CommandBinding Command="{StaticResource CtrlP}" Executed="InternalHotkeyCtrlP"/>
         <CommandBinding Command="{StaticResource CtrlO}" Executed="InternalHotkeyCtrlO"/>
+        <CommandBinding Command="{StaticResource CtrlB}" Executed="InternalHotkeyCtrlB"/>
     </Window.CommandBindings>
 
 
@@ -170,7 +173,7 @@
                     <MenuItem x:Name="MenuHomeRace" Header="赛文">
                         <MenuItem x:Name="MenuHomeRaceProxy" Header="打开赛文菜单"/>
                     </MenuItem>
-                    <MenuItem x:Name="MenuHomeLocalArticle" Header="本地文章" Click="BtnArticle_Click"/>
+                    <MenuItem x:Name="MenuHomeLocalArticle" Header="本地发文Ctrl+B" Click="BtnArticle_Click"/>
                     <Separator/>
                     <MenuItem x:Name="MenuHomePrev" Header="上一段Ctrl+O" Click="BtnPrev_Click"/>
                     <MenuItem x:Name="MenuHomeNext" Header="下一段Ctrl+P" Click="BtnNext_Click"/>
@@ -666,7 +669,7 @@
                 <Button x:Name="BtnSendArticle" DockPanel.Dock="Right" Content="发文F2" Click="BtnSendArticle_Click" VerticalAlignment="Center" Padding="6,3,6,3">
                 </Button>
 
-                <Button x:Name="BtnArticleManager" DockPanel.Dock="Right" Content="本地文章" Width="auto" Click="BtnArticle_Click" VerticalAlignment="Center" Padding="6,3,6,3">
+                <Button x:Name="BtnArticleManager" DockPanel.Dock="Right" Content="本地发文Ctrl+B" Width="auto" Click="BtnArticle_Click" VerticalAlignment="Center" Padding="6,3,6,3">
                 </Button>
 
                 <Button x:Name="BtnPrev" DockPanel.Dock="Right" Content="&lt;" Width="25" VerticalAlignment="Center" Padding="6,3,6,3" Click="BtnPrev_Click">

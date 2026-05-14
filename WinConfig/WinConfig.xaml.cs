@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -178,7 +179,24 @@ namespace TypeSunny
                         "启用字提",
                         "字提方案",
                         "字提字体",
-                        "字提字体大小"
+                        "字提字体大小",
+                        "字提编码下显"
+                    }
+                },
+                new ConfigCategory
+                {
+                    Title = "词提",
+                    Items = new[]
+                    {
+                        "启用词提",
+                        "词提方案",
+                        "词提编码下显",
+                        "词提不拆行",
+                        "词提1简色",
+                        "词提2简色",
+                        "词提3简色",
+                        "词提4码色",
+                        "词提选重色"
                     }
                 },
                 new ConfigCategory
@@ -224,6 +242,7 @@ namespace TypeSunny
                     {
                         "当前版本",
                         "最新版本",
+                        "修复安装",
                         "软件更新Q群",
                         "作者邮箱QQ"
                     }
@@ -477,6 +496,12 @@ namespace TypeSunny
 
             // 添加该分类下的配置项
             int currentRow = 1;
+            if (category.Title == "词提")
+            {
+                AddCiTiLegend(currentRow);
+                currentRow++;
+            }
+
             foreach (var rawItemKey in category.Items)
             {
                 // 子项缩进：以空格开头的项视为子项，去掉前缀空格得到实际 key
@@ -510,10 +535,15 @@ namespace TypeSunny
                 {
                     tbk.ToolTip = "该模式下禁止使用退格、Esc、Ctrl+Z，空格或回车后没上屏内容则强制上屏一个空格。努力提升键准吧少年！";
                 }
+                if (itemKey == "词提不拆行")
+                {
+                    tbk.ToolTip = "开启后，同一词组的字不会被拆到两行显示；行尾放不下时整词换行，每行字数可能不等。";
+                }
 
-                Grid.SetRow(tbk, currentRow);
-                Grid.SetColumn(tbk, 0);
-                ContentPanel.Children.Add(tbk);
+                FrameworkElement labelControl = CreateLabelControl(tbk);
+                Grid.SetRow(labelControl, currentRow);
+                Grid.SetColumn(labelControl, 0);
+                ContentPanel.Children.Add(labelControl);
 
                 // 创建值控件
                 FrameworkElement valueControl = CreateValueControl(itemKey, itemValue);
@@ -546,6 +576,96 @@ namespace TypeSunny
             {
                 AppendFilterSettings(currentRow);
             }
+        }
+
+        private void AddCiTiLegend(int row)
+        {
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto, MinHeight = 56 });
+
+            var legend = new TextBlock
+            {
+                Text = "颜色说明：红色 = 1简词（1键编码）  橙色 = 2简词（2键编码）\n蓝色 = 3简词（3键编码）  灰色 = 4码及以上  绿色 = 选重（需要按数字键选字）",
+                Margin = new Thickness(0, 0, 0, 12),
+                FontSize = 13,
+                TextWrapping = TextWrapping.Wrap
+            };
+
+            Grid.SetRow(legend, row);
+            Grid.SetColumnSpan(legend, 2);
+            ContentPanel.Children.Add(legend);
+        }
+
+        private FrameworkElement CreateLabelControl(TextBlock labelBlock)
+        {
+            labelBlock.Tag = "ConfigLabelText";
+            if (labelBlock.ToolTip == null)
+            {
+                return labelBlock;
+            }
+
+            Thickness labelMargin = labelBlock.Margin;
+            double labelMinWidth = labelBlock.MinWidth;
+            labelBlock.Margin = new Thickness(0);
+            labelBlock.MinWidth = 0;
+
+            var panel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = labelMargin,
+                MinWidth = labelMinWidth,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            panel.Children.Add(labelBlock);
+
+            var tooltipText = labelBlock.ToolTip?.ToString() ?? "";
+            var helpBtn = new TextBlock
+            {
+                Text = "?",
+                Tag = "ConfigTooltipIndicator",
+                Cursor = Cursors.Hand,
+                FontSize = 11,
+                FontWeight = FontWeights.Bold,
+                Width = 16,
+                Height = 16,
+                Margin = new Thickness(6, 0, 0, 0),
+                TextAlignment = TextAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = new SolidColorBrush(Color.FromRgb(100, 200, 255))
+            };
+
+            var popup = new Popup
+            {
+                AllowsTransparency = true,
+                Placement = PlacementMode.Bottom,
+                PlacementTarget = helpBtn,
+                StaysOpen = false,
+                Child = new Border
+                {
+                    Background = new SolidColorBrush(Color.FromRgb(50, 50, 50)),
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(100, 200, 255)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(4),
+                    Padding = new Thickness(10, 6, 10, 6),
+                    MaxWidth = 320,
+                    Child = new TextBlock
+                    {
+                        Text = tooltipText,
+                        Foreground = Brushes.White,
+                        FontSize = 12,
+                        TextWrapping = TextWrapping.Wrap
+                    }
+                }
+            };
+
+            helpBtn.MouseLeftButtonUp += (s, e) =>
+            {
+                popup.IsOpen = !popup.IsOpen;
+                e.Handled = true;
+            };
+
+            panel.Children.Add(helpBtn);
+
+            return panel;
         }
 
         /// <summary>
@@ -633,6 +753,54 @@ namespace TypeSunny
                     {
                         if (_copybookCheckBox != null && _copybookCheckBox.IsChecked == true)
                             _copybookCheckBox.IsChecked = false;
+                    };
+                }
+
+                if (itemKey == "词提编码下显")
+                {
+                    chk.Checked += (obj, evt) =>
+                    {
+                        var ciTiCheckBox = FindCheckBoxByLabel("启用词提");
+                        if (ciTiCheckBox != null)
+                            ciTiCheckBox.IsChecked = true;
+
+                        var ziTiDisplayCheckBox = FindCheckBoxByLabel("字提编码下显");
+                        if (ziTiDisplayCheckBox != null && ziTiDisplayCheckBox.IsChecked == true)
+                            ziTiDisplayCheckBox.IsChecked = false;
+                    };
+                }
+
+                if (itemKey == "字提编码下显")
+                {
+                    chk.Checked += (obj, evt) =>
+                    {
+                        var ziTiCheckBox = FindCheckBoxByLabel("启用字提");
+                        if (ziTiCheckBox != null)
+                            ziTiCheckBox.IsChecked = true;
+
+                        var ciTiDisplayCheckBox = FindCheckBoxByLabel("词提编码下显");
+                        if (ciTiDisplayCheckBox != null && ciTiDisplayCheckBox.IsChecked == true)
+                            ciTiDisplayCheckBox.IsChecked = false;
+                    };
+                }
+
+                if (itemKey == "启用词提")
+                {
+                    chk.Unchecked += (obj, evt) =>
+                    {
+                        var ciTiDisplayCheckBox = FindCheckBoxByLabel("词提编码下显");
+                        if (ciTiDisplayCheckBox != null && ciTiDisplayCheckBox.IsChecked == true)
+                            ciTiDisplayCheckBox.IsChecked = false;
+                    };
+                }
+
+                if (itemKey == "启用字提")
+                {
+                    chk.Unchecked += (obj, evt) =>
+                    {
+                        var ziTiDisplayCheckBox = FindCheckBoxByLabel("字提编码下显");
+                        if (ziTiDisplayCheckBox != null && ziTiDisplayCheckBox.IsChecked == true)
+                            ziTiDisplayCheckBox.IsChecked = false;
                     };
                 }
 
@@ -799,6 +967,37 @@ namespace TypeSunny
                     {
                         cb.SelectedIndex = 0;
                     }
+                }
+                else
+                {
+                    cb.Items.Add("无可用方案");
+                    cb.IsEnabled = false;
+                    cb.SelectedIndex = 0;
+                }
+
+                valueControl = cb;
+            }
+            else if (itemKey == "词提方案")
+            {
+                var cb = new ComboBox
+                {
+                    Width = 200,
+                    Margin = new Thickness(0, 8, 0, 8),
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Tag = "CiTiScheme"
+                };
+
+                var schemes = CiTiHelper.GetAvailableSchemes();
+
+                if (schemes.Count > 0)
+                {
+                    foreach (var scheme in schemes)
+                        cb.Items.Add(scheme);
+
+                    if (!string.IsNullOrEmpty(itemValue) && schemes.Contains(itemValue))
+                        cb.SelectedIndex = schemes.IndexOf(itemValue);
+                    else if (cb.Items.Count > 0)
+                        cb.SelectedIndex = 0;
                 }
                 else
                 {
@@ -1092,6 +1291,102 @@ namespace TypeSunny
                 panel.Children.Add(refreshBtn);
                 panel.Children.Add(updateBtn);
 
+                valueControl = panel;
+            }
+            else if (itemKey == "修复安装")
+            {
+                var panel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Margin = new Thickness(0, 5, 0, 5)
+                };
+
+                var repairBtn = new Button
+                {
+                    Content = "下载全量包并修复",
+                    Height = 28,
+                    Padding = new Thickness(10, 0, 10, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                repairBtn.Click += async (s, e) =>
+                {
+                    var result = MessageBox.Show(
+                        "将下载全量安装包并覆盖本地文件，完成后软件会自动重启。\n\n确定继续？",
+                        "修复安装",
+                        MessageBoxButton.OKCancel,
+                        MessageBoxImage.Question);
+
+                    if (result != MessageBoxResult.OK)
+                        return;
+
+                    repairBtn.IsEnabled = false;
+                    repairBtn.Content = "获取下载地址...";
+
+                    try
+                    {
+                        if (string.IsNullOrWhiteSpace(VersionManager.FullPackageUrl))
+                            await VersionManager.CheckUpdateAsync(forceRefresh: true);
+
+                        if (string.IsNullOrWhiteSpace(VersionManager.FullPackageUrl))
+                        {
+                            MessageBox.Show("未能获取全量包地址，请稍后重试或前往发布页手动下载。",
+                                "修复安装", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            repairBtn.IsEnabled = true;
+                            repairBtn.Content = "下载全量包并修复";
+                            return;
+                        }
+
+                        var progressWin = new System.Windows.Window
+                        {
+                            Title = "修复安装",
+                            Width = 360,
+                            Height = 130,
+                            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                            Owner = this,
+                            ResizeMode = ResizeMode.NoResize
+                        };
+                        var progressPanel = new StackPanel { Margin = new Thickness(16) };
+                        var progressLabel = new TextBlock { Text = "正在下载...", Margin = new Thickness(0, 0, 0, 8) };
+                        var progressBar = new System.Windows.Controls.ProgressBar { Height = 20, Minimum = 0, Maximum = 100 };
+                        progressPanel.Children.Add(progressLabel);
+                        progressPanel.Children.Add(progressBar);
+                        progressWin.Content = progressPanel;
+
+                        var cts = new CancellationTokenSource();
+                        progressWin.Closing += (_, __) => cts.Cancel();
+                        progressWin.Show();
+
+                        var progress = new Progress<(long downloaded, long? total)>(p =>
+                        {
+                            if (p.total.HasValue && p.total.Value > 0)
+                            {
+                                progressBar.Value = (double)p.downloaded / p.total.Value * 100;
+                                progressLabel.Text = $"正在下载... {p.downloaded / 1024 / 1024:F1} MB / {p.total.Value / 1024 / 1024:F1} MB";
+                            }
+                            else
+                            {
+                                progressLabel.Text = $"正在下载... {p.downloaded / 1024 / 1024:F1} MB";
+                            }
+                        });
+
+                        await Utils.UpdatePackageDownloader.DownloadAndApplyAsync(
+                            VersionManager.FullPackageUrl, progress, cts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        repairBtn.IsEnabled = true;
+                        repairBtn.Content = "下载全量包并修复";
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"修复安装失败：{ex.Message}", "修复安装", MessageBoxButton.OK, MessageBoxImage.Error);
+                        repairBtn.IsEnabled = true;
+                        repairBtn.Content = "下载全量包并修复";
+                    }
+                };
+
+                panel.Children.Add(repairBtn);
                 valueControl = panel;
             }
             else if (itemKey == "文来接口地址" || itemKey == "赛文服务器地址")
@@ -1574,7 +1869,10 @@ namespace TypeSunny
             "发文区字体色",
             "打对色", "打错色",
             "按钮背景色", "按钮字体色",
-            "菜单背景色", "菜单字体色"
+            "菜单背景色", "菜单字体色",
+            "词提1简色", "词提2简色",
+            "词提3简色", "词提4码色",
+            "词提选重色"
         };
 
 
@@ -3104,6 +3402,46 @@ namespace TypeSunny
                 ExtractControlValue(item, labelText, key, value);
             }
 
+            ApplyCodeDisplayMutualExclusion(key, value);
+            bool modified = SaveChangedConfigValues(key, value);
+            if (modified)
+            {
+                ConfigSaved();
+            }
+        }
+
+        private static void ApplyCodeDisplayMutualExclusion(List<string> key, List<string> value)
+        {
+            int citiIndex = key.IndexOf("词提编码下显");
+            if (citiIndex >= 0 && value[citiIndex] == "是")
+            {
+                UpsertConfigValue(key, value, "启用词提", "是");
+                UpsertConfigValue(key, value, "字提编码下显", "否");
+            }
+
+            int zitiIndex = key.IndexOf("字提编码下显");
+            if (zitiIndex >= 0 && value[zitiIndex] == "是")
+            {
+                UpsertConfigValue(key, value, "启用字提", "是");
+                UpsertConfigValue(key, value, "词提编码下显", "否");
+            }
+        }
+
+        private static void UpsertConfigValue(List<string> key, List<string> value, string targetKey, string targetValue)
+        {
+            int index = key.IndexOf(targetKey);
+            if (index >= 0)
+            {
+                value[index] = targetValue;
+                return;
+            }
+
+            key.Add(targetKey);
+            value.Add(targetValue);
+        }
+
+        private static bool SaveChangedConfigValues(List<string> key, List<string> value)
+        {
             bool modified = false;
             for (int i = 0; i < key.Count; i++)
             {
@@ -3111,11 +3449,32 @@ namespace TypeSunny
                 {
                     modified = true;
                     Config.Set(key[i], value[i]);
+                    SaveCodeDisplayMutualExclusion(key[i], value[i]);
                 }
             }
-            if (modified)
+
+            return modified;
+        }
+
+        private static void SaveCodeDisplayMutualExclusion(string key, string value)
+        {
+            if (key == "词提编码下显" && value == "是")
             {
-                ConfigSaved();
+                Config.Set("启用词提", "是");
+                Config.Set("字提编码下显", "否");
+            }
+            if (key == "字提编码下显" && value == "是")
+            {
+                Config.Set("启用字提", "是");
+                Config.Set("词提编码下显", "否");
+            }
+            if (key == "启用词提" && value == "否")
+            {
+                Config.Set("词提编码下显", "否");
+            }
+            if (key == "启用字提" && value == "否")
+            {
+                Config.Set("字提编码下显", "否");
             }
         }
 
@@ -3176,6 +3535,13 @@ namespace TypeSunny
                 {
                     key.Add(labelText);
                     value.Add(comboBox.SelectedIndex >= 0 && comboBox.SelectedIndex < comboBox.Items.Count
+                        ? comboBox.Items[comboBox.SelectedIndex].ToString()
+                        : "");
+                }
+                else if (labelText == "词提方案")
+                {
+                    key.Add(labelText);
+                    value.Add(comboBox.IsEnabled && comboBox.SelectedIndex >= 0 && comboBox.SelectedIndex < comboBox.Items.Count
                         ? comboBox.Items[comboBox.SelectedIndex].ToString()
                         : "");
                 }
@@ -3326,6 +3692,7 @@ namespace TypeSunny
                 ExtractControlValue(item, labelText, key, value);
             }
 
+            ApplyCodeDisplayMutualExclusion(key, value);
             bool modified = false;
             for (int i = 0; i < key.Count; i++)
             {
@@ -3341,15 +3708,8 @@ namespace TypeSunny
                                     MessageBoxButton.YesNo,
                                     MessageBoxImage.Question) == MessageBoxResult.Yes)
                 {
-                    for (int i = 0; i < key.Count; i++)
-                    {
-                        if (value[i] != Config.GetString(key[i]))
-                        {
-                            Config.Set(key[i], value[i]);
-                        }
-                    }
-
-                    ConfigSaved();
+                    if (SaveChangedConfigValues(key, value))
+                        ConfigSaved();
                 }
             }
         }
@@ -3361,14 +3721,42 @@ namespace TypeSunny
         {
             foreach (var child in ContentPanel.Children)
             {
-                if (child is TextBlock tb &&
-                    (int)tb.GetValue(Grid.RowProperty) == row &&
-                    (int)tb.GetValue(Grid.ColumnProperty) == col &&
-                    tb.FontWeight != FontWeights.Bold) // 排除分类标题
+                if (child is FrameworkElement element &&
+                    (int)element.GetValue(Grid.RowProperty) == row &&
+                    (int)element.GetValue(Grid.ColumnProperty) == col)
                 {
-                    return tb.Text;
+                    string labelText = GetLabelText(element);
+                    if (!string.IsNullOrEmpty(labelText))
+                    {
+                        return labelText;
+                    }
                 }
             }
+            return string.Empty;
+        }
+
+        private string GetLabelText(FrameworkElement element)
+        {
+            if (element is TextBlock textBlock &&
+                Equals(textBlock.Tag, "ConfigLabelText") &&
+                textBlock.FontWeight != FontWeights.Bold)
+            {
+                return textBlock.Text;
+            }
+
+            if (element is Panel panel)
+            {
+                foreach (var child in panel.Children)
+                {
+                    if (child is TextBlock childTextBlock &&
+                        Equals(childTextBlock.Tag, "ConfigLabelText") &&
+                        childTextBlock.FontWeight != FontWeights.Bold)
+                    {
+                        return childTextBlock.Text;
+                    }
+                }
+            }
+
             return string.Empty;
         }
 
@@ -3379,12 +3767,11 @@ namespace TypeSunny
         {
             foreach (var child in ContentPanel.Children)
             {
-                if (child is TextBlock tb &&
-                    (int)tb.GetValue(Grid.ColumnProperty) == 0 &&
-                    tb.FontWeight != FontWeights.Bold &&
-                    tb.Text == label)
+                if (child is FrameworkElement element &&
+                    (int)element.GetValue(Grid.ColumnProperty) == 0 &&
+                    GetLabelText(element) == label)
                 {
-                    int row = (int)tb.GetValue(Grid.RowProperty);
+                    int row = (int)element.GetValue(Grid.RowProperty);
                     foreach (var c in ContentPanel.Children)
                     {
                         if (c is CheckBox chk &&

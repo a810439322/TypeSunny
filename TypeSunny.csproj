@@ -154,6 +154,7 @@
     <Compile Include="Diff\Snake.cs" />
     <Compile Include="Diff\SplitedDiffRes.cs" />
     <Compile Include="Core\StateManager.cs" />
+    <Compile Include="Utils\CiTiHelper.cs" />
     <Compile Include="Utils\ZiTiHelper.cs" />
     <Compile Include="Utils\ShuangToolLauncher.cs" />
     <Compile Include="Utils\UpdatePackageDownloader.cs" />
@@ -315,6 +316,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Resources\字提\*.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\词提\*.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="字体\*.ttf">

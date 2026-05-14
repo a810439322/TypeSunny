@@ -87,8 +87,9 @@ namespace TypeSunny.UI.Modes
                         tb.TextAlignment = TextAlignment.Left;
                     }
 
+                    _main.ApplyDisplayForeground(tb, i);
                     TextInfo.Blocks.Add(tb);
-                    _main.TbDispay.Children.Add(tb);
+                    _main.TbDispay.Children.Add(_main.CreateDisplayElement(tb, i));
                 }
             }
 
@@ -127,13 +128,13 @@ namespace TypeSunny.UI.Modes
                         }
                     }
 
-                    tb.Foreground = Colors.DisplayForeground;
+                    _main.ApplyDisplayForeground(tb, i);
                 }
                 else if (i == nextToType)
                 {
                     // 当前要打的字符
                     opacity = 1.0;
-                    tb.Foreground = Colors.DisplayForeground;
+                    _main.ApplyDisplayForeground(tb, i);
                     tb.Background = null;
                 }
                 else
@@ -148,7 +149,7 @@ namespace TypeSunny.UI.Modes
                         opacity = 1.0 - (fadeDistance / 10.0);
                     }
 
-                    tb.Foreground = Colors.DisplayForeground;
+                    _main.ApplyDisplayForeground(tb, i);
                     tb.Background = null;
                 }
 

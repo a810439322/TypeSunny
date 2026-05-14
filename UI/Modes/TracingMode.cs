@@ -327,8 +327,10 @@ namespace TypeSunny.UI.Modes
                 tb.Padding = new Thickness(0, padTop, 0, padBottom);
                 tb.FontSize = fs;
                 tb.FontFamily = fontFamily;
-                var c = ((SolidColorBrush)Colors.DisplayForeground).Color;
-                tb.Foreground = new SolidColorBrush(Color.FromArgb(100, c.R, c.G, c.B));
+                tb.Foreground = _main.GetDisplayForeground(TextInfo.PageStartIndex + i, 100);
+                tb.FontWeight = _main.IsCiTiBold(TextInfo.PageStartIndex + i)
+                    ? FontWeights.Bold
+                    : FontWeights.Normal;
                 // 与原文 Block 保持相同的宽度属性
                 var orig = TextInfo.Blocks[i];
                 if (orig.MinWidth > 0) tb.MinWidth = orig.MinWidth;
@@ -389,7 +391,9 @@ namespace TypeSunny.UI.Modes
                 foreach (int idx in line)
                 {
                     if (idx < TextInfo.Blocks.Count)
-                        innerPanel.Children.Add(TextInfo.Blocks[idx]);
+                        innerPanel.Children.Add(_main.CreateDisplayElement(
+                            TextInfo.Blocks[idx],
+                            TextInfo.PageStartIndex + idx));
                 }
                 border.Child = innerPanel;
                 wrapPanel.Children.Add(border);
@@ -443,9 +447,6 @@ namespace TypeSunny.UI.Modes
         {
             if (_lineGroups.Count == 0 || _mirrorBlocks.Count == 0) return;
 
-            var c = ((SolidColorBrush)Colors.DisplayForeground).Color;
-            var mirrorForeground = new SolidColorBrush(Color.FromArgb(100, c.R, c.G, c.B));
-
             // 找到当前行
             int currentLineIdx = _lineGroups.Count;
             for (int li = 0; li < _lineGroups.Count; li++)
@@ -469,7 +470,12 @@ namespace TypeSunny.UI.Modes
                         if (idx < _mirrorBlocks.Count)
                         {
                             _mirrorBlocks[idx].Opacity = 0.15;
-                            _mirrorBlocks[idx].Foreground = mirrorForeground;
+                            _mirrorBlocks[idx].Foreground =
+                                _main.GetDisplayForeground(TextInfo.PageStartIndex + idx, 100);
+                            _mirrorBlocks[idx].FontWeight =
+                                _main.IsCiTiBold(TextInfo.PageStartIndex + idx)
+                                    ? FontWeights.Bold
+                                    : FontWeights.Normal;
                         }
                     }
                 }
@@ -494,7 +500,12 @@ namespace TypeSunny.UI.Modes
                             // 未打：正常
                             _mirrorBlocks[idx].Opacity = 1.0;
                         }
-                        _mirrorBlocks[idx].Foreground = Colors.DisplayForeground;
+                        _mirrorBlocks[idx].Foreground =
+                            _main.GetDisplayForeground(TextInfo.PageStartIndex + idx);
+                        _mirrorBlocks[idx].FontWeight =
+                            _main.IsCiTiBold(TextInfo.PageStartIndex + idx)
+                                ? FontWeights.Bold
+                                : FontWeights.Normal;
                     }
                 }
                 else
@@ -505,7 +516,12 @@ namespace TypeSunny.UI.Modes
                         if (idx < _mirrorBlocks.Count)
                         {
                             _mirrorBlocks[idx].Opacity = 1.0;
-                            _mirrorBlocks[idx].Foreground = mirrorForeground;
+                            _mirrorBlocks[idx].Foreground =
+                                _main.GetDisplayForeground(TextInfo.PageStartIndex + idx, 100);
+                            _mirrorBlocks[idx].FontWeight =
+                                _main.IsCiTiBold(TextInfo.PageStartIndex + idx)
+                                    ? FontWeights.Bold
+                                    : FontWeights.Normal;
                         }
                     }
                 }

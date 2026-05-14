@@ -7,6 +7,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using TypeSunny.UI;
+using TypeSunny.Utils;
 
 
 namespace TypeSunny.Core
@@ -46,6 +47,10 @@ internal static class TextInfo
         public static Dictionary<int, string> WrongRec = new Dictionary<int, string>();
 
         public static Dictionary<int, string> SlowRec = new Dictionary<int, string>();
+
+        public static List<CiTiSegment> CiTiSegments = new List<CiTiSegment>();
+
+        public static List<int> CiTiSegmentIndices = new List<int>();
 
      //   public static Dictionary<int, string> WrongCounter = new Dictionary<int, string>();
     //    public static Dictionary<int, string> BackCounter = new Dictionary<int, string>();
