@@ -5660,18 +5660,18 @@ public async Task SendArticle()
 
         private Tuple<string, int, string> ExtractRawTxt(string rawTxt)
         {
-            string[] lines = rawTxt.Split(new char[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-
-            Regex r = new Regex("-----第\\w+段");
-
             int paragraph = 0;
             string paragraphString = "";
             string head = "";
             string content = "";
             string tail = "";
 
-            if (rawTxt == "")
+            if (string.IsNullOrEmpty(rawTxt))
                 return new Tuple<string, int, string>(content, paragraph, paragraphString);
+
+            string[] lines = rawTxt.Split(new char[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+
+            Regex r = new Regex("-----第\\w+段");
 
             //开始检测
             int index = -1;
@@ -9254,8 +9254,16 @@ public async Task SendArticle()
         private async void BtnPrev_Click(object sender, RoutedEventArgs e)
         {
             RecordLocalArticleContinuation(next: false);
+            int prevProgress = ArticleManager.Progress;
             ArticleManager.PrevSection();
             string content = await ArticleManager.GetFormattedCurrentSection();
+            if (content == null)
+            {
+                ArticleManager.Progress = prevProgress;
+                ShowFilterBlockedHint();
+                FocusInput();
+                return;
+            }
             LoadText(content, RetypeType.first, TxtSource.book, false);
             FocusInput();
             SendContentToClipboardOrQQ(content);
@@ -9264,11 +9272,28 @@ public async Task SendArticle()
         private async void BtnNext_Click(object sender, RoutedEventArgs e)
         {
             RecordLocalArticleContinuation(next: true);
+            int prevProgress = ArticleManager.Progress;
             ArticleManager.NextSection();
             string content = await ArticleManager.GetFormattedCurrentSection();
+            if (content == null)
+            {
+                ArticleManager.Progress = prevProgress;
+                ShowFilterBlockedHint();
+                FocusInput();
+                return;
+            }
             LoadText(content, RetypeType.first, TxtSource.book, false);
             FocusInput();
             SendContentToClipboardOrQQ(content);
+        }
+
+        private void ShowFilterBlockedHint()
+        {
+            string reason = ArticleManager.LastBlockReason;
+            string msg = string.IsNullOrEmpty(reason)
+                ? "该段内容被过滤规则屏蔽，已停留在原段。\n可在「设置 → 过滤」中调整规则或关闭过滤。"
+                : $"该段内容被过滤规则屏蔽：{reason}\n已停留在原段。可在「设置 → 过滤」中调整规则或关闭过滤。";
+            MessageBox.Show(msg, "过滤提示", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
 

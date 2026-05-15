@@ -49,6 +49,8 @@ namespace TypeSunny
         private static DifficultyDict difficultyDict = new DifficultyDict();
         private static readonly LocalArticleDifficultyPolicy difficultyPolicy = new LocalArticleDifficultyPolicy();
 
+        public static string LastBlockReason { get; private set; }
+
 
    
         public static void ReadFiles ()
@@ -235,7 +237,10 @@ namespace TypeSunny
             {
                 var filterResult = RegexFilter.Apply(rt);
                 if (filterResult.IsBlocked)
+                {
+                    LastBlockReason = filterResult.BlockReason;
                     return null;
+                }
                 rt = filterResult.Text;
             }
 
