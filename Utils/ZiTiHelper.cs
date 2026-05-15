@@ -194,7 +194,7 @@ namespace TypeSunny.Utils
                         string character = trimmedLine.Substring(0, tabIndex);
                         string hint = trimmedLine.Substring(tabIndex + 1);
 
-                        if (!string.IsNullOrEmpty(character))
+                        if (!string.IsNullOrEmpty(character) && !_ziTiDict.ContainsKey(character))
                         {
                             _ziTiDict[character] = hint;
                             _loadedCount++;

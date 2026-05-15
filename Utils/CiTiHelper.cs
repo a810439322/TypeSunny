@@ -107,9 +107,15 @@ namespace TypeSunny.Utils
                 int charCount = si.LengthInTextElements;
 
                 if (charCount == 1)
-                    _singleCharLib[word] = (codeKey, selectKey);
+                {
+                    if (!_singleCharLib.ContainsKey(word))
+                        _singleCharLib[word] = (codeKey, selectKey);
+                }
                 else
-                    _wordLib[word] = (codeKey, selectKey);
+                {
+                    if (!_wordLib.ContainsKey(word))
+                        _wordLib[word] = (codeKey, selectKey);
+                }
 
                 if (charCount > _maxWordLen)
                     _maxWordLen = charCount;
@@ -423,8 +429,9 @@ namespace TypeSunny.Utils
                         }
                     }
 
-                    bool isInLib = (si.LengthInTextElements == 1 && _singleCharLib.ContainsKey(item.word))
-                                   || (si.LengthInTextElements > 1 && _wordLib.ContainsKey(item.word));
+                    int wordLen = new StringInfo(item.word).LengthInTextElements;
+                    bool isInLib = (wordLen == 1 && _singleCharLib.ContainsKey(item.word))
+                                   || (wordLen > 1 && _wordLib.ContainsKey(item.word));
                     seg.IsPreferred = !isInLib || !item.code.Any(c => nonPreferredSelectKeys.Contains(c));
                 }
 

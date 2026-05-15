@@ -660,6 +660,7 @@ namespace TypeSunny.UI.Modes
             _activeCompositionText = composition ?? "";
             _imeBackspacePolicy.NotifyCompositionText(_activeCompositionText, IsPhysicalBackspaceDown());
             _isImeComposing = !string.IsNullOrEmpty(_activeCompositionText);
+            _main.UpdateCodeLabelProgress(_currentIndex, _activeCompositionText.Length);
         }
 
         private void ClearImeCompositionState()
@@ -667,6 +668,7 @@ namespace TypeSunny.UI.Modes
             _activeCompositionText = "";
             _isImeComposing = false;
             _imeBackspacePolicy.NotifyCompositionEnded();
+            _main.UpdateCodeLabelProgress(_currentIndex, 0);
         }
 
         private bool IsPhysicalBackspaceDown()
@@ -852,6 +854,7 @@ namespace TypeSunny.UI.Modes
                 double fs = MainWindow.DisplayFontSize;
                 double compositionOffset = (Config.GetDouble("字帖编码高度") + 0.2) * fs;
                 double candidateOffset = Config.GetDouble("字帖候选框高度") * fs;
+                double codeDisplayExtra = _main.IsCodeDisplayEnabled() ? fs * 0.55 : 0.0;
 
                 // 计算文字在 TextBlock 内的实际 padTop（与 PageReArrange 一致）
                 var fm = _main.GetCurrentFontFamily();
@@ -861,7 +864,7 @@ namespace TypeSunny.UI.Modes
 
                 // InputCapture 控制 IME 候选框位置
                 Canvas.SetLeft(_inputCapture, x);
-                Canvas.SetTop(_inputCapture, y + 1.0 * fs + candidateOffset);
+                Canvas.SetTop(_inputCapture, y + 1.0 * fs + candidateOffset + codeDisplayExtra);
 
                 // 自定义光标定位到当前字左侧，与文字垂直居中对齐
                 if (_cursor != null)
@@ -874,7 +877,7 @@ namespace TypeSunny.UI.Modes
 
                 // CompositionText 贴当前字下沿
                 Canvas.SetLeft(_compositionText, x);
-                Canvas.SetTop(_compositionText, y + block.ActualHeight - 0.25 * fs + compositionOffset);
+                Canvas.SetTop(_compositionText, y + block.ActualHeight - 0.25 * fs + compositionOffset + codeDisplayExtra);
             }
             catch { }
         }

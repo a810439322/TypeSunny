@@ -52,6 +52,9 @@ internal static class TextInfo
 
         public static List<int> CiTiSegmentIndices = new List<int>();
 
+        // 编码下显标签，与 Blocks 一一对应（无编码下显时为 null）
+        public static List<TextBlock> CodeLabels = new List<TextBlock>();
+
      //   public static Dictionary<int, string> WrongCounter = new Dictionary<int, string>();
     //    public static Dictionary<int, string> BackCounter = new Dictionary<int, string>();
     //    public static Dictionary<int, string> CorrectionCounter = new Dictionary<int, string>();

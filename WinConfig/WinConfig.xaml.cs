@@ -892,7 +892,8 @@ namespace TypeSunny
                     Height = 30,
                     HorizontalAlignment = HorizontalAlignment.Left,
                     Margin = new Thickness(0, 5, 0, 5),
-                    Tag = itemKey
+                    Tag = itemKey,
+                    Template = CreateColorButtonTemplate()
                 };
                 try
                 {
@@ -3310,6 +3311,25 @@ namespace TypeSunny
             }
         }
 
+
+        private static ControlTemplate CreateColorButtonTemplate()
+        {
+            var template = new ControlTemplate(typeof(Button));
+            var border = new FrameworkElementFactory(typeof(Border));
+            border.SetBinding(Border.BackgroundProperty, new System.Windows.Data.Binding("Background")
+            {
+                RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent)
+            });
+            border.SetValue(Border.BorderBrushProperty, new SolidColorBrush(System.Windows.Media.Colors.Gray));
+            border.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(3));
+            var content = new FrameworkElementFactory(typeof(ContentPresenter));
+            content.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            content.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            border.AppendChild(content);
+            template.VisualTree = border;
+            return template;
+        }
 
         // 颜色选择按钮点击事件
         private void ColorButton_Click(object sender, RoutedEventArgs e)

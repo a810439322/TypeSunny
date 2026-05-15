@@ -437,6 +437,7 @@ namespace TypeSunny.UI
                     TbDispay.Children.Clear();
                     ScDisplay.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
                     TextInfo.Blocks.Clear();
+                    TextInfo.CodeLabels.Clear();
 
 
 
@@ -773,6 +774,7 @@ namespace TypeSunny.UI
                 TbDispay.Children.Clear();
                 ScDisplay.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
                 TextInfo.Blocks.Clear(); // 修复BUG：确保Blocks和显示区域同步清空
+                TextInfo.CodeLabels.Clear();
                 TextBlock tb = new TextBlock();
                 tb.FontSize = DisplayFontSize;
                 tb.FontFamily = GetCurrentFontFamily(); // new FontFamily(Config.GetString("字体"));
@@ -947,6 +949,7 @@ namespace TypeSunny.UI
             var codeTb = new TextBlock
             {
                 Text = string.IsNullOrEmpty(codeText) ? " " : codeText,
+                Tag = string.IsNullOrEmpty(codeText) ? null : codeText,
                 FontSize = DisplayFontSize * 0.45,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Foreground = string.IsNullOrEmpty(codeText)
@@ -956,7 +959,38 @@ namespace TypeSunny.UI
             };
             container.Children.Add(codeTb);
 
+            int localIdx = globalIndex - TextInfo.PageStartIndex;
+            while (TextInfo.CodeLabels.Count <= localIdx)
+                TextInfo.CodeLabels.Add(null);
+            TextInfo.CodeLabels[localIdx] = codeTb;
+
             return container;
+        }
+
+        // 更新编码下显标签的打字进度着色（localIndex 为页内索引，typedCount 为已打字母数）
+        internal void UpdateCodeLabelProgress(int localIndex, int typedCount)
+        {
+            if (!IsCodeDisplayEnabled()) return;
+            if (localIndex < 0 || localIndex >= TextInfo.CodeLabels.Count) return;
+            var label = TextInfo.CodeLabels[localIndex];
+            if (label == null) return;
+
+            string code = label.Tag as string;
+            if (string.IsNullOrEmpty(code)) return;
+
+            Dispatcher.Invoke(() =>
+            {
+                label.Inlines.Clear();
+                var typedColor = new SolidColorBrush(Color.FromRgb(0x33, 0xAA, 0x33));
+                var normalColor = GetCodeDisplayColor(localIndex + TextInfo.PageStartIndex);
+                for (int i = 0; i < code.Length; i++)
+                {
+                    label.Inlines.Add(new Run(code[i].ToString())
+                    {
+                        Foreground = i < typedCount ? typedColor : normalColor
+                    });
+                }
+            });
         }
 
         private bool IsCiTiNoSplitLineEnabled()
@@ -2969,6 +3003,7 @@ namespace TypeSunny.UI
 
             // 默认调整发文区字体（强制清空缓存重新渲染）
             TextInfo.Blocks.Clear();
+            TextInfo.CodeLabels.Clear();
             TextInfo.PageNum = -1;
             TbDispay.Children.Clear();
             UpdateDisplay(UpdateLevel.Progress);
@@ -5508,6 +5543,7 @@ public async Task SendArticle()
             // 强制清空Blocks，确保重新渲染（修复本地发文翻页时显示不更新、索引越界的bug）
             Dispatcher.Invoke(() => TbDispay.Children.Clear());
             TextInfo.Blocks.Clear();
+            TextInfo.CodeLabels.Clear();
 
 
 
