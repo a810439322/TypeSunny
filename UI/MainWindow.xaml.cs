@@ -15,6 +15,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
@@ -304,6 +305,10 @@ namespace TypeSunny.UI
             if (tracingEnabled && !_tracingMode.IsActive)
                 _tracingMode.Enable();
 
+            bool codeDisplayEnabled = IsCodeDisplayEnabled();
+            if (!codeDisplayEnabled)
+                ClearAllCodeLabelProgress();
+
             if (IsLookingType && StateManager.LastType)
             {
                 BlindDiff();
@@ -318,11 +323,20 @@ namespace TypeSunny.UI
             if (updateLevel >= UpdateLevel.Progress)
                 PageProgressUpdate();
 
+            if (codeDisplayEnabled)
+                RefreshCodeLabelProgress();
+
             // TextBlocks 重建后，通知字帖/临摹模式重新定位光标和重建镜像行
             if (_copybookMode != null && _copybookMode.IsActive)
+            {
                 _copybookMode.ScheduleUpdatePosition();
+                _copybookMode.SyncCompositionPresentation();
+            }
             if (_tracingMode != null && _tracingMode.IsActive)
+            {
                 _tracingMode.ScheduleInsertMirrorBlocks();
+                _tracingMode.SyncCompositionPresentation();
+            }
 
 
             void PageReArrange()
@@ -937,7 +951,7 @@ namespace TypeSunny.UI
 
         internal FrameworkElement CreateDisplayElement(TextBlock textBlock, int globalIndex)
         {
-            if (!IsCodeDisplayEnabled() || IsCopybookOrTracingActive())
+            if (!IsCodeDisplayEnabled())
                 return textBlock;
 
             DetachFromParent(textBlock);
@@ -962,7 +976,9 @@ namespace TypeSunny.UI
                 Height = DisplayFontSize * 0.55,
                 IsHitTestVisible = false,
                 VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(0, 0, 0, -DisplayFontSize * 0.35)
+                Margin = new Thickness(0, 0, 0, -DisplayFontSize * 0.35),
+                RenderTransformOrigin = new Point(0.5, 0.5),
+                RenderTransform = new ScaleTransform(1.0, 1.0)
             };
             container.Children.Add(codeTb);
 
@@ -970,34 +986,85 @@ namespace TypeSunny.UI
             while (TextInfo.CodeLabels.Count <= localIdx)
                 TextInfo.CodeLabels.Add(null);
             TextInfo.CodeLabels[localIdx] = codeTb;
+            ApplyCodeLabelFeedback(codeTb, globalIndex,
+                TextInfo.CodeLabelInputs.TryGetValue(globalIndex, out var typedText) ? typedText : "",
+                animate: false);
 
             return container;
         }
 
-        // 更新编码下显标签的打字进度着色（localIndex 为页内索引，typedCount 为已打字母数）
-        internal void UpdateCodeLabelProgress(int localIndex, int typedCount)
+        // 更新编码下显标签的打字反馈（globalIndex 为全文索引，typedText 为当前输入编码）
+        internal void UpdateCodeLabelProgress(int globalIndex, string typedText)
         {
+            if (globalIndex < 0) return;
             if (!IsCodeDisplayEnabled()) return;
-            if (localIndex < 0 || localIndex >= TextInfo.CodeLabels.Count) return;
+
+            string normalizedTypedText = typedText ?? "";
+            if (string.IsNullOrEmpty(normalizedTypedText))
+            {
+                ClearCodeLabelProgress(globalIndex);
+                return;
+            }
+
+            string previousTypedText = TextInfo.CodeLabelInputs.TryGetValue(globalIndex, out var previous)
+                ? previous
+                : "";
+            TextInfo.CodeLabelInputs[globalIndex] = normalizedTypedText;
+
+            int localIndex = globalIndex - TextInfo.PageStartIndex;
+            if (localIndex < 0) return;
+            if (localIndex >= TextInfo.CodeLabels.Count) return;
             var label = TextInfo.CodeLabels[localIndex];
             if (label == null) return;
 
-            string code = label.Tag as string;
-            if (string.IsNullOrEmpty(code)) return;
-
             Dispatcher.Invoke(() =>
             {
-                label.Inlines.Clear();
-                var typedColor = new SolidColorBrush(Color.FromRgb(0x33, 0xAA, 0x33));
-                var normalColor = GetCodeDisplayColor(localIndex + TextInfo.PageStartIndex);
-                for (int i = 0; i < code.Length; i++)
-                {
-                    label.Inlines.Add(new Run(code[i].ToString())
-                    {
-                        Foreground = i < typedCount ? typedColor : normalColor
-                    });
-                }
+                ApplyCodeLabelFeedback(label, globalIndex, normalizedTypedText, animate: true,
+                    previousTypedText: previousTypedText);
             });
+        }
+
+        internal void ClearCodeLabelProgress(int globalIndex)
+        {
+            if (globalIndex < 0) return;
+            TextInfo.CodeLabelInputs.Remove(globalIndex);
+
+            int localIndex = globalIndex - TextInfo.PageStartIndex;
+            if (localIndex < 0) return;
+            if (localIndex >= TextInfo.CodeLabels.Count) return;
+            var label = TextInfo.CodeLabels[localIndex];
+            if (label == null) return;
+
+            Dispatcher.Invoke(() => ApplyCodeLabelFeedback(label, globalIndex, "", animate: false));
+        }
+
+        internal void RefreshCodeLabelProgress()
+        {
+            if (!IsCodeDisplayEnabled()) return;
+
+            for (int localIdx = 0; localIdx < TextInfo.CodeLabels.Count; localIdx++)
+            {
+                var label = TextInfo.CodeLabels[localIdx];
+                if (label == null) continue;
+
+                int globalIndex = localIdx + TextInfo.PageStartIndex;
+                string typedText = TextInfo.CodeLabelInputs.TryGetValue(globalIndex, out var value) ? value : "";
+                ApplyCodeLabelFeedback(label, globalIndex, typedText, animate: false);
+            }
+        }
+
+        internal void ClearAllCodeLabelProgress()
+        {
+            TextInfo.CodeLabelInputs.Clear();
+
+            for (int localIdx = 0; localIdx < TextInfo.CodeLabels.Count; localIdx++)
+            {
+                var label = TextInfo.CodeLabels[localIdx];
+                if (label == null) continue;
+
+                int globalIndex = localIdx + TextInfo.PageStartIndex;
+                ApplyCodeLabelFeedback(label, globalIndex, "", animate: false);
+            }
         }
 
         private bool IsCiTiNoSplitLineEnabled()
@@ -1145,6 +1212,86 @@ namespace TypeSunny.UI
             if (string.IsNullOrEmpty(raw)) return "";
             int sep = raw.IndexOf('·');
             return sep > 0 ? raw.Substring(0, sep).TrimEnd() : raw;
+        }
+
+        private void ApplyCodeLabelFeedback(TextBlock label, int globalIndex, string typedText, bool animate, string previousTypedText = null)
+        {
+            if (label == null)
+                return;
+
+            string code = label.Tag as string;
+            if (string.IsNullOrEmpty(code))
+            {
+                label.Inlines.Clear();
+                label.Foreground = Brushes.Transparent;
+                return;
+            }
+
+            string normalizedTypedText = typedText ?? "";
+            label.Inlines.Clear();
+            var glyphs = CompositionCodeFeedback.BuildLabelGlyphs(code, normalizedTypedText);
+            foreach (var glyph in glyphs)
+            {
+                label.Inlines.Add(new Run(glyph.Value.ToString())
+                {
+                    Foreground = GetCodeLabelBrush(globalIndex, glyph.State)
+                });
+            }
+
+            if (animate && ShouldPulseCodeLabel(code, normalizedTypedText, previousTypedText))
+                PlayCodeLabelPulse(label);
+        }
+
+        private Brush GetCodeLabelBrush(int globalIndex, CompositionCodeGlyphState state)
+        {
+            switch (state)
+            {
+                case CompositionCodeGlyphState.Matched:
+                    return new SolidColorBrush(Color.FromRgb(0x33, 0xAA, 0x33));
+                case CompositionCodeGlyphState.Mismatched:
+                    return Colors.IncorrectBackground;
+                default:
+                    return GetCodeDisplayColor(globalIndex);
+            }
+        }
+
+        private bool ShouldPulseCodeLabel(string code, string typedText, string previousTypedText)
+        {
+            if (string.IsNullOrEmpty(code) || string.IsNullOrEmpty(typedText))
+                return false;
+
+            if (previousTypedText != null && typedText.Length <= previousTypedText.Length)
+                return false;
+
+            var glyphs = CompositionCodeFeedback.BuildLabelGlyphs(code, typedText);
+            int lastTypedIndex = Math.Min(typedText.Length, glyphs.Count) - 1;
+            if (lastTypedIndex < 0 || lastTypedIndex >= glyphs.Count)
+                return false;
+
+            return glyphs[lastTypedIndex].State == CompositionCodeGlyphState.Matched;
+        }
+
+        private void PlayCodeLabelPulse(TextBlock label)
+        {
+            if (!(label.RenderTransform is ScaleTransform scale))
+                return;
+
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            var scaleX = new DoubleAnimation(1.0, 1.16, new Duration(TimeSpan.FromMilliseconds(120)))
+            {
+                AutoReverse = true,
+                EasingFunction = ease
+            };
+            var scaleY = new DoubleAnimation(1.0, 1.16, new Duration(TimeSpan.FromMilliseconds(120)))
+            {
+                AutoReverse = true,
+                EasingFunction = ease
+            };
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, scaleX);
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, scaleY);
         }
 
         internal Brush GetCodeDisplayColor(int globalIndex)
@@ -5599,6 +5746,7 @@ public async Task SendArticle()
             Dispatcher.Invoke(() => TbDispay.Children.Clear());
             TextInfo.Blocks.Clear();
             TextInfo.CodeLabels.Clear();
+            TextInfo.CodeLabelInputs.Clear();
 
 
 

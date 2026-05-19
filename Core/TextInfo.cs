@@ -55,6 +55,9 @@ internal static class TextInfo
         // 编码下显标签，与 Blocks 一一对应（无编码下显时为 null）
         public static List<TextBlock> CodeLabels = new List<TextBlock>();
 
+        // 编码下显的当前输入状态，与全局索引一一对应
+        public static Dictionary<int, string> CodeLabelInputs = new Dictionary<int, string>();
+
      //   public static Dictionary<int, string> WrongCounter = new Dictionary<int, string>();
     //    public static Dictionary<int, string> BackCounter = new Dictionary<int, string>();
     //    public static Dictionary<int, string> CorrectionCounter = new Dictionary<int, string>();

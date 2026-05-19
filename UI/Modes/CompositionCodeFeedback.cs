@@ -58,5 +58,42 @@ namespace TypeSunny.UI.Modes
 
             return glyphs;
         }
+
+        public static IReadOnlyList<CompositionCodeGlyph> BuildLabelGlyphs(string expectedCode, string typedText)
+        {
+            var glyphs = new List<CompositionCodeGlyph>();
+            if (string.IsNullOrEmpty(expectedCode))
+                return glyphs;
+
+            typedText = typedText ?? "";
+            bool hasMismatch = false;
+            for (int i = 0; i < expectedCode.Length; i++)
+            {
+                char value = expectedCode[i];
+                CompositionCodeGlyphState state = CompositionCodeGlyphState.Neutral;
+                if (i < typedText.Length)
+                {
+                    if (!hasMismatch && char.ToUpperInvariant(typedText[i]) == char.ToUpperInvariant(value))
+                    {
+                        state = CompositionCodeGlyphState.Matched;
+                    }
+                    else
+                    {
+                        hasMismatch = true;
+                        state = CompositionCodeGlyphState.Mismatched;
+                    }
+                }
+
+                glyphs.Add(new CompositionCodeGlyph(value, state));
+            }
+
+            if (!hasMismatch && typedText.Length > expectedCode.Length && glyphs.Count > 0)
+            {
+                int last = glyphs.Count - 1;
+                glyphs[last] = new CompositionCodeGlyph(glyphs[last].Value, CompositionCodeGlyphState.Mismatched);
+            }
+
+            return glyphs;
+        }
     }
 }

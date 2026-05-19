@@ -14,6 +14,10 @@ namespace TypeSunny.Tests
             Run("first mismatch and following glyphs are marked mismatched", FirstMismatchAndFollowingGlyphsAreMarkedMismatched);
             Run("missing target code uses neutral state", MissingTargetCodeUsesNeutralState);
             Run("matching is case insensitive", MatchingIsCaseInsensitive);
+            Run("lower code label shows matched prefix and neutral tail", LowerCodeLabelShowsMatchedPrefixAndNeutralTail);
+            Run("lower code label refreshes after delete", LowerCodeLabelRefreshesAfterDelete);
+            Run("lower code label marks first mismatch and typed suffix", LowerCodeLabelMarksMismatchAndTypedSuffix);
+            Run("lower code label marks extra input as mismatch", LowerCodeLabelMarksExtraInputAsMismatch);
 
             if (_failures == 0)
             {
@@ -60,6 +64,48 @@ namespace TypeSunny.Tests
             AssertGlyphs(glyphs,
                 Glyph('A', CompositionCodeGlyphState.Matched),
                 Glyph('B', CompositionCodeGlyphState.Matched));
+        }
+
+        private static void LowerCodeLabelShowsMatchedPrefixAndNeutralTail()
+        {
+            var glyphs = CompositionCodeFeedback.BuildLabelGlyphs("abcd", "ab");
+
+            AssertGlyphs(glyphs,
+                Glyph('a', CompositionCodeGlyphState.Matched),
+                Glyph('b', CompositionCodeGlyphState.Matched),
+                Glyph('c', CompositionCodeGlyphState.Neutral),
+                Glyph('d', CompositionCodeGlyphState.Neutral));
+        }
+
+        private static void LowerCodeLabelRefreshesAfterDelete()
+        {
+            var glyphs = CompositionCodeFeedback.BuildLabelGlyphs("abcd", "a");
+
+            AssertGlyphs(glyphs,
+                Glyph('a', CompositionCodeGlyphState.Matched),
+                Glyph('b', CompositionCodeGlyphState.Neutral),
+                Glyph('c', CompositionCodeGlyphState.Neutral),
+                Glyph('d', CompositionCodeGlyphState.Neutral));
+        }
+
+        private static void LowerCodeLabelMarksMismatchAndTypedSuffix()
+        {
+            var glyphs = CompositionCodeFeedback.BuildLabelGlyphs("abcd", "axd");
+
+            AssertGlyphs(glyphs,
+                Glyph('a', CompositionCodeGlyphState.Matched),
+                Glyph('b', CompositionCodeGlyphState.Mismatched),
+                Glyph('c', CompositionCodeGlyphState.Mismatched),
+                Glyph('d', CompositionCodeGlyphState.Neutral));
+        }
+
+        private static void LowerCodeLabelMarksExtraInputAsMismatch()
+        {
+            var glyphs = CompositionCodeFeedback.BuildLabelGlyphs("ab", "abc");
+
+            AssertGlyphs(glyphs,
+                Glyph('a', CompositionCodeGlyphState.Matched),
+                Glyph('b', CompositionCodeGlyphState.Mismatched));
         }
 
         private static CompositionCodeGlyph Glyph(char value, CompositionCodeGlyphState state)

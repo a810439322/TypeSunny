@@ -6,7 +6,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Controls.Primitives;
-using System.Windows.Documents;
 using TypeSunny.Core;
 using TypeSunny.Logs;
 using System.Windows.Media.Animation;
@@ -26,7 +25,6 @@ namespace TypeSunny.UI.Modes
         private TextBlock _compositionText;
         private Border _cursor;
         private readonly List<FrameworkElement> _wrongCharHints = new List<FrameworkElement>();
-        private readonly List<TextBlock> _typedCodeHints = new List<TextBlock>();
         private readonly ImeBackspacePolicy _imeBackspacePolicy = new ImeBackspacePolicy();
         private readonly FinishOnceGate _finishGate = new FinishOnceGate();
         private int _currentIndex;
@@ -203,7 +201,6 @@ namespace TypeSunny.UI.Modes
             _inputCapture = null;
             _compositionText = null;
             _cursor = null;
-            ClearTypedCodeHints();
             _wrongCharHints.Clear();
 
             // 清除已打字的背景色
@@ -261,7 +258,6 @@ namespace TypeSunny.UI.Modes
             foreach (var hint in _wrongCharHints)
                 _overlay.Children.Remove(hint);
             _wrongCharHints.Clear();
-            ClearTypedCodeHints();
             _imeBackspacePolicy.Reset();
             ClearImeCompositionState();
             if (_inputCapture != null)
@@ -303,8 +299,6 @@ namespace TypeSunny.UI.Modes
                 if (hint.Tag is int idx && idx < TextInfo.Blocks.Count)
                     hint.Opacity = TextInfo.Blocks[idx].Opacity;
             }
-
-            RefreshTypedCodeHints();
         }
 
         private void OnLostFocus(object sender, RoutedEventArgs e)
@@ -340,7 +334,6 @@ namespace TypeSunny.UI.Modes
                 return;
 
             RefreshWrongCharHints();
-            RefreshTypedCodeHints();
             UpdatePosition();
         }
 
@@ -366,18 +359,10 @@ namespace TypeSunny.UI.Modes
 
         private void OnCompositionUpdate(object sender, TextCompositionEventArgs e)
         {
-            if (!_isActive || _compositionText == null) return;
+            if (!_isActive) return;
 
             string composition = e.TextComposition.CompositionText ?? "";
             SetImeCompositionState(composition);
-            if (string.IsNullOrEmpty(composition))
-            {
-                HideCompositionText();
-            }
-            else
-            {
-                UpdateCompositionText(composition);
-            }
         }
 
         private void OnTextInput(object sender, TextCompositionEventArgs e)
@@ -395,7 +380,7 @@ namespace TypeSunny.UI.Modes
             // 空码/ESC取消
             if (string.IsNullOrEmpty(e.Text))
             {
-                ClearImeCompositionState();
+                ClearImeCompositionState(clearFeedback: true);
                 bool disableBackInEffect = Config.GetBool("禁用回改")
                     && StateManager.txtSource != TxtSource.raceApi
                     && StateManager.txtSource != TxtSource.jbs
@@ -415,8 +400,7 @@ namespace TypeSunny.UI.Modes
             // 回车始终作为暂停，不插入任何字符
             if (e.Text == "\r")
             {
-                ClearImeCompositionState();
-                HideCompositionText();
+                ClearImeCompositionState(clearFeedback: true);
                 e.Handled = true;
                 return;
             }
@@ -431,7 +415,7 @@ namespace TypeSunny.UI.Modes
                 inputText = " ";
 
             string committedComposition = _activeCompositionText;
-            ClearImeCompositionState();
+            ClearImeCompositionState(clearFeedback: false);
             ProcessInputText(inputText, committedComposition);
             _manualScrollActive = false;
 
@@ -469,7 +453,7 @@ namespace TypeSunny.UI.Modes
 
                 bool isCorrect = (ch == expected) || _main.IsLookingType;
                 if (i == 0 && !string.IsNullOrEmpty(committedComposition))
-                    ShowTypedCodeHint(committedComposition, isCorrect, _currentIndex);
+                    _main.UpdateCodeLabelProgress(_currentIndex, committedComposition);
 
                 if (isCorrect)
                 {
@@ -504,7 +488,6 @@ namespace TypeSunny.UI.Modes
             }
 
             HideCompositionText();
-            RefreshTypedCodeHints();
 
             // 更新标题栏进度条和窗口标题
             _main.UpdateTitleProgress(_currentIndex);
@@ -550,7 +533,6 @@ namespace TypeSunny.UI.Modes
                     ScrollToCurrentChar();
 
                 UpdatePosition();
-                RefreshTypedCodeHints();
                 _main.UpdateZiTi();
             }), System.Windows.Threading.DispatcherPriority.Input);
         }
@@ -638,7 +620,7 @@ namespace TypeSunny.UI.Modes
 
                     // 移除该位置的错字提示
                     RemoveWrongCharHint(_currentIndex);
-                    RemoveTypedCodeHint(_currentIndex);
+                    _main.ClearCodeLabelProgress(_currentIndex);
                     Score.InputWordCount = _currentIndex;
 
                     UpdatePosition();
@@ -650,7 +632,6 @@ namespace TypeSunny.UI.Modes
 
                     // 更新字提显示
                     _main.UpdateZiTi();
-                    RefreshTypedCodeHints();
                 }
                 e.Handled = true;
             }
@@ -673,17 +654,27 @@ namespace TypeSunny.UI.Modes
             _activeCompositionText = composition ?? "";
             _imeBackspacePolicy.NotifyCompositionText(_activeCompositionText, IsPhysicalBackspaceDown());
             _isImeComposing = !string.IsNullOrEmpty(_activeCompositionText);
-            _main.UpdateCodeLabelProgress(_currentIndex, _activeCompositionText.Length);
-            if (_isImeComposing)
+            if (_main.IsCodeDisplayEnabled())
+            {
+                if (_isImeComposing)
+                    _main.UpdateCodeLabelProgress(_currentIndex, _activeCompositionText);
+                else
+                    _main.ClearCodeLabelProgress(_currentIndex);
+                HideCompositionText();
+            }
+            else
+            {
                 UpdateCompositionText(_activeCompositionText);
+            }
         }
 
-        private void ClearImeCompositionState()
+        private void ClearImeCompositionState(bool clearFeedback = true)
         {
             _activeCompositionText = "";
             _isImeComposing = false;
             _imeBackspacePolicy.NotifyCompositionEnded();
-            _main.UpdateCodeLabelProgress(_currentIndex, 0);
+            if (_main.IsCodeDisplayEnabled() && clearFeedback)
+                _main.ClearCodeLabelProgress(_currentIndex);
             HideCompositionText();
         }
 
@@ -698,14 +689,7 @@ namespace TypeSunny.UI.Modes
                 return;
 
             _compositionText.Inlines.Clear();
-            string targetCode = _main.GetTypingCodeText(_currentIndex);
-            foreach (var glyph in CompositionCodeFeedback.BuildGlyphs(composition, targetCode))
-            {
-                _compositionText.Inlines.Add(new Run(glyph.Value.ToString())
-                {
-                    Foreground = GetCompositionGlyphBrush(glyph.State)
-                });
-            }
+            _compositionText.Text = composition ?? "";
 
             _compositionText.Opacity = 1.0;
             if (_compositionText.RenderTransform is ScaleTransform scale)
@@ -728,142 +712,8 @@ namespace TypeSunny.UI.Modes
                 return;
 
             _compositionText.Inlines.Clear();
+            _compositionText.Text = "";
             _compositionText.Visibility = Visibility.Collapsed;
-        }
-
-        private Brush GetCompositionGlyphBrush(CompositionCodeGlyphState state)
-        {
-            switch (state)
-            {
-                case CompositionCodeGlyphState.Matched:
-                    return new SolidColorBrush(Color.FromRgb(0x33, 0xAA, 0x33));
-                case CompositionCodeGlyphState.Mismatched:
-                    return Colors.IncorrectBackground;
-                default:
-                    return new SolidColorBrush(Color.FromRgb(0x33, 0x99, 0xFF));
-            }
-        }
-
-        private void ShowTypedCodeHint(string composition, bool isCorrect, int index)
-        {
-            if (_overlay == null || string.IsNullOrEmpty(composition) || index < 0)
-                return;
-
-            RemoveTypedCodeHint(index);
-
-            double fs = MainWindow.DisplayFontSize;
-            var hint = new TextBlock
-            {
-                Text = composition,
-                FontSize = fs * 0.4,
-                Foreground = isCorrect
-                    ? new SolidColorBrush(Color.FromRgb(0x33, 0xAA, 0x33))
-                    : Colors.IncorrectBackground,
-                Background = Brushes.Transparent,
-                Padding = new Thickness(1, 0, 1, 0),
-                IsHitTestVisible = false,
-                Tag = index,
-                RenderTransformOrigin = new Point(0.5, 0.5),
-                RenderTransform = new ScaleTransform(1.0, 1.0)
-            };
-
-            _overlay.Children.Add(hint);
-            _typedCodeHints.Add(hint);
-            PositionCodeTextElement(hint, index);
-            if (isCorrect)
-                PlayCorrectCodePulse(hint);
-
-            RefreshTypedCodeHints();
-        }
-
-        private void PlayCorrectCodePulse(TextBlock hint)
-        {
-            if (!(hint.RenderTransform is ScaleTransform scale))
-                return;
-
-            var scaleX = new DoubleAnimation(1.0, 1.25, new Duration(TimeSpan.FromMilliseconds(90)))
-            {
-                AutoReverse = true
-            };
-            var scaleY = new DoubleAnimation(1.0, 1.25, new Duration(TimeSpan.FromMilliseconds(90)))
-            {
-                AutoReverse = true
-            };
-            scale.BeginAnimation(ScaleTransform.ScaleXProperty, scaleX);
-            scale.BeginAnimation(ScaleTransform.ScaleYProperty, scaleY);
-        }
-
-        private void RefreshTypedCodeHints()
-        {
-            if (_overlay == null)
-                return;
-
-            double fs = MainWindow.DisplayFontSize;
-            for (int i = _typedCodeHints.Count - 1; i >= 0; i--)
-            {
-                var hint = _typedCodeHints[i];
-                if (!(hint.Tag is int idx) || idx < 0 || idx >= TextInfo.Blocks.Count)
-                {
-                    RemoveTypedCodeHintAt(i);
-                    continue;
-                }
-
-                hint.FontSize = fs * 0.4;
-                PositionCodeTextElement(hint, idx);
-                double opacity = CalculateTypedCodeOpacity(idx);
-                if (idx < TextInfo.Blocks.Count)
-                    opacity *= TextInfo.Blocks[idx].Opacity;
-                hint.Opacity = opacity;
-                hint.Visibility = opacity <= 0.001 ? Visibility.Collapsed : Visibility.Visible;
-            }
-        }
-
-        private double CalculateTypedCodeOpacity(int index)
-        {
-            int preShowCount = StateManager.txtSource == TxtSource.raceApi
-                ? 20
-                : Config.GetInt("贪吃蛇前显字数");
-            if (preShowCount <= 0)
-                return 0.0;
-
-            int distanceFromCurrent = _currentIndex - index;
-            if (distanceFromCurrent <= 0)
-                return 1.0;
-            if (distanceFromCurrent > preShowCount)
-                return 0.0;
-
-            int fadeSpan = Math.Min(10, preShowCount);
-            int fadeStart = preShowCount - fadeSpan;
-            if (distanceFromCurrent > fadeStart)
-            {
-                double fadeDistance = distanceFromCurrent - fadeStart;
-                return 1.0 - (fadeDistance / fadeSpan);
-            }
-
-            return 1.0;
-        }
-
-        private void ClearTypedCodeHints()
-        {
-            for (int i = _typedCodeHints.Count - 1; i >= 0; i--)
-                RemoveTypedCodeHintAt(i);
-        }
-
-        private void RemoveTypedCodeHint(int index)
-        {
-            for (int i = _typedCodeHints.Count - 1; i >= 0; i--)
-            {
-                if (_typedCodeHints[i].Tag is int idx && idx == index)
-                    RemoveTypedCodeHintAt(i);
-            }
-        }
-
-        private void RemoveTypedCodeHintAt(int listIndex)
-        {
-            var hint = _typedCodeHints[listIndex];
-            if (hint.Parent is Panel parent)
-                parent.Children.Remove(hint);
-            _typedCodeHints.RemoveAt(listIndex);
         }
 
         private void ShowWrongCharHint(string wrongChar, int index)
@@ -985,8 +835,29 @@ namespace TypeSunny.UI.Modes
             }
 
             // 重新定位光标（TextBlocks 已被重建）
-            RefreshTypedCodeHints();
+            _main.RefreshCodeLabelProgress();
+            SyncCompositionPresentation();
             ScheduleUpdatePosition();
+        }
+
+        public void SyncCompositionPresentation()
+        {
+            if (!_isActive)
+                return;
+
+            if (_main.IsCodeDisplayEnabled())
+            {
+                if (!string.IsNullOrEmpty(_activeCompositionText))
+                    _main.UpdateCodeLabelProgress(_currentIndex, _activeCompositionText);
+                HideCompositionText();
+            }
+            else
+            {
+                if (!string.IsNullOrEmpty(_activeCompositionText))
+                    UpdateCompositionText(_activeCompositionText);
+                else
+                    HideCompositionText();
+            }
         }
 
         private void ScheduleFinalVisualsAndStop()
