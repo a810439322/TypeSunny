@@ -937,9 +937,20 @@ namespace TypeSunny.UI
 
         internal FrameworkElement CreateDisplayElement(TextBlock textBlock, int globalIndex)
         {
-            if (!IsCodeDisplayEnabled() || IsCopybookOrTracingActive())
+            if (IsCopybookOrTracingActive())
                 return textBlock;
 
+            if (IsFullCodeDisplayEnabled())
+                return CreateFullCodeDisplayElement(textBlock, globalIndex);
+
+            if (TryGetTailBadgeDisplay(globalIndex, out string badgeText, out Brush badgeBrush))
+                return CreateTailBadgeElement(textBlock, badgeText, badgeBrush);
+
+            return textBlock;
+        }
+
+        private FrameworkElement CreateFullCodeDisplayElement(TextBlock textBlock, int globalIndex)
+        {
             DetachFromParent(textBlock);
 
             var container = new Grid
@@ -974,10 +985,67 @@ namespace TypeSunny.UI
             return container;
         }
 
+        private FrameworkElement CreateTailBadgeElement(TextBlock textBlock, string badgeText, Brush badgeBrush)
+        {
+            DetachFromParent(textBlock);
+
+            var container = new Grid();
+            container.Children.Add(textBlock);
+            container.Children.Add(new TextBlock
+            {
+                Text = badgeText,
+                Tag = badgeText,
+                FontSize = DisplayFontSize * 0.32,
+                FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top,
+                Padding = new Thickness(0),
+                Margin = new Thickness(0),
+                IsHitTestVisible = false,
+                TextAlignment = TextAlignment.Center,
+                Foreground = badgeBrush
+            });
+
+            return container;
+        }
+
+        private bool TryGetTailBadgeDisplay(int globalIndex, out string badgeText, out Brush badgeBrush)
+        {
+            badgeText = "";
+            badgeBrush = null;
+
+            if (Config.GetBool("词提尾码角标") && Config.GetBool("启用词提")
+                && !string.IsNullOrEmpty(Config.GetString("词提方案")))
+            {
+                string rawCode = CiTiHelper.GetCodeForChar(globalIndex);
+                badgeText = CodeDisplayHelper.TryGetTailBadgeText(rawCode);
+                if (!string.IsNullOrEmpty(badgeText))
+                {
+                    badgeBrush = GetCiTiBadgeColor(globalIndex);
+                    return true;
+                }
+            }
+
+            if (Config.GetBool("字提尾码角标") && Config.GetBool("启用字提")
+                && !string.IsNullOrEmpty(Config.GetString("字提方案"))
+                && globalIndex >= 0 && globalIndex < TextInfo.Words.Count)
+            {
+                string rawCode = ZiTiHelper.GetZiTi(TextInfo.Words[globalIndex]);
+                badgeText = CodeDisplayHelper.TryGetTailBadgeText(rawCode);
+                if (!string.IsNullOrEmpty(badgeText))
+                {
+                    badgeBrush = Colors.DisplayForeground;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         // 更新编码下显标签的打字进度着色（localIndex 为页内索引，typedCount 为已打字母数）
         internal void UpdateCodeLabelProgress(int localIndex, int typedCount)
         {
-            if (!IsCodeDisplayEnabled()) return;
+            if (!IsFullCodeDisplayEnabled()) return;
             if (localIndex < 0 || localIndex >= TextInfo.CodeLabels.Count) return;
             var label = TextInfo.CodeLabels[localIndex];
             if (label == null) return;
@@ -1084,15 +1152,14 @@ namespace TypeSunny.UI
             TbDispay.Children.Add(lineBreak);
         }
 
+        internal bool IsFullCodeDisplayEnabled()
+        {
+            return IsFullCiTiCodeDisplayEnabled() || IsFullZiTiCodeDisplayEnabled();
+        }
+
         internal bool IsCodeDisplayEnabled()
         {
-            if (Config.GetBool("词提编码下显") && Config.GetBool("启用词提")
-                && !string.IsNullOrEmpty(Config.GetString("词提方案")))
-                return true;
-            if (Config.GetBool("字提编码下显") && Config.GetBool("启用字提")
-                && !string.IsNullOrEmpty(Config.GetString("字提方案")))
-                return true;
-            return false;
+            return IsFullCodeDisplayEnabled();
         }
 
         private static void DetachFromParent(UIElement element)
@@ -1110,10 +1177,10 @@ namespace TypeSunny.UI
 
         internal string GetCodeDisplayText(int globalIndex)
         {
-            if (Config.GetBool("词提编码下显") && Config.GetBool("启用词提"))
+            if (IsFullCiTiCodeDisplayEnabled())
                 return GetCiTiCodeText(globalIndex);
 
-            if (Config.GetBool("字提编码下显") && Config.GetBool("启用字提")
+            if (IsFullZiTiCodeDisplayEnabled()
                 && globalIndex >= 0 && globalIndex < TextInfo.Words.Count)
                 return GetZiTiCodeText(globalIndex);
             return "";
@@ -1149,7 +1216,15 @@ namespace TypeSunny.UI
 
         internal Brush GetCodeDisplayColor(int globalIndex)
         {
-            if (Config.GetBool("词提编码下显") && globalIndex < TextInfo.CiTiSegmentIndices.Count)
+            if (!IsFullCiTiCodeDisplayEnabled())
+                return Brushes.Black;
+
+            return GetCiTiBadgeColor(globalIndex);
+        }
+
+        private Brush GetCiTiBadgeColor(int globalIndex)
+        {
+            if (globalIndex < TextInfo.CiTiSegmentIndices.Count)
             {
                 int segIdx = TextInfo.CiTiSegmentIndices[globalIndex];
                 if (segIdx >= 0 && segIdx < TextInfo.CiTiSegments.Count)
@@ -1157,6 +1232,20 @@ namespace TypeSunny.UI
             }
 
             return Brushes.Black;
+        }
+
+        private bool IsFullCiTiCodeDisplayEnabled()
+        {
+            return Config.GetBool("词提编码下显")
+                   && Config.GetBool("启用词提")
+                   && !string.IsNullOrEmpty(Config.GetString("词提方案"));
+        }
+
+        private bool IsFullZiTiCodeDisplayEnabled()
+        {
+            return Config.GetBool("字提编码下显")
+                   && Config.GetBool("启用字提")
+                   && !string.IsNullOrEmpty(Config.GetString("字提方案"));
         }
 
         internal void UpdateZiTi()

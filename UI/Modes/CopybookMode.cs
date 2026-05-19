@@ -1044,6 +1044,7 @@ namespace TypeSunny.UI.Modes
                 double y = pos.Y;
                 double fs = MainWindow.DisplayFontSize;
                 double candidateOffset = Config.GetDouble("字帖候选框高度") * fs;
+                double codeDisplayExtra = _main.IsFullCodeDisplayEnabled() ? fs * 0.55 : 0.0;
 
                 // 计算文字在 TextBlock 内的实际 padTop（与 PageReArrange 一致）
                 var fm = _main.GetCurrentFontFamily();
@@ -1053,7 +1054,7 @@ namespace TypeSunny.UI.Modes
 
                 // InputCapture 控制 IME 候选框位置
                 Canvas.SetLeft(_inputCapture, x);
-                Canvas.SetTop(_inputCapture, y + 1.0 * fs + candidateOffset);
+                Canvas.SetTop(_inputCapture, y + 1.0 * fs + candidateOffset + codeDisplayExtra);
 
                 // 自定义光标定位到当前字左侧，与文字垂直居中对齐
                 if (_cursor != null)
