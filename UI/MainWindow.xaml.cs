@@ -1967,6 +1967,28 @@ namespace TypeSunny.UI
                 ZiTiHelper.ClearCache();
             }
 
+            // 重新加载词提数据（方案可能已更改）
+            if (Config.GetBool("启用词提") || Config.GetBool("词提编码下显"))
+            {
+                string citiScheme = Config.GetString("词提方案");
+                if (!string.IsNullOrEmpty(citiScheme))
+                {
+                    CiTiHelper.Initialize(citiScheme);
+                    // 如果当前有正在跟打的文章，重新计算词提分段
+                    if (CiTiHelper.IsLoaded && !string.IsNullOrEmpty(TextInfo.MatchText))
+                    {
+                        TextInfo.CiTiSegments = CiTiHelper.SplitText(TextInfo.MatchText);
+                        CiTiHelper.ComputeSegmentIndices();
+                    }
+                }
+            }
+            else
+            {
+                // 如果关闭了词提，清空相关缓存，确保界面刷新后不显示旧编码
+                TextInfo.CiTiSegments.Clear();
+                TextInfo.CiTiSegmentIndices.Clear();
+            }
+
             StateManager.ConfigLoaded = false;
 
             // 同步赛文服务器地址到 RaceServerManager
