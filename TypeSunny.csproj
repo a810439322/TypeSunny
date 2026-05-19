@@ -207,6 +207,7 @@
     </Compile>
     <Compile Include="UI\HomeToolbarSettings.cs" />
     <Compile Include="UI\Modes\ArticleContinuationState.cs" />
+    <Compile Include="UI\Modes\CompositionCodeFeedback.cs" />
     <Compile Include="UI\Modes\FinishOnceGate.cs" />
     <Compile Include="UI\Modes\FinishedInputPolicy.cs" />
     <Compile Include="UI\Modes\ImeBackspacePolicy.cs" />

@@ -30,6 +30,7 @@ Assert-NotContains 'old aggregate code display key removed from config' $configC
 Assert-NotContains 'old code display source key removed from config' $configCode '"编码下显来源"'
 
 Assert-Contains 'main exposes code display enabled helper' $mainCode 'internal bool IsCodeDisplayEnabled()'
+Assert-Contains 'main exposes typing code helper' $mainCode 'internal string GetTypingCodeText(int globalIndex)'
 Assert-Contains 'main computes CiTi when CiTi display is requested' $mainCode 'Config.GetBool("启用词提") || Config.GetBool("词提编码下显")'
 Assert-Contains 'main suppresses corner ZiTi when lower ZiTi display is on' $mainCode 'Config.GetBool("字提编码下显")'
 Assert-Contains 'main applies CiTi alternate bolding' $mainCode 'CiTiHelper.ShouldBold(segIdx)'
@@ -38,7 +39,7 @@ Assert-Contains 'main adds CiTi word panels for no-split line grouping' $mainCod
 Assert-NotContains 'main no longer reads old code display source' $mainCode 'Config.GetString("编码下显来源")'
 Assert-NotContains 'main no longer reads old aggregate code display switch' $mainCode 'Config.GetBool("启用编码下显")'
 
-Assert-Contains 'paginator accounts for both lower code display modes' $paginatorCode 'Config.GetBool("词提编码下显") || Config.GetBool("字提编码下显")'
+Assert-NotContains 'paginator no longer expands line height for code display' $paginatorCode 'lineH *= 1.5'
 Assert-NotContains 'paginator does not implement CiTi visual no-split-line wrapping' $paginatorCode '"词提不拆行"'
 
 Assert-Contains 'WinConfig adds ZiTi lower display item' $winConfigCode '"字提编码下显"'
@@ -59,7 +60,7 @@ Assert-Contains 'WinConfig checks CiTi main switch when CiTi display is enabled'
 Assert-Contains 'WinConfig checks ZiTi main switch when ZiTi display is enabled' $winConfigCode 'FindCheckBoxByLabel("启用字提")'
 Assert-Contains 'WinConfig creates tooltip label indicator' $winConfigCode 'CreateLabelControl'
 Assert-Contains 'WinConfig marks tooltip indicator for discoverability' $winConfigCode 'ConfigTooltipIndicator'
-Assert-Contains 'WinConfig copies label tooltip to indicator' $winConfigCode 'ToolTip = labelBlock.ToolTip'
+Assert-Contains 'WinConfig copies label tooltip text into popup' $winConfigCode 'var tooltipText = labelBlock.ToolTip?.ToString() ?? ""'
 Assert-Contains 'WinConfig finds label text inside label control containers' $winConfigCode 'GetLabelText'
 Assert-NotContains 'WinConfig no longer shows old source dropdown' $winConfigCode '"编码下显来源"'
 

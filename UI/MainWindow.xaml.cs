@@ -937,12 +937,16 @@ namespace TypeSunny.UI
 
         internal FrameworkElement CreateDisplayElement(TextBlock textBlock, int globalIndex)
         {
-            if (!IsCodeDisplayEnabled())
+            if (!IsCodeDisplayEnabled() || IsCopybookOrTracingActive())
                 return textBlock;
 
             DetachFromParent(textBlock);
 
-            var container = new StackPanel { Orientation = Orientation.Vertical };
+            var container = new Grid
+            {
+                Height = textBlock.Height,
+                ClipToBounds = false
+            };
             container.Children.Add(textBlock);
 
             string codeText = GetCodeDisplayText(globalIndex);
@@ -955,7 +959,10 @@ namespace TypeSunny.UI
                 Foreground = string.IsNullOrEmpty(codeText)
                     ? Brushes.Transparent
                     : GetCodeDisplayColor(globalIndex),
-                Height = DisplayFontSize * 0.55
+                Height = DisplayFontSize * 0.55,
+                IsHitTestVisible = false,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 0, -DisplayFontSize * 0.35)
             };
             container.Children.Add(codeTb);
 
@@ -1104,17 +1111,40 @@ namespace TypeSunny.UI
         internal string GetCodeDisplayText(int globalIndex)
         {
             if (Config.GetBool("词提编码下显") && Config.GetBool("启用词提"))
-                return CiTiHelper.GetCodeForChar(globalIndex);
+                return GetCiTiCodeText(globalIndex);
 
             if (Config.GetBool("字提编码下显") && Config.GetBool("启用字提")
                 && globalIndex >= 0 && globalIndex < TextInfo.Words.Count)
-            {
-                string raw = ZiTiHelper.GetZiTi(TextInfo.Words[globalIndex]);
-                if (string.IsNullOrEmpty(raw)) return "";
-                int sep = raw.IndexOf('·');
-                return sep > 0 ? raw.Substring(0, sep).TrimEnd() : raw;
-            }
+                return GetZiTiCodeText(globalIndex);
             return "";
+        }
+
+        internal string GetTypingCodeText(int globalIndex)
+        {
+            if (Config.GetBool("启用词提") && !string.IsNullOrEmpty(Config.GetString("词提方案")))
+                return GetCiTiCodeText(globalIndex);
+
+            if (Config.GetBool("启用字提") && !string.IsNullOrEmpty(Config.GetString("字提方案"))
+                && globalIndex >= 0 && globalIndex < TextInfo.Words.Count)
+                return GetZiTiCodeText(globalIndex);
+
+            return "";
+        }
+
+        private string GetCiTiCodeText(int globalIndex)
+        {
+            return CiTiHelper.GetCodeForChar(globalIndex);
+        }
+
+        private string GetZiTiCodeText(int globalIndex)
+        {
+            if (globalIndex < 0 || globalIndex >= TextInfo.Words.Count)
+                return "";
+
+            string raw = ZiTiHelper.GetZiTi(TextInfo.Words[globalIndex]);
+            if (string.IsNullOrEmpty(raw)) return "";
+            int sep = raw.IndexOf('·');
+            return sep > 0 ? raw.Substring(0, sep).TrimEnd() : raw;
         }
 
         internal Brush GetCodeDisplayColor(int globalIndex)

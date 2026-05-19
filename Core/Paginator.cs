@@ -37,8 +37,6 @@ namespace TypeSunny.Core
 
             nx = Convert.ToInt32(Math.Floor((x - 20) / (fontsize + 0) -0.5 ));
             double lineH = fontsize * (Config.GetDouble("行距") + 1);
-            if (Config.GetBool("词提编码下显") || Config.GetBool("字提编码下显"))
-                lineH *= 1.5;
             ny = Convert.ToInt32(Math.Floor((y - 10) / lineH));
 
             //至少三行一列
