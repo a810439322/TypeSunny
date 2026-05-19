@@ -1954,14 +1954,17 @@ namespace TypeSunny.UI
         private void ReloadCfg()
         {
             // 重新加载字提数据（方案可能已更改）
-            string scheme = Config.GetString("字提方案");
-            if (!string.IsNullOrEmpty(scheme))
+            if (Config.GetBool("启用字提") || Config.GetBool("字提编码下显"))
             {
-                ZiTiHelper.Reload(scheme);
+                string scheme = Config.GetString("字提方案");
+                if (!string.IsNullOrEmpty(scheme))
+                    ZiTiHelper.Reload(scheme);
+                else
+                    ZiTiHelper.Reload();
             }
             else
             {
-                ZiTiHelper.Reload();
+                ZiTiHelper.ClearCache();
             }
 
             StateManager.ConfigLoaded = false;

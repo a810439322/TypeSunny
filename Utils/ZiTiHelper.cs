@@ -257,5 +257,13 @@ namespace TypeSunny.Utils
             _currentScheme = null;
             Initialize(scheme);
         }
+
+        public static void ClearCache()
+        {
+            _initialized = false;
+            _ziTiDict = null;
+            _currentScheme = null;
+            _loadedCount = 0;
+        }
     }
 }
