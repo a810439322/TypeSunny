@@ -120,6 +120,7 @@
     <Compile Include="Logs\DebugLog.cs" />
     <Compile Include="Config\Config.cs" />
     <Compile Include="Utils\Colors.cs" />
+    <Compile Include="Utils\CodeDisplayHelper.cs" />
     <Compile Include="Config\ThemeManager.cs" />
     <Compile Include="Config\TxtConfig.cs" />
     <Compile Include="Difficulty\DifficultyDict.cs" />

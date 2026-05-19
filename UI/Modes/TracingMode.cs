@@ -988,6 +988,7 @@ namespace TypeSunny.UI.Modes
                 double y = pos.Y;
                 double fs = MainWindow.DisplayFontSize;
                 double candidateOffset = Config.GetDouble("字帖候选框高度") * fs;
+                double codeDisplayExtra = _main.IsFullCodeDisplayEnabled() ? fs * 0.55 : 0.0;
 
                 // 计算文字在 TextBlock 内的实际 padTop（与 PageReArrange 一致）
                 var fm = _main.GetCurrentFontFamily();
@@ -996,7 +997,7 @@ namespace TypeSunny.UI.Modes
                 double padTop = (availablePad / 2 + Math.Min((height - fs) / 2, availablePad)) / 2;
 
                 Canvas.SetLeft(_inputCapture, x);
-                Canvas.SetTop(_inputCapture, y + 1.0 * fs + candidateOffset);
+                Canvas.SetTop(_inputCapture, y + 1.0 * fs + candidateOffset + codeDisplayExtra);
 
                 if (_cursor != null)
                 {
