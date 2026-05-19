@@ -136,15 +136,16 @@ namespace TypeSunny
             "启用词提", "否",
             "词提方案", "",
             "词提编码下显", "是",
-            "词提尾码角标", "是",
+            "词提选重数字角标", "是",
             "词提不拆行", "否",
             "字提编码下显", "否",
-            "字提尾码角标", "是",
+            "字提选重数字角标", "是",
             "词提1简色", "#FF0000",
             "词提2简色", "#FF8C00",
             "词提3简色", "#0000FF",
             "词提4码色", "#808080",
             "词提选重色", "#008000",
+            "词提关闭所有颜色", "否",
             "发文跟打框比例", "75.0",
             "发文区跟打区比例", "0.56",  // 发文区占(发文+跟打)的比例
             "成绩区高度比例", "0.2",   // 成绩区占总高度的比例
@@ -307,10 +308,9 @@ namespace TypeSunny
                                 string key = line_p.Substring(0, pos).Trim();
                                 string value = line_p.Substring(pos + 1).Trim();
 
-                                if (dicts.ContainsKey(key))
-                                {
-                                    dicts[key] = value;
-                                }
+                                string migratedKey = GetMigratedConfigKey(key);
+                                if (dicts.ContainsKey(migratedKey))
+                                    dicts[migratedKey] = value;
 
                                 break;
                             }
@@ -333,6 +333,15 @@ namespace TypeSunny
 
 
 
+        }
+
+        private static string GetMigratedConfigKey(string key)
+        {
+            if (key == "词提" + "尾码" + "角标")
+                return "词提选重数字角标";
+            if (key == "字提" + "尾码" + "角标")
+                return "字提选重数字角标";
+            return key;
         }
 
         static public bool GetBool (string key)

@@ -900,10 +900,18 @@ namespace TypeSunny.UI
         /// </summary>
         internal Brush GetCiTiForeground(int globalIndex)
         {
+            if (IsCiTiColorDisabled())
+                return null;
+
             if (TryGetCiTiSegmentIndex(globalIndex, out int segIdx))
                 return CiTiHelper.GetCiTiColor(TextInfo.CiTiSegments[segIdx].Type);
 
             return null;
+        }
+
+        private bool IsCiTiColorDisabled()
+        {
+            return Config.GetBool("词提关闭所有颜色");
         }
 
         private bool TryGetCiTiSegmentIndex(int globalIndex, out int segIdx)
@@ -951,16 +959,18 @@ namespace TypeSunny.UI
 
         internal FrameworkElement CreateDisplayElement(TextBlock textBlock, int globalIndex)
         {
-            if (IsFullCodeDisplayEnabled())
-                return CreateFullCodeDisplayElement(textBlock, globalIndex);
+            bool hasBadge = TryGetSelectionNumberBadgeDisplay(globalIndex, out string badgeText, out Brush badgeBrush);
 
-            if (TryGetTailBadgeDisplay(globalIndex, out string badgeText, out Brush badgeBrush))
+            if (IsFullCodeDisplayEnabled())
+                return CreateFullCodeDisplayElement(textBlock, globalIndex, badgeText, badgeBrush);
+
+            if (hasBadge)
                 return CreateTailBadgeElement(textBlock, badgeText, badgeBrush);
 
             return textBlock;
         }
 
-        private FrameworkElement CreateFullCodeDisplayElement(TextBlock textBlock, int globalIndex)
+        private FrameworkElement CreateFullCodeDisplayElement(TextBlock textBlock, int globalIndex, string badgeText, Brush badgeBrush)
         {
             DetachFromParent(textBlock);
 
@@ -998,6 +1008,8 @@ namespace TypeSunny.UI
                 TextInfo.CodeLabelInputs.TryGetValue(globalIndex, out var typedText) ? typedText : "",
                 animate: false);
 
+            AddSelectionNumberBadge(container, badgeText, badgeBrush);
+
             return container;
         }
 
@@ -1007,6 +1019,16 @@ namespace TypeSunny.UI
 
             var container = new Grid();
             container.Children.Add(textBlock);
+            AddSelectionNumberBadge(container, badgeText, badgeBrush);
+
+            return container;
+        }
+
+        private void AddSelectionNumberBadge(Grid container, string badgeText, Brush badgeBrush)
+        {
+            if (string.IsNullOrEmpty(badgeText))
+                return;
+
             container.Children.Add(new TextBlock
             {
                 Text = badgeText,
@@ -1019,18 +1041,16 @@ namespace TypeSunny.UI
                 Margin = new Thickness(0),
                 IsHitTestVisible = false,
                 TextAlignment = TextAlignment.Center,
-                Foreground = badgeBrush
+                Foreground = badgeBrush ?? Colors.DisplayForeground ?? Brushes.Black
             });
-
-            return container;
         }
 
-        private bool TryGetTailBadgeDisplay(int globalIndex, out string badgeText, out Brush badgeBrush)
+        private bool TryGetSelectionNumberBadgeDisplay(int globalIndex, out string badgeText, out Brush badgeBrush)
         {
             badgeText = "";
             badgeBrush = null;
 
-            if (Config.GetBool("词提尾码角标") && Config.GetBool("启用词提")
+            if (Config.GetBool("词提选重数字角标") && Config.GetBool("启用词提")
                 && !string.IsNullOrEmpty(Config.GetString("词提方案")))
             {
                 string rawCode = CiTiHelper.GetCodeForChar(globalIndex);
@@ -1042,7 +1062,7 @@ namespace TypeSunny.UI
                 }
             }
 
-            if (Config.GetBool("字提尾码角标") && Config.GetBool("启用字提")
+            if (Config.GetBool("字提选重数字角标") && Config.GetBool("启用字提")
                 && !string.IsNullOrEmpty(Config.GetString("字提方案"))
                 && globalIndex >= 0 && globalIndex < TextInfo.Words.Count)
             {
@@ -1363,11 +1383,22 @@ namespace TypeSunny.UI
             if (!IsFullCiTiCodeDisplayEnabled())
                 return Brushes.Black;
 
+            return GetCiTiDisplayColor(globalIndex);
+        }
+
+        private Brush GetCiTiDisplayColor(int globalIndex)
+        {
+            if (IsCiTiColorDisabled())
+                return Colors.DisplayForeground ?? Brushes.Black;
+
             return GetCiTiBadgeColor(globalIndex);
         }
 
         private Brush GetCiTiBadgeColor(int globalIndex)
         {
+            if (IsCiTiColorDisabled())
+                return Colors.DisplayForeground ?? Brushes.Black;
+
             if (globalIndex < TextInfo.CiTiSegmentIndices.Count)
             {
                 int segIdx = TextInfo.CiTiSegmentIndices[globalIndex];
