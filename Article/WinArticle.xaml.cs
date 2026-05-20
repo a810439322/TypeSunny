@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
@@ -8,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using TypeSunny.UI;
 
 namespace TypeSunny
@@ -65,6 +67,7 @@ namespace TypeSunny
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
             ApplyThemeColors();
+            ApplyCurrentLogo();
             InitTxtFiles();
             InitControls();
             UpdateDisplay();
@@ -74,6 +77,29 @@ namespace TypeSunny
         public void RefreshTheme()
         {
             ApplyThemeColors();
+            ApplyCurrentLogo();
+        }
+
+        private void ApplyCurrentLogo()
+        {
+            try
+            {
+                string currentLogo = Config.GetString("当前Logo");
+                string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "ico", $"{currentLogo}.ico");
+                if (!File.Exists(iconPath))
+                {
+                    Debug.WriteLine($"文章管理器Logo文件不存在: {iconPath}");
+                    return;
+                }
+
+                var iconUri = new Uri(iconPath, UriKind.Absolute);
+                this.Icon = new BitmapImage(iconUri);
+                TitleBarIcon.Source = new BitmapImage(iconUri);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"文章管理器应用Logo失败: {ex.Message}");
+            }
         }
 
         private void ApplyThemeColors()
@@ -292,9 +318,16 @@ namespace TypeSunny
             Process.Start(folderPath);
         }
 
-        private void BtnSend_Click(object sender, RoutedEventArgs e)
+        private async Task SendCurrentArticle()
         {
-            ((MainWindow)App.Current.Windows[0]).SendArticle();
+            var mainWindow = MainWindow.Current ?? App.Current.MainWindow as MainWindow;
+            if (mainWindow != null)
+                await mainWindow.SendArticle();
+        }
+
+        private async void BtnSend_Click(object sender, RoutedEventArgs e)
+        {
+            await SendCurrentArticle();
         }
 
         private void CbFilter_Checked(object sender, RoutedEventArgs e)
@@ -362,6 +395,74 @@ namespace TypeSunny
             if (e.Key == Key.Enter)
             {
                 Search();
+                e.Handled = true;
+            }
+        }
+
+        private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (IsModifiedShortcut(e))
+                return;
+
+            switch (e.Key)
+            {
+                case Key.Enter:
+                    if (Keyboard.FocusedElement == TbSearch)
+                        return;
+
+                    e.Handled = true;
+                    await SendCurrentArticle();
+                    break;
+
+                case Key.Left:
+                    if (IsTextInputFocused())
+                        return;
+
+                    e.Handled = true;
+                    Prev();
+                    break;
+
+                case Key.Right:
+                    if (IsTextInputFocused())
+                        return;
+
+                    e.Handled = true;
+                    Next();
+                    break;
+
+                case Key.Tab:
+                    e.Handled = true;
+                    MoveArticleMenuFocus();
+                    break;
+            }
+        }
+
+        private static bool IsModifiedShortcut(KeyEventArgs e)
+        {
+            var modifiers = Keyboard.Modifiers;
+            if (e.Key == Key.Tab)
+                modifiers &= ~ModifierKeys.Shift;
+
+            return (modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0;
+        }
+
+        private bool IsTextInputFocused()
+        {
+            return Keyboard.FocusedElement == TbSearch || Keyboard.FocusedElement == TbSectionSize;
+        }
+
+        private void MoveArticleMenuFocus()
+        {
+            if (Keyboard.FocusedElement is UIElement focusedElement && focusedElement.IsKeyboardFocusWithin)
+            {
+                if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+                    focusedElement.MoveFocus(new TraversalRequest(FocusNavigationDirection.Previous));
+                else
+                    focusedElement.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
+            }
+            else
+            {
+                CbFiles.Focus();
             }
         }
 

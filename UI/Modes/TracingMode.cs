@@ -198,7 +198,7 @@ namespace TypeSunny.UI.Modes
 
             // 清除背景色
             for (int i = 0; i < TextInfo.Blocks.Count; i++)
-                TextInfo.Blocks[i].Background = null;
+                _main.SetDisplayBlockStateBackground(i, null);
 
             // 移除镜像行
             RemoveMirrorBlocks();
@@ -291,6 +291,20 @@ namespace TypeSunny.UI.Modes
             }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
+        public void RefreshMirrorBlocksNow()
+        {
+            if (!_isActive || _inputCapture == null || TextInfo.Blocks.Count == 0) return;
+            _pendingMirrorRebuild = false;
+            _main.TbDispay.UpdateLayout();
+            InsertMirrorBlocks();
+            _main.TbDispay.UpdateLayout();
+            if (_currentIndex < TextInfo.Blocks.Count)
+            {
+                UpdatePosition();
+                _inputCapture.Focus();
+            }
+        }
+
         public void FocusInputCapture()
         {
             if (!_isActive || _inputCapture == null) return;
@@ -304,6 +318,7 @@ namespace TypeSunny.UI.Modes
         {
             RemoveMirrorBlocks();
             if (TextInfo.Blocks.Count == 0) return;
+            _main.TbDispay.UpdateLayout();
 
             double fs = MainWindow.DisplayFontSize;
             double height = fs * (1.0 + Config.GetDouble("行距"));
@@ -396,31 +411,13 @@ namespace TypeSunny.UI.Modes
                 originalChildren.Add(child);
 
             foreach (var child in originalChildren)
-            {
-                if (child is StackPanel sp)
-                    sp.Children.Clear();
-                else if (child is Border bd && bd.Child is WrapPanel wp)
-                    wp.Children.Clear();
-            }
+                ClearNestedDisplayPanels(child);
             wrapPanel.Children.Clear();
 
             // 按行重新添加
             foreach (var line in _lineGroups)
             {
-                // 用 Border 包裹原文行
-                var border = new Border();
-                border.Background = new SolidColorBrush(Color.FromArgb(20, 128, 128, 128));
-                border.CornerRadius = new CornerRadius(4);
-                var innerPanel = new WrapPanel();
-                foreach (int idx in line)
-                {
-                    if (idx < TextInfo.Blocks.Count)
-                        innerPanel.Children.Add(_main.CreateDisplayElement(
-                            TextInfo.Blocks[idx],
-                            TextInfo.PageStartIndex + idx));
-                }
-                border.Child = innerPanel;
-                wrapPanel.Children.Add(border);
+                wrapPanel.Children.Add(CreateTracingSourceLineElement(line));
 
                 // 插入换行元素
                 var lineBreak1 = new FrameworkElement();
@@ -443,22 +440,81 @@ namespace TypeSunny.UI.Modes
             }
         }
 
+        private FrameworkElement CreateTracingSourceLineElement(List<int> line)
+        {
+            var container = new Grid
+            {
+                ClipToBounds = false
+            };
+
+            var sourceLineBackground = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(20, 128, 128, 128)),
+                CornerRadius = new CornerRadius(4),
+                IsHitTestVisible = false,
+                VerticalAlignment = VerticalAlignment.Top
+            };
+            sourceLineBackground.Height = MainWindow.DisplayFontSize;
+            sourceLineBackground.Margin = new Thickness(0, GetTracingSourceLineBackgroundTopOffset(line), 0, 0);
+            Panel.SetZIndex(sourceLineBackground, 0);
+            container.Children.Add(sourceLineBackground);
+
+            var innerPanel = new WrapPanel();
+            Panel.SetZIndex(innerPanel, 1);
+            foreach (int idx in line)
+            {
+                if (idx < TextInfo.Blocks.Count)
+                    innerPanel.Children.Add(_main.CreateDisplayElement(
+                        TextInfo.Blocks[idx],
+                        TextInfo.PageStartIndex + idx));
+            }
+            container.Children.Add(innerPanel);
+
+            return container;
+        }
+
+        private double GetTracingSourceLineBackgroundTopOffset(List<int> line)
+        {
+            foreach (int idx in line)
+            {
+                if (idx >= 0 && idx < TextInfo.Blocks.Count)
+                    return _main.GetDisplayStateBackgroundTopOffset(TextInfo.Blocks[idx]);
+            }
+
+            return 0;
+        }
+
+        private static void ClearNestedDisplayPanels(UIElement element)
+        {
+            if (element is Border border)
+            {
+                if (border.Child is UIElement child)
+                    ClearNestedDisplayPanels(child);
+                border.Child = null;
+                return;
+            }
+
+            if (element is Panel panel)
+            {
+                var children = new List<UIElement>();
+                foreach (UIElement child in panel.Children)
+                    children.Add(child);
+
+                foreach (var child in children)
+                    ClearNestedDisplayPanels(child);
+
+                panel.Children.Clear();
+            }
+        }
+
         private void RemoveMirrorBlocks()
         {
             if (_mirrorBlocks.Count > 0)
             {
                 var wrapPanel = _main.TbDispay;
-                // 先把原文 Blocks 从所有容器中断开（Border>WrapPanel、StackPanel 等）
                 foreach (UIElement child in wrapPanel.Children)
-                {
-                    if (child is Border bd && bd.Child is WrapPanel wp)
-                        wp.Children.Clear();
-                    else if (child is StackPanel sp)
-                        sp.Children.Clear();
-                }
-                wrapPanel.Children.Clear();
-                foreach (var block in TextInfo.Blocks)
-                    wrapPanel.Children.Add(block);
+                    ClearNestedDisplayPanels(child);
+                _main.RebuildCurrentPageDisplayElementsForTracingMeasurement();
             }
             _mirrorBlocks.Clear();
             _lineGroups.Clear();
@@ -694,19 +750,19 @@ namespace TypeSunny.UI.Modes
                 string expected = TextInfo.Words[_currentIndex];
                 bool isCorrect = (ch == expected) || _main.IsLookingType;
                 if (i == 0 && !string.IsNullOrEmpty(committedComposition))
-                    _main.UpdateCodeLabelProgress(_currentIndex, committedComposition);
+                    _main.CommitCodeLabelProgress(_currentIndex, committedComposition, isCorrect);
 
                 if (isCorrect)
                 {
                     TextInfo.wordStates[_currentIndex] = WordStates.RIGHT;
-                    if (!_main.IsBlindType && _currentIndex < TextInfo.Blocks.Count)
-                        TextInfo.Blocks[_currentIndex].Background = Colors.CorrectBackground;
+                    if (!_main.IsBlindType)
+                        _main.SetDisplayBlockStateBackgroundByGlobalIndex(_currentIndex, Colors.CorrectBackground);
                 }
                 else
                 {
                     TextInfo.wordStates[_currentIndex] = WordStates.WRONG;
-                    if (!_main.IsBlindType && _currentIndex < TextInfo.Blocks.Count)
-                        TextInfo.Blocks[_currentIndex].Background = Colors.IncorrectBackground;
+                    if (!_main.IsBlindType)
+                        _main.SetDisplayBlockStateBackgroundByGlobalIndex(_currentIndex, Colors.IncorrectBackground);
                 }
 
                 // 更新镜像行：显示用户实际输入的字
@@ -822,8 +878,8 @@ namespace TypeSunny.UI.Modes
                 {
                     _currentIndex--;
                     TextInfo.wordStates[_currentIndex] = WordStates.NO_TYPE;
-                    if (_currentIndex < TextInfo.Blocks.Count)
-                        TextInfo.Blocks[_currentIndex].Background = null;
+                    if (!_main.IsBlindType)
+                        _main.SetDisplayBlockStateBackgroundByGlobalIndex(_currentIndex, null);
 
                     // 清除镜像行内容
                     if (_currentIndex < _mirrorBlocks.Count)
@@ -997,6 +1053,9 @@ namespace TypeSunny.UI.Modes
                 double padTop = (availablePad / 2 + Math.Min((height - fs) / 2, availablePad)) / 2;
 
                 Canvas.SetLeft(_inputCapture, x);
+                _inputCapture.Width = fs;
+                _inputCapture.Height = fs * 0.6;
+                _inputCapture.FontSize = fs * 0.5;
                 Canvas.SetTop(_inputCapture, y + 1.0 * fs + candidateOffset + codeDisplayExtra);
 
                 if (_cursor != null)

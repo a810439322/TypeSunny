@@ -136,7 +136,7 @@ namespace TypeSunny
             "启用词提", "否",
             "词提方案", "",
             "词提编码下显", "是",
-            "词提选重数字角标", "是",
+            "词提选重数字角标", "否",
             "词提不拆行", "否",
             "字提编码下显", "否",
             "字提选重数字角标", "是",
@@ -277,6 +277,7 @@ namespace TypeSunny
 
                 if (!File.Exists(Path))
                 {
+                    EnforceSelectionNumberBadgeMutualExclusion();
                     WriteConfig();
                     return;
                 }
@@ -322,12 +323,14 @@ namespace TypeSunny
                 }
 
 
+                EnforceSelectionNumberBadgeMutualExclusion();
                 WriteConfig();
             }
             catch (Exception ex)
             {
                 // 配置文件读取失败，使用默认配置
                 System.Diagnostics.Debug.WriteLine($"配置文件读取失败: {ex.Message}");
+                EnforceSelectionNumberBadgeMutualExclusion();
                 WriteConfig(); // 写入默认配置
             }
 
@@ -342,6 +345,15 @@ namespace TypeSunny
             if (key == "字提" + "尾码" + "角标")
                 return "字提选重数字角标";
             return key;
+        }
+
+        private static void EnforceSelectionNumberBadgeMutualExclusion()
+        {
+            if (GetBool("词提编码下显"))
+                dicts["词提选重数字角标"] = "否";
+
+            if (GetBool("字提编码下显"))
+                dicts["字提选重数字角标"] = "否";
         }
 
         static public bool GetBool (string key)

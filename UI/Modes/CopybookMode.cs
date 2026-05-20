@@ -205,7 +205,7 @@ namespace TypeSunny.UI.Modes
 
             // 清除已打字的背景色
             for (int i = 0; i < TextInfo.Blocks.Count; i++)
-                TextInfo.Blocks[i].Background = null;
+                _main.SetDisplayBlockStateBackground(i, null);
 
             // 恢复跟打区
             var parentGrid = (Grid)_main.typingAreaAndButtonsGrid.Parent;
@@ -453,21 +453,21 @@ namespace TypeSunny.UI.Modes
 
                 bool isCorrect = (ch == expected) || _main.IsLookingType;
                 if (i == 0 && !string.IsNullOrEmpty(committedComposition))
-                    _main.UpdateCodeLabelProgress(_currentIndex, committedComposition);
+                    _main.CommitCodeLabelProgress(_currentIndex, committedComposition, isCorrect);
 
                 if (isCorrect)
                 {
                     TextInfo.wordStates[_currentIndex] = WordStates.RIGHT;
-                    if (!_main.IsBlindType && _currentIndex < TextInfo.Blocks.Count)
-                        TextInfo.Blocks[_currentIndex].Background = Colors.CorrectBackground;
+                    if (!_main.IsBlindType)
+                        _main.SetDisplayBlockStateBackgroundByGlobalIndex(_currentIndex, Colors.CorrectBackground);
                 }
                 else
                 {
                     TextInfo.wordStates[_currentIndex] = WordStates.WRONG;
-                    if (!_main.IsBlindType && _currentIndex < TextInfo.Blocks.Count)
+                    if (!_main.IsBlindType)
                     {
-                        TextInfo.Blocks[_currentIndex].Background = Colors.IncorrectBackground;
-                        ShowWrongCharHint(ch, _currentIndex);
+                        _main.SetDisplayBlockStateBackgroundByGlobalIndex(_currentIndex, Colors.IncorrectBackground);
+                        ShowWrongCharHint(ch, _currentIndex - TextInfo.PageStartIndex);
                     }
                 }
 
@@ -615,11 +615,11 @@ namespace TypeSunny.UI.Modes
 
                     // 清除上一个字的状态
                     TextInfo.wordStates[_currentIndex] = WordStates.NO_TYPE;
-                    if (_currentIndex < TextInfo.Blocks.Count)
-                        TextInfo.Blocks[_currentIndex].Background = null;
+                    if (!_main.IsBlindType)
+                        _main.SetDisplayBlockStateBackgroundByGlobalIndex(_currentIndex, null);
 
                     // 移除该位置的错字提示
-                    RemoveWrongCharHint(_currentIndex);
+                    RemoveWrongCharHint(_currentIndex - TextInfo.PageStartIndex);
                     _main.ClearCodeLabelProgress(_currentIndex);
                     Score.InputWordCount = _currentIndex;
 
@@ -718,7 +718,7 @@ namespace TypeSunny.UI.Modes
 
         private void ShowWrongCharHint(string wrongChar, int index)
         {
-            if (_overlay == null || index >= TextInfo.Blocks.Count) return;
+            if (_overlay == null || index < 0 || index >= TextInfo.Blocks.Count) return;
 
             double fs = MainWindow.DisplayFontSize;
             var border = new Border();
@@ -784,7 +784,7 @@ namespace TypeSunny.UI.Modes
             {
                 var border = fe as Border;
                 if (border == null) continue;
-                if (!(border.Tag is int idx) || idx >= TextInfo.Blocks.Count) continue;
+                if (!(border.Tag is int idx) || idx < 0 || idx >= TextInfo.Blocks.Count) continue;
                 try
                 {
                     var hint = (TextBlock)border.Child;

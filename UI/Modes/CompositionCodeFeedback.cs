@@ -95,5 +95,10 @@ namespace TypeSunny.UI.Modes
 
             return glyphs;
         }
+
+        public static string GetCommittedLabelText(string expectedCode, string typedText, bool isCorrect)
+        {
+            return isCorrect ? (expectedCode ?? "") : (typedText ?? "");
+        }
     }
 }

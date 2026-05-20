@@ -55,6 +55,9 @@ internal static class TextInfo
         // 编码下显标签，与 Blocks 一一对应（无编码下显时为 null）
         public static List<TextBlock> CodeLabels = new List<TextBlock>();
 
+        // 编码下显时的字状态背景层，与 Blocks 一一对应（无编码下显时为 null）
+        public static List<Border> StateBackgrounds = new List<Border>();
+
         // 编码下显的当前输入状态，与全局索引一一对应
         public static Dictionary<int, string> CodeLabelInputs = new Dictionary<int, string>();
 

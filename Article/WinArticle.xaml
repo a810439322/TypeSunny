@@ -13,7 +13,8 @@
         xml:lang="zh-CN"
         Width="800" Height="450"
         SizeToContent="Manual"
-        Loaded="Window_Loaded">
+        Loaded="Window_Loaded"
+        PreviewKeyDown="Window_PreviewKeyDown">
 
     <Window.Resources>
         <!-- 主题颜色资源（默认亮色，运行时由ApplyThemeColors覆盖） -->
@@ -175,7 +176,7 @@
         <DropShadowEffect BlurRadius="20" ShadowDepth="2" Color="Black" Opacity="0.3"/>
     </Window.Effect>
 
-    <Grid>
+    <Grid KeyboardNavigation.TabNavigation="Cycle">
         <!-- 外层边框 -->
         <Border x:Name="MainBorder"
                 BorderThickness="1"
@@ -201,7 +202,7 @@
                             <ColumnDefinition Width="auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
-                            <Image Source="/Resources/ico/sunny.ico" Width="14" Height="14" Margin="0,0,6,0"/>
+                            <Image x:Name="TitleBarIcon" Source="/Resources/ico/sunny.ico" Width="14" Height="14" Margin="0,0,6,0"/>
                             <TextBlock Text="本地文章管理器" FontSize="11" Foreground="{DynamicResource TextForeground}"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal">

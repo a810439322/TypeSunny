@@ -28,12 +28,19 @@ function Assert-Ordered($name, $text, $first, $second) {
     Write-Host "PASS: $name"
 }
 
-Assert-Contains 'config uses selection-number badge name for CiTi' $configCode '"词提选重数字角标", "是"'
+Assert-Contains 'config defaults CiTi selection-number badge off when lower display defaults on' $configCode '"词提选重数字角标", "否"'
 Assert-Contains 'config uses selection-number badge name for ZiTi' $configCode '"字提选重数字角标", "是"'
+Assert-Contains 'config normalizes selection-number badge mutual exclusion' $configCode 'EnforceSelectionNumberBadgeMutualExclusion();'
 Assert-Contains 'WinConfig shows CiTi selection-number badge item' $winConfigCode '"词提选重数字角标"'
 Assert-Contains 'WinConfig shows ZiTi selection-number badge item' $winConfigCode '"字提选重数字角标"'
 Assert-Ordered 'WinConfig places CiTi badge after CiTi code display' $winConfigCode '"词提编码下显"' '"词提选重数字角标"'
 Assert-Ordered 'WinConfig places ZiTi badge after ZiTi code display' $winConfigCode '"字提编码下显"' '"字提选重数字角标"'
+Assert-Contains 'WinConfig finds CiTi badge toggle for mutual exclusion' $winConfigCode 'FindCheckBoxByLabel("词提选重数字角标")'
+Assert-Contains 'WinConfig finds ZiTi badge toggle for mutual exclusion' $winConfigCode 'FindCheckBoxByLabel("字提选重数字角标")'
+Assert-Contains 'WinConfig turns off CiTi badge when CiTi lower display is saved on' $winConfigCode 'UpsertConfigValue(key, value, "词提选重数字角标", "否")'
+Assert-Contains 'WinConfig turns off ZiTi badge when ZiTi lower display is saved on' $winConfigCode 'UpsertConfigValue(key, value, "字提选重数字角标", "否")'
+Assert-Contains 'WinConfig turns off CiTi lower display when CiTi badge is saved on' $winConfigCode 'UpsertConfigValue(key, value, "词提编码下显", "否")'
+Assert-Contains 'WinConfig turns off ZiTi lower display when ZiTi badge is saved on' $winConfigCode 'UpsertConfigValue(key, value, "字提编码下显", "否")'
 Assert-Contains 'WinConfig adds CiTi color shutdown toggle' $winConfigCode '"词提关闭所有颜色"'
 Assert-Ordered 'WinConfig places CiTi color shutdown after CiTi palette' $winConfigCode '"词提选重色"' '"词提关闭所有颜色"'
 Assert-Contains 'MainWindow resolves badge even when full code display is enabled' $mainCode 'TryGetSelectionNumberBadgeDisplay'

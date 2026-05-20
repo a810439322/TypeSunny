@@ -18,6 +18,7 @@ namespace TypeSunny.Tests
             Run("lower code label refreshes after delete", LowerCodeLabelRefreshesAfterDelete);
             Run("lower code label marks first mismatch and typed suffix", LowerCodeLabelMarksMismatchAndTypedSuffix);
             Run("lower code label marks extra input as mismatch", LowerCodeLabelMarksExtraInputAsMismatch);
+            Run("committed correct label remains fully matched", CommittedCorrectLabelRemainsFullyMatched);
 
             if (_failures == 0)
             {
@@ -106,6 +107,16 @@ namespace TypeSunny.Tests
             AssertGlyphs(glyphs,
                 Glyph('a', CompositionCodeGlyphState.Matched),
                 Glyph('b', CompositionCodeGlyphState.Mismatched));
+        }
+
+        private static void CommittedCorrectLabelRemainsFullyMatched()
+        {
+            string finalTypedText = CompositionCodeFeedback.GetCommittedLabelText("ab", "abc", isCorrect: true);
+            var glyphs = CompositionCodeFeedback.BuildLabelGlyphs("ab", finalTypedText);
+
+            AssertGlyphs(glyphs,
+                Glyph('a', CompositionCodeGlyphState.Matched),
+                Glyph('b', CompositionCodeGlyphState.Matched));
         }
 
         private static CompositionCodeGlyph Glyph(char value, CompositionCodeGlyphState state)

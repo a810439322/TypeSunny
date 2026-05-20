@@ -770,6 +770,20 @@ namespace TypeSunny
                         var ziTiDisplayCheckBox = FindCheckBoxByLabel("字提编码下显");
                         if (ziTiDisplayCheckBox != null && ziTiDisplayCheckBox.IsChecked == true)
                             ziTiDisplayCheckBox.IsChecked = false;
+
+                        var ciTiBadgeCheckBox = FindCheckBoxByLabel("词提选重数字角标");
+                        if (ciTiBadgeCheckBox != null && ciTiBadgeCheckBox.IsChecked == true)
+                            ciTiBadgeCheckBox.IsChecked = false;
+                    };
+                }
+
+                if (itemKey == "词提选重数字角标")
+                {
+                    chk.Checked += (obj, evt) =>
+                    {
+                        var ciTiDisplayCheckBox = FindCheckBoxByLabel("词提编码下显");
+                        if (ciTiDisplayCheckBox != null && ciTiDisplayCheckBox.IsChecked == true)
+                            ciTiDisplayCheckBox.IsChecked = false;
                     };
                 }
 
@@ -784,6 +798,20 @@ namespace TypeSunny
                         var ciTiDisplayCheckBox = FindCheckBoxByLabel("词提编码下显");
                         if (ciTiDisplayCheckBox != null && ciTiDisplayCheckBox.IsChecked == true)
                             ciTiDisplayCheckBox.IsChecked = false;
+
+                        var ziTiBadgeCheckBox = FindCheckBoxByLabel("字提选重数字角标");
+                        if (ziTiBadgeCheckBox != null && ziTiBadgeCheckBox.IsChecked == true)
+                            ziTiBadgeCheckBox.IsChecked = false;
+                    };
+                }
+
+                if (itemKey == "字提选重数字角标")
+                {
+                    chk.Checked += (obj, evt) =>
+                    {
+                        var ziTiDisplayCheckBox = FindCheckBoxByLabel("字提编码下显");
+                        if (ziTiDisplayCheckBox != null && ziTiDisplayCheckBox.IsChecked == true)
+                            ziTiDisplayCheckBox.IsChecked = false;
                     };
                 }
 
@@ -3312,6 +3340,22 @@ namespace TypeSunny
             {
                 System.Diagnostics.Debug.WriteLine($"[Logo_SelectionChanged] 调用 ApplyCurrentLogo 失败: {ex.Message}");
             }
+
+            // 通知已打开的本地文章管理器同步 Logo。
+            try
+            {
+                foreach (Window window in Application.Current.Windows)
+                {
+                    if (window is WinArticle articleWindow)
+                    {
+                        articleWindow.RefreshTheme();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Logo_SelectionChanged] 刷新文章管理器Logo失败: {ex.Message}");
+            }
         }
 
 
@@ -3440,14 +3484,24 @@ namespace TypeSunny
             {
                 UpsertConfigValue(key, value, "启用词提", "是");
                 UpsertConfigValue(key, value, "字提编码下显", "否");
+                UpsertConfigValue(key, value, "词提选重数字角标", "否");
             }
+
+            int citiBadgeIndex = key.IndexOf("词提选重数字角标");
+            if (citiBadgeIndex >= 0 && value[citiBadgeIndex] == "是")
+                UpsertConfigValue(key, value, "词提编码下显", "否");
 
             int zitiIndex = key.IndexOf("字提编码下显");
             if (zitiIndex >= 0 && value[zitiIndex] == "是")
             {
                 UpsertConfigValue(key, value, "启用字提", "是");
                 UpsertConfigValue(key, value, "词提编码下显", "否");
+                UpsertConfigValue(key, value, "字提选重数字角标", "否");
             }
+
+            int zitiBadgeIndex = key.IndexOf("字提选重数字角标");
+            if (zitiBadgeIndex >= 0 && value[zitiBadgeIndex] == "是")
+                UpsertConfigValue(key, value, "字提编码下显", "否");
         }
 
         private static void UpsertConfigValue(List<string> key, List<string> value, string targetKey, string targetValue)
@@ -3485,11 +3539,21 @@ namespace TypeSunny
             {
                 Config.Set("启用词提", "是");
                 Config.Set("字提编码下显", "否");
+                Config.Set("词提选重数字角标", "否");
+            }
+            if (key == "词提选重数字角标" && value == "是")
+            {
+                Config.Set("词提编码下显", "否");
             }
             if (key == "字提编码下显" && value == "是")
             {
                 Config.Set("启用字提", "是");
                 Config.Set("词提编码下显", "否");
+                Config.Set("字提选重数字角标", "否");
+            }
+            if (key == "字提选重数字角标" && value == "是")
+            {
+                Config.Set("字提编码下显", "否");
             }
             if (key == "启用词提" && value == "否")
             {

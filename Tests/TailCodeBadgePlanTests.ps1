@@ -32,7 +32,7 @@ $paginatorCode = Get-Content -Path (Join-Path $root 'Core\Paginator.cs') -Raw
 $copybookModeCode = Get-Content -Path (Join-Path $root 'UI\Modes\CopybookMode.cs') -Raw
 $tracingModeCode = Get-Content -Path (Join-Path $root 'UI\Modes\TracingMode.cs') -Raw
 
-Assert-Contains 'config has CiTi selection-number badge default enabled' $configCode '"词提选重数字角标", "是"'
+Assert-Contains 'config has CiTi selection-number badge default disabled when CiTi lower display is enabled' $configCode '"词提选重数字角标", "否"'
 Assert-Contains 'config has ZiTi selection-number badge default enabled' $configCode '"字提选重数字角标", "是"'
 Assert-Contains 'WinConfig adds CiTi selection-number badge item' $winConfigCode '"词提选重数字角标"'
 Assert-Contains 'WinConfig adds ZiTi selection-number badge item' $winConfigCode '"字提选重数字角标"'

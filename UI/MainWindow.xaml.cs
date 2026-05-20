@@ -184,6 +184,8 @@ namespace TypeSunny.UI
         private Rect _restoreBounds = new Rect();
         private bool _isCustomMaximized = false;
         private string currentDifficultyText = "";
+        private bool _lastCodeDisplayEnabled;
+        private const double StateBackgroundVerticalOffsetRatio = 0.18;
 
         private enum UpdateLevel
         {
@@ -285,12 +287,8 @@ namespace TypeSunny.UI
             "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "'"
         };
 
-        private void UpdateDisplay(UpdateLevel updateLevel)
+        private void ApplyConfiguredCopybookOrTracingMode()
         {
-            // 行距过小会导致文字溢出背景，强制最小0.5
-            if (Config.GetDouble("行距") < 0.5)
-                Config.dicts["行距"] = "0.5";
-
             // 模式切换：先 Disable 旧模式，再 Enable 新模式，避免 Disable 覆盖 Enable 的隐藏操作
             bool copybookEnabled = Config.GetBool("字帖模式");
             bool tracingEnabled = Config.GetBool("临摹模式");
@@ -304,12 +302,28 @@ namespace TypeSunny.UI
                 _copybookMode.Enable();
             if (tracingEnabled && !_tracingMode.IsActive)
                 _tracingMode.Enable();
+        }
+
+        private void UpdateDisplay(UpdateLevel updateLevel)
+        {
+            // 行距过小会导致文字溢出背景，强制最小0.5
+            if (Config.GetDouble("行距") < 0.5)
+                Config.dicts["行距"] = "0.5";
+
+            ApplyConfiguredCopybookOrTracingMode();
 
             bool codeDisplayEnabled = IsCodeDisplayEnabled();
+            bool codeDisplayModeChanged = codeDisplayEnabled != _lastCodeDisplayEnabled;
+            _lastCodeDisplayEnabled = codeDisplayEnabled;
+            if (codeDisplayModeChanged)
+            {
+                TextInfo.BlocksStates.Clear();
+                TextInfo.Blocks.ForEach(t => TextInfo.BlocksStates.Add(WordStates.NO_TYPE));
+            }
             if (!codeDisplayEnabled)
                 ClearAllCodeLabelProgress();
 
-            if (IsLookingType && StateManager.LastType)
+            if (updateLevel < UpdateLevel.PageArrange && IsLookingType && StateManager.LastType)
             {
                 BlindDiff();
                 return;
@@ -334,7 +348,7 @@ namespace TypeSunny.UI
             }
             if (_tracingMode != null && _tracingMode.IsActive)
             {
-                _tracingMode.ScheduleInsertMirrorBlocks();
+                _tracingMode.RefreshMirrorBlocksNow();
                 _tracingMode.SyncCompositionPresentation();
             }
 
@@ -452,6 +466,7 @@ namespace TypeSunny.UI
                     ScDisplay.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
                     TextInfo.Blocks.Clear();
                     TextInfo.CodeLabels.Clear();
+                    TextInfo.StateBackgrounds.Clear();
 
 
 
@@ -705,27 +720,28 @@ namespace TypeSunny.UI
                     {
                         if (TextInfo.BlocksStates[i] != TextInfo.wordStates[TextInfo.PageStartIndex + i])
                         {
-                            switch (TextInfo.wordStates[TextInfo.PageStartIndex + i])
+                            var state = TextInfo.wordStates[TextInfo.PageStartIndex + i];
+                            switch (state)
                             {
                                 case WordStates.WRONG:
                                     // 盲打模式：不显示任何提示
                                     // 跟打模式：错字显示红色
-                                    TextInfo.Blocks[i].Background = IsBlindType ? null : Colors.IncorrectBackground;
+                                    SetDisplayBlockStateBackground(i, IsBlindType ? null : Colors.IncorrectBackground);
                                     break;
                                 case WordStates.RIGHT:
                                     // 盲打模式：不显示任何提示
                                     // 跟打模式：对的字显示绿色
-                                    TextInfo.Blocks[i].Background = IsBlindType ? null : Colors.CorrectBackground;
+                                    SetDisplayBlockStateBackground(i, IsBlindType ? null : Colors.CorrectBackground);
                                     break;
                                 case WordStates.NO_TYPE:
-                                    TextInfo.Blocks[i].Background = null;
+                                    SetDisplayBlockStateBackground(i, null);
                                     break;
                                 default:
                                     break;
 
                             }
 
-                            TextInfo.BlocksStates[i] = TextInfo.wordStates[TextInfo.PageStartIndex + i];
+                            TextInfo.BlocksStates[i] = state;
 
                         }
                     }
@@ -789,6 +805,7 @@ namespace TypeSunny.UI
                 ScDisplay.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
                 TextInfo.Blocks.Clear(); // 修复BUG：确保Blocks和显示区域同步清空
                 TextInfo.CodeLabels.Clear();
+                TextInfo.StateBackgrounds.Clear();
                 TextBlock tb = new TextBlock();
                 tb.FontSize = DisplayFontSize;
                 tb.FontFamily = GetCurrentFontFamily(); // new FontFamily(Config.GetString("字体"));
@@ -900,7 +917,7 @@ namespace TypeSunny.UI
         /// </summary>
         internal Brush GetCiTiForeground(int globalIndex)
         {
-            if (IsCiTiColorDisabled())
+            if (!Config.GetBool("启用词提") || IsCiTiColorDisabled())
                 return null;
 
             if (TryGetCiTiSegmentIndex(globalIndex, out int segIdx))
@@ -917,8 +934,7 @@ namespace TypeSunny.UI
         private bool TryGetCiTiSegmentIndex(int globalIndex, out int segIdx)
         {
             segIdx = -1;
-            if (!Config.GetBool("启用词提")
-                || globalIndex < 0
+            if (globalIndex < 0
                 || globalIndex >= TextInfo.CiTiSegmentIndices.Count)
                 return false;
 
@@ -928,7 +944,9 @@ namespace TypeSunny.UI
 
         internal bool IsCiTiBold(int globalIndex)
         {
-            return TryGetCiTiSegmentIndex(globalIndex, out int segIdx) && CiTiHelper.ShouldBold(segIdx);
+            return Config.GetBool("启用词提")
+                   && TryGetCiTiSegmentIndex(globalIndex, out int segIdx)
+                   && CiTiHelper.ShouldBold(segIdx);
         }
 
         internal Brush GetDisplayForeground(int globalIndex)
@@ -957,6 +975,49 @@ namespace TypeSunny.UI
                 textBlock.FontWeight = FontWeights.Normal;
         }
 
+        internal void SetDisplayBlockStateBackground(int localIndex, Brush background)
+        {
+            if (localIndex < 0 || localIndex >= TextInfo.Blocks.Count)
+                return;
+
+            var block = TextInfo.Blocks[localIndex];
+            if (block == null)
+                return;
+
+            if (IsCodeDisplayEnabled())
+            {
+                block.Background = null;
+                SetStateBackgroundOverlay(localIndex, background);
+            }
+            else
+            {
+                SetStateBackgroundOverlay(localIndex, null);
+                block.Background = background;
+            }
+        }
+
+        internal void SetDisplayBlockStateBackgroundByGlobalIndex(int globalIndex, Brush background)
+        {
+            SetDisplayBlockStateBackground(globalIndex - TextInfo.PageStartIndex, background);
+        }
+
+        internal double GetDisplayStateBackgroundTopOffset(TextBlock textBlock)
+        {
+            return (textBlock?.Padding.Top ?? 0) + DisplayFontSize * StateBackgroundVerticalOffsetRatio;
+        }
+
+        private static void SetStateBackgroundOverlay(int localIndex, Brush background)
+        {
+            if (localIndex < 0 || localIndex >= TextInfo.StateBackgrounds.Count)
+                return;
+
+            var stateBackground = TextInfo.StateBackgrounds[localIndex];
+            if (stateBackground == null)
+                return;
+
+            stateBackground.Background = background;
+        }
+
         internal FrameworkElement CreateDisplayElement(TextBlock textBlock, int globalIndex)
         {
             bool hasBadge = TryGetSelectionNumberBadgeDisplay(globalIndex, out string badgeText, out Brush badgeBrush);
@@ -979,6 +1040,17 @@ namespace TypeSunny.UI
                 Height = textBlock.Height,
                 ClipToBounds = false
             };
+            var stateBackground = new Border
+            {
+                Background = null,
+                Height = DisplayFontSize,
+                IsHitTestVisible = false,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, GetDisplayStateBackgroundTopOffset(textBlock), 0, 0)
+            };
+            Panel.SetZIndex(stateBackground, 0);
+            Panel.SetZIndex(textBlock, 1);
+            container.Children.Add(stateBackground);
             container.Children.Add(textBlock);
 
             string codeText = GetCodeDisplayText(globalIndex);
@@ -994,16 +1066,20 @@ namespace TypeSunny.UI
                 Height = DisplayFontSize * 0.55,
                 IsHitTestVisible = false,
                 VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(0, 0, 0, -DisplayFontSize * 0.35),
+                Margin = new Thickness(0, 0, 0, -DisplayFontSize * 0.25),
                 RenderTransformOrigin = new Point(0.5, 0.5),
                 RenderTransform = new ScaleTransform(1.0, 1.0)
             };
+            Panel.SetZIndex(codeTb, 2);
             container.Children.Add(codeTb);
 
             int localIdx = globalIndex - TextInfo.PageStartIndex;
             while (TextInfo.CodeLabels.Count <= localIdx)
                 TextInfo.CodeLabels.Add(null);
             TextInfo.CodeLabels[localIdx] = codeTb;
+            while (TextInfo.StateBackgrounds.Count <= localIdx)
+                TextInfo.StateBackgrounds.Add(null);
+            TextInfo.StateBackgrounds[localIdx] = stateBackground;
             ApplyCodeLabelFeedback(codeTb, globalIndex,
                 TextInfo.CodeLabelInputs.TryGetValue(globalIndex, out var typedText) ? typedText : "",
                 animate: false);
@@ -1109,6 +1185,23 @@ namespace TypeSunny.UI
             });
         }
 
+        internal void CommitCodeLabelProgress(int globalIndex, string typedText, bool isCorrect)
+        {
+            if (globalIndex < 0) return;
+            if (!IsCodeDisplayEnabled()) return;
+
+            string expectedCode = GetCodeDisplayText(globalIndex);
+            string committedText = CompositionCodeFeedback.GetCommittedLabelText(expectedCode, typedText, isCorrect);
+            if (string.IsNullOrEmpty(committedText))
+            {
+                if (isCorrect)
+                    ClearCodeLabelProgress(globalIndex);
+                return;
+            }
+
+            UpdateCodeLabelProgress(globalIndex, committedText);
+        }
+
         internal void ClearCodeLabelProgress(int globalIndex)
         {
             if (globalIndex < 0) return;
@@ -1155,9 +1248,28 @@ namespace TypeSunny.UI
         private bool IsCiTiNoSplitLineEnabled()
         {
             return Config.GetBool("词提不拆行")
-                   && Config.GetBool("启用词提")
                    && TextInfo.CiTiSegmentIndices.Count > 0
                    && TextInfo.CiTiSegments.Count > 0;
+        }
+
+        internal void RebuildCurrentPageDisplayElementsForTracingMeasurement()
+        {
+            TbDispay.Children.Clear();
+            TextInfo.CodeLabels.Clear();
+            TextInfo.StateBackgrounds.Clear();
+
+            if (IsCiTiNoSplitLineEnabled())
+            {
+                AddCiTiNoSplitLineDisplayElements();
+                return;
+            }
+
+            for (int i = 0; i < TextInfo.Blocks.Count; i++)
+            {
+                int globalIdx = TextInfo.PageStartIndex + i;
+                AddVisualLineBreakIfNeeded(globalIdx);
+                TbDispay.Children.Add(CreateDisplayElement(TextInfo.Blocks[i], globalIdx));
+            }
         }
 
         private void AddCiTiNoSplitLineDisplayElements()
@@ -1543,18 +1655,10 @@ namespace TypeSunny.UI
                 }
                 else if (_tracingMode != null && _tracingMode.IsActive)
                 {
-                    // 临摹模式：速度提示放在镜像行当前字的上方
-                    if (_tracingMode.TryGetMirrorBlockPosition(nextToType, out double mLeft, out double mTop, out double mHeight))
-                    {
-                        double lineSpacing = DisplayFontSize * Config.GetDouble("行距");
-                        AccLeft = mLeft;
-                        AccTop = mTop - lineSpacing * 1.1 + 0.5 * DisplayFontSize - ScDisplay.VerticalOffset;
-                    }
-                    else
-                    {
-                        AccLeft = blockLeft;
-                        AccTop = blockTop + blockHeight - ScDisplay.VerticalOffset;
-                    }
+                    // 临摹模式：速度提示放在发文行当前字上方，不跟到镜像跟打行。
+                    double lineSpacing = DisplayFontSize * Config.GetDouble("行距");
+                    AccLeft = blockLeft;
+                    AccTop = blockTop - lineSpacing * 1.1 + 0.5 * DisplayFontSize - ScDisplay.VerticalOffset;
                 }
                 else
                 {
@@ -2213,9 +2317,8 @@ namespace TypeSunny.UI
                 }
             }), System.Windows.Threading.DispatcherPriority.Loaded);
 
-            // 启动时检查字帖模式（此时可能还没有文章，Enable 会先隐藏跟打区）
-            if (Config.GetBool("字帖模式") && !_copybookMode.IsActive)
-                _copybookMode.Enable();
+            // 启动时检查字帖/临摹模式（此时可能还没有文章，Enable 会先隐藏跟打区）
+            ApplyConfiguredCopybookOrTracingMode();
         }
 
         private void ReadBlindType()
@@ -2262,26 +2365,7 @@ namespace TypeSunny.UI
             }
 
             // 重新加载词提数据（方案可能已更改）
-            if (Config.GetBool("启用词提") || Config.GetBool("词提编码下显"))
-            {
-                string citiScheme = Config.GetString("词提方案");
-                if (!string.IsNullOrEmpty(citiScheme))
-                {
-                    CiTiHelper.Initialize(citiScheme);
-                    // 如果当前有正在跟打的文章，重新计算词提分段
-                    if (CiTiHelper.IsLoaded && !string.IsNullOrEmpty(TextInfo.MatchText))
-                    {
-                        TextInfo.CiTiSegments = CiTiHelper.SplitText(TextInfo.MatchText);
-                        CiTiHelper.ComputeSegmentIndices();
-                    }
-                }
-            }
-            else
-            {
-                // 如果关闭了词提，清空相关缓存，确保界面刷新后不显示旧编码
-                TextInfo.CiTiSegments.Clear();
-                TextInfo.CiTiSegmentIndices.Clear();
-            }
+            ReloadCiTiSegmentsForCurrentText();
 
             StateManager.ConfigLoaded = false;
 
@@ -2443,7 +2527,7 @@ namespace TypeSunny.UI
             StateManager.ConfigLoaded = true;
             IntStringDict.Load();
 
-            UpdateDisplay(UpdateLevel.PageArrange);
+            ForceDisplayRebuildAfterConfigChange();
 
             // 主题切换后刷新字帖/临摹模式的光标颜色和位置
             if (_copybookMode != null && _copybookMode.IsActive)
@@ -2469,6 +2553,57 @@ namespace TypeSunny.UI
                     System.Diagnostics.Debug.WriteLine($"[ReloadCfg]强制刷新TopBarGrid背景色: {Config.GetString("窗体背景色")}");
                 }
             }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+
+        private bool ShouldLoadCiTiSegments()
+        {
+            return Config.GetBool("启用词提")
+                   || Config.GetBool("词提编码下显")
+                   || Config.GetBool("词提不拆行")
+                   || Config.GetBool("词提选重数字角标");
+        }
+
+        private void ReloadCiTiSegmentsForCurrentText()
+        {
+            TextInfo.CiTiSegments.Clear();
+            TextInfo.CiTiSegmentIndices.Clear();
+
+            if (!ShouldLoadCiTiSegments())
+                return;
+
+            string citiScheme = Config.GetString("词提方案");
+            if (string.IsNullOrEmpty(citiScheme))
+                return;
+
+            CiTiHelper.Initialize(citiScheme);
+            if (!CiTiHelper.IsLoaded)
+                return;
+
+            string currentText = GetCurrentCiTiSegmentSourceText();
+            if (string.IsNullOrEmpty(currentText))
+                return;
+
+            TextInfo.CiTiSegments = CiTiHelper.SplitText(currentText);
+            CiTiHelper.ComputeSegmentIndices();
+        }
+
+        private string GetCurrentCiTiSegmentSourceText()
+        {
+            if (TextInfo.Words.Count > 0)
+                return string.Concat(TextInfo.Words);
+
+            return TextInfo.MatchText ?? "";
+        }
+
+        private void ForceDisplayRebuildAfterConfigChange()
+        {
+            TbDispay.Children.Clear();
+            TextInfo.Blocks.Clear();
+            TextInfo.CodeLabels.Clear();
+            TextInfo.StateBackgrounds.Clear();
+            TextInfo.PageNum = -1;
+            TextInfo.BlocksStates.Clear();
+            UpdateDisplay(UpdateLevel.PageArrange);
         }
 
         /// <summary>
@@ -3323,6 +3458,7 @@ namespace TypeSunny.UI
             // 默认调整发文区字体（强制清空缓存重新渲染）
             TextInfo.Blocks.Clear();
             TextInfo.CodeLabels.Clear();
+            TextInfo.StateBackgrounds.Clear();
             TextInfo.PageNum = -1;
             TbDispay.Children.Clear();
             UpdateDisplay(UpdateLevel.Progress);
@@ -3336,10 +3472,6 @@ namespace TypeSunny.UI
                     _copybookMode.ScheduleUpdatePosition();
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
-
-            // 刷新临摹模式镜像行
-            if (_tracingMode != null && _tracingMode.IsActive)
-                _tracingMode.ScheduleInsertMirrorBlocks();
 
             System.Diagnostics.Debug.WriteLine($"发文区字体大小调整: {currentSize} -> {newSize}");
         }
@@ -4925,9 +5057,6 @@ namespace TypeSunny.UI
                 if (_copybookMode != null && _copybookMode.IsActive)
                     _copybookMode.ScheduleUpdatePosition();
 
-                if (_tracingMode != null && _tracingMode.IsActive)
-                    _tracingMode.ScheduleInsertMirrorBlocks();
-
                 if (focus)
                     FocusInput();
             }));
@@ -5843,7 +5972,7 @@ public async Task SendArticle()
 
             TextInfo.CiTiSegments.Clear();
             TextInfo.CiTiSegmentIndices.Clear();
-            if (Config.GetBool("启用词提") || Config.GetBool("词提编码下显"))
+            if (ShouldLoadCiTiSegments())
             {
                 string scheme = Config.GetString("词提方案");
                 if (!string.IsNullOrEmpty(scheme))
@@ -5863,6 +5992,7 @@ public async Task SendArticle()
             Dispatcher.Invoke(() => TbDispay.Children.Clear());
             TextInfo.Blocks.Clear();
             TextInfo.CodeLabels.Clear();
+            TextInfo.StateBackgrounds.Clear();
             TextInfo.CodeLabelInputs.Clear();
 
 
