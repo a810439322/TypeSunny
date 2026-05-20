@@ -135,6 +135,7 @@
     <Compile Include="Net\AccountSystemManager.cs" />
     <Compile Include="Net\JBS.cs" />
     <Compile Include="Net\JbsHelper.cs" />
+    <Compile Include="Net\JsRaceLoginState.cs" />
     <Compile Include="Net\JiSuCup.cs" />
     <Compile Include="Net\JiSuCupHelper.cs" />
     <Compile Include="Net\RaceAPI.cs" />

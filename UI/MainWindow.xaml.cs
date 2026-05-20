@@ -8486,8 +8486,7 @@ public async Task SendArticle()
         private void MenuItemLoadArticle_Click(object sender, RoutedEventArgs e) // 锦标赛载文
         {
             // 检查是否已登录
-            string displayName = Config.GetString("极速显示名称");
-            if (string.IsNullOrWhiteSpace(displayName))
+            if (!JsRaceLoginState.IsLoggedIn)
             {
                 MessageBox.Show("请先登录锦标赛账号", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -8542,8 +8541,7 @@ public async Task SendArticle()
         private void MenuItemJiSuLoadArticle_Click(object sender, RoutedEventArgs e)
         {
             // 检查是否已登录
-            string displayName = Config.GetString("极速杯显示名称");
-            if (string.IsNullOrWhiteSpace(displayName))
+            if (!JsRaceLoginState.IsLoggedIn)
             {
                 MessageBox.Show("请先登录极速杯账号", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -9296,7 +9294,7 @@ public async Task SendArticle()
 
         private void BtnJbs_Click(object sender, RoutedEventArgs e) //锦标赛
         {
-            jbs = new JBS(Config.GetString("极速用户名"), Config.GetPassword("极速密码"));
+            jbs = new JBS(JsRaceLoginState.Username, JsRaceLoginState.Password);
             string article = jbs.GetArticle();
             if (article != null && article.Length > 0)
             {

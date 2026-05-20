@@ -33,11 +33,16 @@ namespace Net
             this.jbsHelper = helper;
         }
 
+        public void ResetInstance()
+        {
+            jiSuCup = null;
+        }
+
         public JiSuCup GetInstance()
         {
             if (jiSuCup == null)
             {
-                jiSuCup = new JiSuCup(Config.GetString("极速杯用户名"), Config.GetPassword("极速杯密码"));
+                jiSuCup = new JiSuCup(JsRaceLoginState.Username, JsRaceLoginState.Password);
             }
             return jiSuCup;
         }
@@ -49,7 +54,7 @@ namespace Net
                 return;
             }
 
-            string displayName = Config.GetString("极速杯显示名称");
+            string displayName = JsRaceLoginState.DisplayName;
             if (!string.IsNullOrWhiteSpace(displayName))
             {
                 menuItemLogin.Header = $"已登录: {displayName}";
@@ -73,8 +78,7 @@ namespace Net
                 return;
             }
 
-            string displayName = Config.GetString("极速杯显示名称");
-            if (string.IsNullOrWhiteSpace(displayName))
+            if (!JsRaceLoginState.IsLoggedIn)
             {
                 // 未登录，禁用载文按钮
                 menuItemLoadArticle.Header = "载文(请先登录)";
@@ -115,7 +119,7 @@ namespace Net
 
             var txtUsername = new TextBox
             {
-                Text = Config.GetString("极速杯用户名"),
+                Text = JsRaceLoginState.Username,
                 Padding = new Thickness(5),
                 Margin = new Thickness(70, 0, 0, 0)
             };
@@ -128,7 +132,7 @@ namespace Net
 
             var txtPassword = new PasswordBox
             {
-                Password = Config.GetPassword("极速杯密码"),
+                Password = JsRaceLoginState.Password,
                 Padding = new Thickness(5),
                 Margin = new Thickness(70, 0, 0, 0)
             };
@@ -147,7 +151,8 @@ namespace Net
                 Content = "登录",
                 Width = 80,
                 Height = 30,
-                Margin = new Thickness(0, 0, 10, 0)
+                Margin = new Thickness(0, 0, 10, 0),
+                IsDefault = true
             };
 
             var btnCancel = new Button
@@ -180,10 +185,8 @@ namespace Net
 
                 if (response.ContainsKey("error") && response["error"].ToString() == "0")
                 {
-                    // 保存极速杯配置
-                    Config.Set("极速杯用户名", txtUsername.Text);
-                    Config.SetPassword("极速杯密码", txtPassword.Password);
-                    Config.Set("极速杯显示名称", jiSuCup.Username);
+                    // 保存锦标赛/极速杯共享登录态（两者同站同账号，保留旧配置键兼容）
+                    JsRaceLoginState.SaveLogin(txtUsername.Text, txtPassword.Password, jiSuCup.Username);
 
                     Config.WriteConfig(0);
 
@@ -192,6 +195,7 @@ namespace Net
                     // 同步更新锦标赛登录状态
                     if (jbsHelper != null)
                     {
+                        jbsHelper.ResetInstance();
                         jbsHelper.UpdateLoginStatus();
                         jbsHelper.UpdateArticleButtonStatus();
                     }
