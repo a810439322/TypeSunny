@@ -8,7 +8,7 @@ namespace TypeSunny.Tests
         {
             try
             {
-                InitialOpenSuppressesOneGroupSend();
+                InitialOpenAndLaterRefreshesDoNotSendToMainWindow();
                 ProgrammaticRefreshSuppressesEveryGroupSendInsideRefresh();
                 ProgrammaticRefreshDoesNotConsumeInitialOpenSuppression();
 
@@ -22,14 +22,14 @@ namespace TypeSunny.Tests
             }
         }
 
-        private static void InitialOpenSuppressesOneGroupSend()
+        private static void InitialOpenAndLaterRefreshesDoNotSendToMainWindow()
         {
             var policy = new TrainerAutoSendPolicy();
 
             policy.SuppressNextGroupSend();
 
             AssertFalse("initial group send", policy.ConsumeShouldSendToMainWindow());
-            AssertTrue("later user-driven group send", policy.ConsumeShouldSendToMainWindow());
+            AssertFalse("later user-driven group refresh", policy.ConsumeShouldSendToMainWindow());
         }
 
         private static void ProgrammaticRefreshSuppressesEveryGroupSendInsideRefresh()
@@ -43,7 +43,7 @@ namespace TypeSunny.Tests
 
             policy.EndProgrammaticRefresh();
 
-            AssertTrue("user-driven group send after refresh", policy.ConsumeShouldSendToMainWindow());
+            AssertFalse("user-driven group refresh after refresh", policy.ConsumeShouldSendToMainWindow());
         }
 
         private static void ProgrammaticRefreshDoesNotConsumeInitialOpenSuppression()
@@ -56,7 +56,7 @@ namespace TypeSunny.Tests
             policy.EndProgrammaticRefresh();
 
             AssertFalse("initial group send after refresh", policy.ConsumeShouldSendToMainWindow());
-            AssertTrue("subsequent user-driven group send", policy.ConsumeShouldSendToMainWindow());
+            AssertFalse("subsequent user-driven group refresh", policy.ConsumeShouldSendToMainWindow());
         }
 
         private static void AssertTrue(string name, bool condition)

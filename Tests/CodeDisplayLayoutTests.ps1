@@ -68,6 +68,8 @@ Assert-Contains 'tracing remove mirror should rebuild grouped current-page displ
 Assert-NotContains 'glyph feedback should not replace glyphs with inline UI containers' $mainCode 'new InlineUIContainer'
 Assert-NotContains 'glyph feedback should not use compressed highlight height' $mainCode 'GlyphHighlightHeightRatio'
 Assert-NotContains 'glyph feedback should not use full font inline Run background' $mainCode 'run.Background = background'
+Assert-Contains 'lower code display should route its brush through contrast adaptation' $mainCode 'GetReadableCodeDisplayBrush'
+Assert-Contains 'lower code display should compare against the display background' $mainCode 'ThemeColorHelper.CreateReadableForegroundBrush'
 Assert-NotContains 'main progress should not paint full-height incorrect block backgrounds in code display mode' $mainCode 'TextInfo.Blocks[i].Background = IsBlindType ? null : Colors.IncorrectBackground'
 Assert-NotContains 'main progress should not paint full-height correct block backgrounds in code display mode' $mainCode 'TextInfo.Blocks[i].Background = IsBlindType ? null : Colors.CorrectBackground'
 Assert-NotContains 'copybook should not paint full-height correct block backgrounds' $copybook 'TextInfo.Blocks[_currentIndex].Background = Colors.CorrectBackground'

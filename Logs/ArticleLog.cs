@@ -195,6 +195,7 @@ namespace TypeSunny.Logs
             public double SumCorrection { get; set; }
             public int TotalBacks { get; set; }
             public int TotalWords { get; set; }
+            public int TotalInputWords { get; set; }
             public double MaxSpeed { get; set; }
             public double MinSpeed { get; set; }
             public DateTime LastUpdateTime { get; set; }
@@ -263,6 +264,7 @@ namespace TypeSunny.Logs
             public double MaxSpeed { get; set; }        // 最高速
             public double MinSpeed { get; set; }        // 最低速
             public int TotalWords { get; set; }         // 总字数
+            public int TotalInputWords { get; set; }    // 实际输入字数
         }
 
         /// <summary>
@@ -279,6 +281,7 @@ namespace TypeSunny.Logs
             public double SumCorrection { get; set; }
             public int TotalBacks { get; set; }
             public int TotalWords { get; set; }
+            public int TotalInputWords { get; set; }
             public double MaxSpeed { get; set; }
             public double MinSpeed { get; set; }
         }

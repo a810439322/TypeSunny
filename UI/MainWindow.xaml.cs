@@ -1117,7 +1117,7 @@ namespace TypeSunny.UI
                 Margin = new Thickness(0),
                 IsHitTestVisible = false,
                 TextAlignment = TextAlignment.Center,
-                Foreground = badgeBrush ?? Colors.DisplayForeground ?? Brushes.Black
+                Foreground = GetReadableCodeDisplayBrush(badgeBrush ?? Colors.DisplayForeground ?? Brushes.Black)
             });
         }
 
@@ -1492,10 +1492,23 @@ namespace TypeSunny.UI
 
         internal Brush GetCodeDisplayColor(int globalIndex)
         {
-            if (!IsFullCiTiCodeDisplayEnabled())
-                return Brushes.Black;
+            Brush codeBrush = IsFullCiTiCodeDisplayEnabled()
+                ? GetCiTiDisplayColor(globalIndex)
+                : Colors.DisplayForeground ?? Brushes.Black;
 
-            return GetCiTiDisplayColor(globalIndex);
+            return GetReadableCodeDisplayBrush(codeBrush);
+        }
+
+        private Brush GetReadableCodeDisplayBrush(Brush brush)
+        {
+            Brush fallbackBrush = Colors.DisplayForeground ?? Brushes.Black;
+            if (!(brush is SolidColorBrush foregroundBrush))
+                return brush ?? fallbackBrush;
+
+            if (!(BdDisplay?.Background is SolidColorBrush backgroundBrush))
+                return brush;
+
+            return ThemeColorHelper.CreateReadableForegroundBrush(foregroundBrush, backgroundBrush);
         }
 
         private Brush GetCiTiDisplayColor(int globalIndex)
@@ -1766,7 +1779,11 @@ namespace TypeSunny.UI
                 if (StateManager.typingState == TypingState.typing && sw.IsRunning)
                 {
                     // 计算当前输入的字数
-                    int inputWordCount = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
+                    int inputWordCountSnapshot = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
+                    int inputWordCount = StopInputWordCountPolicy.Resolve(
+                        StateManager.txtSource,
+                        Score.InputWordCount,
+                        inputWordCountSnapshot);
 
                     // 计算已用时间（秒）
                     double timeSeconds = sw.Elapsed.TotalSeconds;
@@ -1785,7 +1802,6 @@ namespace TypeSunny.UI
                         accuracy = (double)correctCount / inputWordCount;
                     }
 
-                    // 记录部分进度
                     winTrainer.RecordPartialProgress(inputWordCount, timeSeconds, accuracy);
                 }
 
@@ -2138,7 +2154,9 @@ namespace TypeSunny.UI
         {
 
 
-            MainBorder.Background = Colors.FromString(Config.GetString("窗体背景色"));
+            var windowBackground = Colors.FromString(Config.GetString("窗体背景色"));
+            MainBorder.Background = windowBackground;
+            MainBorder.BorderBrush = ThemeColorHelper.CreateSubtleBorderBrush(windowBackground);
             this.Foreground = Colors.FromString(Config.GetString("窗体字体色"));
             BdDisplay.Background = Colors.FromString(Config.GetString("跟打区背景色"));
             Colors.DisplayForeground = Colors.FromString(Config.GetString("发文区字体色"));
@@ -2372,7 +2390,9 @@ namespace TypeSunny.UI
             // 同步赛文服务器地址到 RaceServerManager
             raceHelperV2?.GetServerManager()?.SyncDefaultServerUrl();
 
-            MainBorder.Background = Colors.FromString(Config.GetString("窗体背景色"));
+            var windowBackground = Colors.FromString(Config.GetString("窗体背景色"));
+            MainBorder.Background = windowBackground;
+            MainBorder.BorderBrush = ThemeColorHelper.CreateSubtleBorderBrush(windowBackground);
             this.Foreground = Colors.FromString(Config.GetString("窗体字体色"));
             BdDisplay.Background = Colors.FromString(Config.GetString("跟打区背景色"));
             Colors.DisplayForeground = Colors.FromString(Config.GetString("发文区字体色"));
@@ -2528,6 +2548,7 @@ namespace TypeSunny.UI
             IntStringDict.Load();
 
             ForceDisplayRebuildAfterConfigChange();
+            UpdateZiTi();
 
             // 主题切换后刷新字帖/临摹模式的光标颜色和位置
             if (_copybookMode != null && _copybookMode.IsActive)
@@ -3982,6 +4003,7 @@ namespace TypeSunny.UI
 
                 await Dispatcher.InvokeAsync(() => { TbxInput.IsReadOnly = true; });
                 StateManager.typingState = TypingState.end;
+                UpdateMouseCursorForTypingState();
                 sw.Stop();
                 // 停止字提定时器
                 StopZiTiTimer();
@@ -3992,7 +4014,12 @@ namespace TypeSunny.UI
 
                 string tbxInputText = "";
                 await Dispatcher.InvokeAsync(() => { tbxInputText = TbxInput.Text; });
-                Score.InputWordCount = new System.Globalization.StringInfo(tbxInputText).LengthInTextElements;
+                int scoreInputWordsBeforeRefresh = Score.InputWordCount;
+                int tbxInputTextElements = new System.Globalization.StringInfo(tbxInputText).LengthInTextElements;
+                Score.InputWordCount = StopInputWordCountPolicy.Resolve(
+                    savedTxtSource,
+                    scoreInputWordsBeforeRefresh,
+                    tbxInputTextElements);
                 savedInputWords = Score.InputWordCount; // 更新保存的输入字数
 
                 //计算错字
@@ -5136,12 +5163,7 @@ public async Task SendArticle()
                 // 启动 - TextInput 事件中也需触发计时开始（兼容某些输入法）
                 if (StateManager.typingState == TypingState.pause || StateManager.typingState == TypingState.ready)
                 {
-                    if (StateManager.typingState == TypingState.ready && StateManager.retypeType != RetypeType.wrongRetype)
-                        RetypeCounter.Add(TextInfo.TextMD5, 1);
-
-                    sw.Start();
-                    StateManager.typingState = TypingState.typing;
-                    timerProgress = new Timer(timerUpdateProgress, null, 0, 250);
+                    StartTypingSessionFromInput();
                 }
 
                 // 分析打词率
@@ -5303,6 +5325,45 @@ public async Task SendArticle()
             return false;
         }
 
+        private void UpdateMouseCursorForTypingState()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(UpdateMouseCursorForTypingState));
+                return;
+            }
+
+            Cursor = StateManager.typingState == TypingState.typing ? Cursors.None : Cursors.Arrow;
+            Mouse.OverrideCursor = StateManager.typingState == TypingState.typing ? Cursors.None : null;
+        }
+
+        private void StartTypingSessionFromInput()
+        {
+            if (StateManager.typingState != TypingState.pause && StateManager.typingState != TypingState.ready)
+                return;
+
+            if (StateManager.typingState == TypingState.ready && StateManager.retypeType != RetypeType.wrongRetype)
+                RetypeCounter.Add(TextInfo.TextMD5, 1);
+
+            sw.Start();
+            StateManager.typingState = TypingState.typing;
+            UpdateMouseCursorForTypingState();
+            timerProgress = new Timer(timerUpdateProgress, null, 0, 250);
+        }
+
+        private void PauseTypingSession()
+        {
+            if (StateManager.typingState != TypingState.typing)
+                return;
+
+            StateManager.typingState = TypingState.pause;
+            UpdateMouseCursorForTypingState();
+            TbkStatusTop.Text = "暂停\t" + TbkStatusTop.Text;
+            sw.Stop();
+            if (timerProgress != null)
+                timerProgress.Dispose();
+        }
+
         /// <summary>
         /// 按键统计（从 InputBox_PreviewKeyDown 抽取，字帖模式复用）
         /// </summary>
@@ -5317,11 +5378,7 @@ public async Task SendArticle()
             {
                 if (StateManager.typingState == TypingState.typing)
                 {
-                    StateManager.typingState = TypingState.pause;
-                    TbkStatusTop.Text = "暂停\t" + TbkStatusTop.Text;
-                    sw.Stop();
-                    if (timerProgress != null)
-                        timerProgress.Dispose();
+                    PauseTypingSession();
                 }
                 return;
             }
@@ -5338,12 +5395,7 @@ public async Task SendArticle()
             // 启动 - 只有按下有效输入键才开始计时
             if ((StateManager.typingState == TypingState.pause || StateManager.typingState == TypingState.ready) && IsValidInputKey(e.Key))
             {
-                if (StateManager.typingState == TypingState.ready && StateManager.retypeType != RetypeType.wrongRetype)
-                    RetypeCounter.Add(TextInfo.TextMD5, 1);
-
-                sw.Start();
-                StateManager.typingState = TypingState.typing;
-                timerProgress = new Timer(timerUpdateProgress, null, 0, 250);
+                StartTypingSessionFromInput();
             }
 
             Score.Hit++;
@@ -6003,6 +6055,7 @@ public async Task SendArticle()
             if (TextInfo.Words.Count > 0)
             {
                 StateManager.typingState = TypingState.ready;
+                UpdateMouseCursorForTypingState();
                 StateManager.LastType = false;
                 // 重置最后输入时间（用于赛文字提5秒限制）
                 StateManager.LastInputTime = DateTime.Now;
@@ -6371,12 +6424,7 @@ public async Task SendArticle()
             if ((StateManager.typingState == TypingState.pause || StateManager.typingState == TypingState.ready)
                 && e.Changes.Count > 0 && e.Changes.First().AddedLength > 0)
             {
-                if (StateManager.typingState == TypingState.ready && StateManager.retypeType != RetypeType.wrongRetype)
-                    RetypeCounter.Add(TextInfo.TextMD5, 1);
-
-                sw.Start();
-                StateManager.typingState = TypingState.typing;
-                timerProgress = new Timer(timerUpdateProgress, null, 0, 250);
+                StartTypingSessionFromInput();
             }
 
             // 更新最后输入时间（用于赛文字提5秒限制）
@@ -6468,7 +6516,9 @@ public async Task SendArticle()
             // 强制刷新窗体背景色和字体色（确保主题生效）
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                MainBorder.Background = Colors.FromString(Config.GetString("窗体背景色"));
+                var windowBackground = Colors.FromString(Config.GetString("窗体背景色"));
+                MainBorder.Background = windowBackground;
+                MainBorder.BorderBrush = ThemeColorHelper.CreateSubtleBorderBrush(windowBackground);
                 this.Foreground = Colors.FromString(Config.GetString("窗体字体色"));
 
                 // 应用自定义标题栏背景色
@@ -6996,7 +7046,11 @@ public async Task SendArticle()
                 if (StateManager.typingState == TypingState.typing && sw.IsRunning)
                 {
                     // 计算当前输入的字数
-                    int inputWordCount = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
+                    int inputWordCountSnapshot = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
+                    int inputWordCount = StopInputWordCountPolicy.Resolve(
+                        StateManager.txtSource,
+                        Score.InputWordCount,
+                        inputWordCountSnapshot);
 
                     // 计算已用时间（秒）
                     double timeSeconds = sw.Elapsed.TotalSeconds;
@@ -7014,7 +7068,6 @@ public async Task SendArticle()
                         accuracy = (double)correctCount / inputWordCount;
                     }
 
-                    // 记录部分进度
                     winTrainer.RecordPartialProgress(inputWordCount, timeSeconds, accuracy);
                 }
 
@@ -9321,11 +9374,7 @@ public async Task SendArticle()
                     (byte)Math.Min(255, bgBrush.Color.G + 20),
                     (byte)Math.Min(255, bgBrush.Color.B + 20)
                 ));
-                var borderBrush = new SolidColorBrush(Color.FromRgb(
-                    (byte)Math.Max(0, bgBrush.Color.R - 30),
-                    (byte)Math.Max(0, bgBrush.Color.G - 30),
-                    (byte)Math.Max(0, bgBrush.Color.B - 30)
-                ));
+                var borderBrush = ThemeColorHelper.CreateSubtleBorderBrush(bgBrush);
                 var hoverBrush = new SolidColorBrush(Color.FromRgb(
                     (byte)Math.Min(255, buttonBgBrush.Color.R + 15),
                     (byte)Math.Min(255, buttonBgBrush.Color.G + 15),
@@ -9692,12 +9741,8 @@ public async Task SendArticle()
             {
                 if (StateManager.typingState == TypingState.typing)
                 {
-                    StateManager.typingState = TypingState.pause;
-                    TbkStatusTop.Text = "暂停\t" + TbkStatusTop.Text;
-                    sw.Stop();
+                    PauseTypingSession();
                     //              Recorder.Stop();
-                    if (timerProgress != null)
-                        timerProgress.Dispose();
                 }
 
             }

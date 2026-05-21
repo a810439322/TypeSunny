@@ -38,6 +38,9 @@ namespace TypeSunny
         // 互斥模式的 CheckBox 引用
         private CheckBox _copybookCheckBox;
         private CheckBox _tracingCheckBox;
+        private System.Windows.Threading.DispatcherTimer _configSavedRefreshTimer;
+        private bool _hasPendingConfigSavedRefresh;
+        private readonly List<Action> _categoryFallbackSaves = new List<Action>();
 
         // 配置分类数据结构
         private class ConfigCategory
@@ -420,6 +423,7 @@ namespace TypeSunny
             if (button == null) return;
 
             int categoryIndex = (int)button.Tag;
+            SaveCurrentCategoryControls();
 
             // 更新导航按钮样式
             UpdateNavButtonStyles(categoryIndex);
@@ -481,6 +485,7 @@ namespace TypeSunny
             // 清空内容区
             ContentPanel.Children.Clear();
             ContentPanel.RowDefinitions.Clear();
+            _categoryFallbackSaves.Clear();
 
             // 添加分类标题
             var titleBlock = new TextBlock
@@ -1449,6 +1454,7 @@ namespace TypeSunny
                 resetBtn.Click += (s, e) =>
                 {
                     tb.Text = "https://qingfawen.fcxxz.com/";
+                    SaveConfigValue(itemKey, tb.Text);
                 };
                 panel.Children.Add(resetBtn);
 
@@ -1477,6 +1483,7 @@ namespace TypeSunny
                 valueControl = tb;
             }
 
+            AttachAutoSave(itemKey, valueControl);
             return valueControl;
         }
 
@@ -1813,6 +1820,7 @@ namespace TypeSunny
                             }
                         }
 
+                        cb.SelectionChanged += (s, e) => SaveWenlaiDifficultySelection(cb);
                         container.Children.Add(cb);
                     }
                 });
@@ -1875,6 +1883,7 @@ namespace TypeSunny
                             cb.SelectedIndex = match.Key;
                     }
 
+                    cb.SelectionChanged += (s, e) => SaveWenlaiCategorySelection(cb);
                     container.Children.Add(cb);
                 });
             }
@@ -1890,6 +1899,25 @@ namespace TypeSunny
                         Margin = new Thickness(0, 8, 0, 8)
                     });
                 });
+            }
+        }
+
+        private void SaveWenlaiDifficultySelection(ComboBox comboBox)
+        {
+            if (comboBox?.Tag is Dictionary<int, int> difficultyMapping &&
+                difficultyMapping.ContainsKey(comboBox.SelectedIndex))
+            {
+                int difficultyId = difficultyMapping[comboBox.SelectedIndex];
+                SaveConfigValue("文来难度", difficultyId == 0 ? "" : difficultyId.ToString());
+            }
+        }
+
+        private void SaveWenlaiCategorySelection(ComboBox comboBox)
+        {
+            if (comboBox?.Tag is Dictionary<int, string> codeMapping &&
+                codeMapping.ContainsKey(comboBox.SelectedIndex))
+            {
+                SaveConfigValue("文来分类", codeMapping[comboBox.SelectedIndex] ?? "");
             }
         }
 
@@ -2312,11 +2340,15 @@ namespace TypeSunny
                 Background = inputBg,
                 Foreground = inputFg
             };
-            retryBox.TextChanged += (s, e) =>
+            AttachTextBoxAutoSave(
+                retryBox,
+                "过滤_文来最大重试",
+                canSave: text => int.TryParse(text, out int val) && val >= 1 && val <= 50);
+            AddCategoryFallbackSave(() =>
             {
                 if (int.TryParse(retryBox.Text, out int val) && val >= 1 && val <= 50)
-                    Config.Set("过滤_文来最大重试", retryBox.Text);
-            };
+                    SaveConfigValue("过滤_文来最大重试", retryBox.Text, scheduleRefresh: false);
+            });
             retryPanel.Children.Add(retryBox);
             var retryHint = new TextBlock
             {
@@ -2552,9 +2584,15 @@ namespace TypeSunny
             var capturedBox1 = box1;
             box1.TextChanged += (s, e) =>
             {
-                Config.Set(capturedKey1, RegexFilter.EncodeMultiline(capturedBox1.Text));
                 RestartPreviewTimer();
             };
+            AttachTextBoxAutoSave(
+                capturedBox1,
+                capturedKey1,
+                text => RegexFilter.EncodeMultiline(text),
+                canSave: null);
+            AddCategoryFallbackSave(() =>
+                SaveConfigValue(capturedKey1, RegexFilter.EncodeMultiline(capturedBox1.Text), scheduleRefresh: false));
             contentWrapper.Children.Add(box1);
 
             // Box 2: 替换（左右双框）
@@ -2610,6 +2648,7 @@ namespace TypeSunny
 
             // 从 config 解析 => 格式，拆成左右
             LoadDualBoxes(configKey2, leftBox, rightBox);
+            leftBox.Tag = rightBox;
 
             var capturedKey2 = configKey2;
             bool updating = false;
@@ -2617,12 +2656,15 @@ namespace TypeSunny
             {
                 if (updating) return;
                 updating = true;
-                SaveDualBoxes(capturedKey2, leftBox, rightBox);
                 RestartPreviewTimer();
                 updating = false;
             };
             leftBox.TextChanged += syncHandler;
             rightBox.TextChanged += syncHandler;
+            RoutedEventHandler saveDualHandler = (s, e) => SaveDualBoxes(capturedKey2, leftBox, rightBox);
+            leftBox.LostFocus += saveDualHandler;
+            rightBox.LostFocus += saveDualHandler;
+            AddCategoryFallbackSave(() => SaveDualBoxes(capturedKey2, leftBox, rightBox));
 
             Grid.SetColumn(leftBox, 0);
             Grid.SetColumn(rightBox, 2);
@@ -2669,6 +2711,11 @@ namespace TypeSunny
 
         private void SaveDualBoxes(string configKey, TextBox leftBox, TextBox rightBox)
         {
+            SaveConfigValue(configKey, RegexFilter.EncodeMultiline(BuildDualBoxesText(leftBox, rightBox)), scheduleRefresh: false);
+        }
+
+        private string BuildDualBoxesText(TextBox leftBox, TextBox rightBox)
+        {
             var leftLines = leftBox.Text.Split('\n');
             var rightLines = rightBox.Text.Split('\n');
             int count = Math.Max(leftLines.Length, rightLines.Length);
@@ -2683,7 +2730,7 @@ namespace TypeSunny
                 else
                     result.Add(left + "=>" + right);
             }
-            Config.Set(configKey, RegexFilter.EncodeMultiline(string.Join("\n", result)));
+            return string.Join("\n", result);
         }
 
         private void RestartPreviewTimer()
@@ -2742,9 +2789,8 @@ namespace TypeSunny
 
             string bkKwText = (bkKw.Tag is true) ? "" : bkKw.Text;
             string bkRxText = (bkRx.Tag is true) ? "" : bkRx.Text;
-            // 替换规则从 config 读取（已包含 => 格式）
-            string rpKwText = RegexFilter.DecodeMultiline(Config.GetString("过滤_替换关键词"));
-            string rpRxText = RegexFilter.DecodeMultiline(Config.GetString("过滤_替换正则"));
+            string rpKwText = GetDualBoxesPreviewText(rpKw, "过滤_替换关键词");
+            string rpRxText = GetDualBoxesPreviewText(rpRx, "过滤_替换正则");
 
             var result = RegexFilter.Preview(text, bkKwText, rpKwText, bkRxText, rpRxText);
 
@@ -2786,6 +2832,14 @@ namespace TypeSunny
                 });
                 output.Document.Blocks.Add(para);
             }
+        }
+
+        private string GetDualBoxesPreviewText(TextBox leftBox, string configKey)
+        {
+            if (leftBox != null && leftBox.Tag is TextBox rightBox)
+                return BuildDualBoxesText(leftBox, rightBox);
+
+            return RegexFilter.DecodeMultiline(Config.GetString(configKey));
         }
 
         // 强制显示的成绩项（勾选不可取消，但可参与排序）
@@ -3401,6 +3455,9 @@ namespace TypeSunny
                     var wpfColor = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#" + colorHex);
                     btn.Background = new SolidColorBrush(wpfColor);
                     btn.Content = colorHex;
+                    string colorKey = btn.Tag?.ToString();
+                    if (!string.IsNullOrEmpty(colorKey))
+                        SaveConfigValue(colorKey, colorHex, scheduleRefresh: false);
 
                     // 用户修改了颜色，自动切换到自定义模式
                     // 查找主题模式的 ComboBox
@@ -3438,42 +3495,201 @@ namespace TypeSunny
             }
         }
 
-        private void Cancel_Click(object sender, RoutedEventArgs e)
-        {
-            this.Close();
-        }
-
         public delegate void DelegateConfigSaved();
 
         public event DelegateConfigSaved ConfigSaved;
-        private void Save_Click(object sender, RoutedEventArgs e)
+
+        private static readonly HashSet<string> AutoSaveSkipItems = new HashSet<string>
         {
-            List<string> key = new List<string>();
-            List<string> value = new List<string>();
+            "主题模式",
+            "当前Logo",
+            "成绩显示时间",
+            "当前版本",
+            "最新版本",
+            "修复安装",
+            "软件更新Q群",
+            "作者邮箱QQ"
+        };
+
+        private void AttachAutoSave(string itemKey, FrameworkElement valueControl)
+        {
+            if (valueControl == null || string.IsNullOrEmpty(itemKey) || AutoSaveSkipItems.Contains(itemKey))
+                return;
+
+            if (valueControl is TextBox textBox)
+            {
+                AttachTextBoxAutoSave(textBox, itemKey);
+            }
+            else if (valueControl is CheckBox checkBox)
+            {
+                AttachCheckBoxAutoSave(checkBox, itemKey);
+            }
+            else if (valueControl is ComboBox comboBox)
+            {
+                AttachComboBoxAutoSave(comboBox, itemKey);
+            }
+            else if (valueControl is StackPanel panel &&
+                     (itemKey == "文来接口地址" || itemKey == "赛文服务器地址"))
+            {
+                var nestedTextBox = panel.Children.OfType<TextBox>().FirstOrDefault();
+                if (nestedTextBox != null)
+                    AttachTextBoxAutoSave(nestedTextBox, itemKey);
+            }
+        }
+
+        private void AttachTextBoxAutoSave(TextBox textBox, string itemKey,
+            Func<string, string> normalize = null,
+            Func<string, bool> canSave = null)
+        {
+            if (textBox == null || textBox.IsReadOnly)
+                return;
+
+            Action save = () =>
+            {
+                string text = textBox.Text ?? "";
+                if (canSave != null && !canSave(text))
+                    return;
+
+                string value = normalize != null ? normalize(text) : text;
+                SaveConfigValue(itemKey, value);
+            };
+
+            textBox.LostFocus += (s, e) => save();
+            textBox.KeyDown += (s, e) =>
+            {
+                if (!textBox.AcceptsReturn && e.Key == Key.Enter)
+                {
+                    save();
+                    e.Handled = true;
+                    Keyboard.ClearFocus();
+                }
+            };
+        }
+
+        private void AttachCheckBoxAutoSave(CheckBox checkBox, string itemKey)
+        {
+            if (checkBox == null)
+                return;
+
+            checkBox.Checked += (s, e) => SaveConfigValue(itemKey, "是");
+            checkBox.Unchecked += (s, e) => SaveConfigValue(itemKey, "否");
+        }
+
+        private void AttachComboBoxAutoSave(ComboBox comboBox, string itemKey)
+        {
+            if (comboBox == null)
+                return;
+
+            comboBox.SelectionChanged += (s, e) => SaveControlValue(comboBox, itemKey);
+        }
+
+        private void SaveControlValue(FrameworkElement control, string labelText)
+        {
+            if (control == null || string.IsNullOrEmpty(labelText))
+                return;
+
+            var key = new List<string>();
+            var value = new List<string>();
+            ExtractControlValue(control, labelText, key, value);
+            ApplyCodeDisplayMutualExclusion(key, value);
+            SaveChangedConfigValues(key, value);
+        }
+
+        private void SaveCurrentCategoryControls()
+        {
+            if (ContentPanel == null)
+                return;
+
+            var key = new List<string>();
+            var value = new List<string>();
 
             foreach (var item in ContentPanel.Children)
             {
                 if (!(item is FrameworkElement fe)) continue;
 
-                // 只处理值列的控件（Column = 1）
                 int colIndex = (int)fe.GetValue(Grid.ColumnProperty);
                 if (colIndex != 1) continue;
 
                 int rowIndex = (int)fe.GetValue(Grid.RowProperty);
-
-                // 查找同一行标签列的 TextBlock（Column = 0）
                 string labelText = FindLabelInContentPanel(rowIndex, 0);
                 if (string.IsNullOrEmpty(labelText)) continue;
 
-                // 根据控件类型提取值
                 ExtractControlValue(item, labelText, key, value);
             }
 
             ApplyCodeDisplayMutualExclusion(key, value);
-            bool modified = SaveChangedConfigValues(key, value);
-            if (modified)
+            SaveChangedConfigValues(key, value);
+
+            foreach (var save in _categoryFallbackSaves.ToArray())
             {
-                ConfigSaved();
+                try
+                {
+                    save();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"设置页兜底保存失败: {ex.Message}");
+                }
+            }
+        }
+
+        private void AddCategoryFallbackSave(Action save)
+        {
+            if (save != null)
+                _categoryFallbackSaves.Add(save);
+        }
+
+        private bool SaveConfigValue(string key, string value, bool scheduleRefresh = true)
+        {
+            if (string.IsNullOrEmpty(key))
+                return false;
+
+            value = value ?? "";
+            if (value == Config.GetString(key))
+                return false;
+
+            Config.Set(key, value);
+            SaveCodeDisplayMutualExclusion(key, value);
+
+            if (scheduleRefresh)
+                ScheduleConfigSavedRefresh();
+
+            return true;
+        }
+
+        private void ScheduleConfigSavedRefresh()
+        {
+            if (ConfigSaved == null)
+                return;
+
+            if (_configSavedRefreshTimer == null)
+            {
+                _configSavedRefreshTimer = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(350)
+                };
+                _configSavedRefreshTimer.Tick += (s, e) =>
+                {
+                    _configSavedRefreshTimer.Stop();
+                    _hasPendingConfigSavedRefresh = false;
+                    ConfigSaved?.Invoke();
+                };
+            }
+
+            _hasPendingConfigSavedRefresh = true;
+            _configSavedRefreshTimer.Stop();
+            _configSavedRefreshTimer.Start();
+        }
+
+        private void FlushConfigSavedRefresh()
+        {
+            if (_configSavedRefreshTimer != null)
+                _configSavedRefreshTimer.Stop();
+
+            if (_hasPendingConfigSavedRefresh)
+            {
+                _hasPendingConfigSavedRefresh = false;
+                ConfigSaved?.Invoke();
             }
         }
 
@@ -3517,17 +3733,13 @@ namespace TypeSunny
             value.Add(targetValue);
         }
 
-        private static bool SaveChangedConfigValues(List<string> key, List<string> value)
+        private bool SaveChangedConfigValues(List<string> key, List<string> value)
         {
             bool modified = false;
             for (int i = 0; i < key.Count; i++)
             {
-                if (value[i] != Config.GetString(key[i]))
-                {
+                if (SaveConfigValue(key[i], value[i]))
                     modified = true;
-                    Config.Set(key[i], value[i]);
-                    SaveCodeDisplayMutualExclusion(key[i], value[i]);
-                }
             }
 
             return modified;
@@ -3758,47 +3970,9 @@ namespace TypeSunny
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            List<string> key = new List<string>();
-            List<string> value = new List<string>();
-
-            foreach (var item in ContentPanel.Children)
-            {
-                if (!(item is FrameworkElement fe)) continue;
-
-                // 只处理值列的控件（Column = 1）
-                int colIndex = (int)fe.GetValue(Grid.ColumnProperty);
-                if (colIndex != 1) continue;
-
-                int rowIndex = (int)fe.GetValue(Grid.RowProperty);
-
-                // 查找同一行标签列的 TextBlock（Column = 0）
-                string labelText = FindLabelInContentPanel(rowIndex, 0);
-                if (string.IsNullOrEmpty(labelText)) continue;
-
-                // 根据控件类型提取值
-                ExtractControlValue(item, labelText, key, value);
-            }
-
-            ApplyCodeDisplayMutualExclusion(key, value);
-            bool modified = false;
-            for (int i = 0; i < key.Count; i++)
-            {
-                if (value[i] != Config.GetString(key[i]))
-                {
-                    modified = true;
-                }
-            }
-            if (modified)
-            {
-                if (MessageBox.Show("设置已修改，是否保存？",
-                                    "保存设置",
-                                    MessageBoxButton.YesNo,
-                                    MessageBoxImage.Question) == MessageBoxResult.Yes)
-                {
-                    if (SaveChangedConfigValues(key, value))
-                        ConfigSaved();
-                }
-            }
+            SaveCurrentCategoryControls();
+            FlushConfigSavedRefresh();
+            Config.WriteConfig(0);
         }
 
         /// <summary>
@@ -4087,6 +4261,7 @@ namespace TypeSunny
 
                 // 应用到主边框
                 MainBorder.Background = bgBrush;
+                MainBorder.BorderBrush = ThemeColorHelper.CreateSubtleBorderBrush(bgBrush);
 
                 // 应用到标题栏
                 TitleBarBorder.Background = menuBgBrush;
@@ -4094,11 +4269,7 @@ namespace TypeSunny
 
                 // 应用到导航栏
                 NavBorder.Background = menuBgBrush;
-                NavBorder.BorderBrush = new SolidColorBrush(Color.FromRgb(
-                    (byte)Math.Max(0, menuBgBrush.Color.R - 30),
-                    (byte)Math.Max(0, menuBgBrush.Color.G - 30),
-                    (byte)Math.Max(0, menuBgBrush.Color.B - 30)
-                ));
+                NavBorder.BorderBrush = ThemeColorHelper.CreateSubtleBorderBrush(menuBgBrush);
 
                 // 重新生成导航按钮以应用新的按钮背景色和字体色
                 GenerateNavButtons();
@@ -4147,11 +4318,7 @@ namespace TypeSunny
                     (byte)Math.Min(255, bgBrush.Color.B + 20)
                 ));
 
-                var borderBrush = new SolidColorBrush(Color.FromRgb(
-                    (byte)Math.Max(0, bgBrush.Color.R - 30),
-                    (byte)Math.Max(0, bgBrush.Color.G - 30),
-                    (byte)Math.Max(0, bgBrush.Color.B - 30)
-                ));
+                var borderBrush = ThemeColorHelper.CreateSubtleBorderBrush(bgBrush);
 
                 var hoverBrush = new SolidColorBrush(Color.FromRgb(
                     (byte)Math.Min(255, buttonBgBrush.Color.R + 15),

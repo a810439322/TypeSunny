@@ -120,6 +120,7 @@
     <Compile Include="Logs\DebugLog.cs" />
     <Compile Include="Config\Config.cs" />
     <Compile Include="Utils\Colors.cs" />
+    <Compile Include="Utils\ThemeColorHelper.cs" />
     <Compile Include="Utils\CodeDisplayHelper.cs" />
     <Compile Include="Config\ThemeManager.cs" />
     <Compile Include="Config\TxtConfig.cs" />
@@ -208,6 +209,7 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="UI\HomeToolbarSettings.cs" />
+    <Compile Include="UI\StopInputWordCountPolicy.cs" />
     <Compile Include="UI\Modes\ArticleContinuationState.cs" />
     <Compile Include="UI\Modes\CompositionCodeFeedback.cs" />
     <Compile Include="UI\Modes\FinishOnceGate.cs" />

@@ -11,6 +11,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using TypeSunny.UI;
+using TypeSunny.Utils;
 
 namespace TypeSunny
 {
@@ -116,11 +117,7 @@ namespace TypeSunny
                 var displayBgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + displayBgColor));
                 var accentColorBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + accentColor));
 
-                var borderBrush = new SolidColorBrush(Color.FromRgb(
-                    (byte)Math.Max(0, bgBrush.Color.R - 30),
-                    (byte)Math.Max(0, bgBrush.Color.G - 30),
-                    (byte)Math.Max(0, bgBrush.Color.B - 30)
-                ));
+                var borderBrush = ThemeColorHelper.CreateSubtleBorderBrush(bgBrush);
 
                 var toolbarBgBrush = new SolidColorBrush(Color.FromRgb(
                     (byte)Math.Max(0, bgBrush.Color.R - 15),

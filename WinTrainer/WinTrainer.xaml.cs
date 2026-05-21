@@ -639,8 +639,11 @@ namespace TypeSunny
 
             // 累加用时和字数（无论通过与否都记录）
             // 实际字数 = 输入的字 + 退格删掉的字 = 所有实际敲入的字符总数
+            int scoreInputWords = Score.InputWordCount;
+            int scoreBacks = (int)Score.GetBacks();
+            int actualWordsDelta = scoreInputWords + scoreBacks;
             roundTotalTime += Score.Time.TotalSeconds;
-            roundActualWords += Score.InputWordCount + (int)Score.GetBacks();
+            roundActualWords += actualWordsDelta;
 
             // 累加键准相关数据（无论通过与否）
             roundTotalHit += Score.Hit;
@@ -1295,6 +1298,7 @@ namespace TypeSunny
                 // 恢复重打次数和最高击键率
                 RetypeCount = data.RetypeCount;
                 MaxHitRate = data.MaxHitRate;
+
                 // 恢复文章内容（包括乱序状态）
                 if (data.DisplayRoot != null && data.DisplayRoot.Count > 0)
                 {
@@ -2559,11 +2563,7 @@ namespace TypeSunny
                 var accentColorBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + accentColor));
 
                 // 计算派生颜色
-                var borderBrush = new SolidColorBrush(Color.FromRgb(
-                    (byte)Math.Max(0, bgBrush.Color.R - 30),
-                    (byte)Math.Max(0, bgBrush.Color.G - 30),
-                    (byte)Math.Max(0, bgBrush.Color.B - 30)
-                ));
+                var borderBrush = ThemeColorHelper.CreateSubtleBorderBrush(bgBrush);
 
                 var toolbarBgBrush = new SolidColorBrush(Color.FromRgb(
                     (byte)Math.Max(0, bgBrush.Color.R - 15),

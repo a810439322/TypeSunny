@@ -82,6 +82,11 @@ namespace TypeSunny
                         }
 
                         // 5. 增量更新统计数据
+                        if (summary.TotalInputWords == 0 && summary.TotalWords > 0)
+                        {
+                            summary.TotalInputWords = summary.TotalWords;
+                        }
+
                         summary.Count++;
                         summary.SumSpeedWeighted += record.Speed * record.TotalWords;
                         summary.SumHitRateWeighted += record.HitRate * record.TotalWords;
@@ -91,6 +96,7 @@ namespace TypeSunny
                         summary.SumCorrection += record.Correction;
                         summary.TotalBacks += record.Backs;
                         summary.TotalWords += record.TotalWords;
+                        summary.TotalInputWords += record.InputWords;
                         summary.MaxSpeed = Math.Max(summary.MaxSpeed, record.Speed);
                         summary.MinSpeed = Math.Min(summary.MinSpeed, record.Speed);
                         summary.LastUpdateTime = DateTime.Now;
@@ -478,6 +484,7 @@ namespace TypeSunny
                         agg.SumCorrection += summary.SumCorrection;
                         agg.TotalBacks += summary.TotalBacks;
                         agg.TotalWords += summary.TotalWords;
+                        agg.TotalInputWords += summary.TotalInputWords > 0 ? summary.TotalInputWords : summary.TotalWords;
                         agg.MaxSpeed = Math.Max(agg.MaxSpeed, summary.MaxSpeed);
                         agg.MinSpeed = Math.Min(agg.MinSpeed, summary.MinSpeed);
                     }
@@ -485,7 +492,7 @@ namespace TypeSunny
             }
 
             // 3. 转换为结果
-            return allStats
+            var result = allStats
                 .Select(kvp => new Logs.ArticleLog.LocalArticleStatisticsItem
                 {
                     BookName = kvp.Key,
@@ -499,10 +506,13 @@ namespace TypeSunny
                     AvgCiRatio = kvp.Value.TotalWords > 0 ? kvp.Value.SumCiRatioWeighted / kvp.Value.TotalWords : 0,
                     MaxSpeed = kvp.Value.MaxSpeed,
                     MinSpeed = kvp.Value.MinSpeed,
-                    TotalWords = kvp.Value.TotalWords
+                    TotalWords = kvp.Value.TotalWords,
+                    TotalInputWords = kvp.Value.TotalInputWords
                 })
                 .OrderBy(s => s.BookName)
                 .ToList();
+
+            return result;
         }
 
         /// <summary>

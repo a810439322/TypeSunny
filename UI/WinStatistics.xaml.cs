@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using TypeSunny.ArticleSender;
 using TypeSunny.Logs;
+using TypeSunny.Utils;
 
 namespace TypeSunny.UI
 {
@@ -86,27 +87,10 @@ namespace TypeSunny.UI
                     mainBorder.Background = bgBrush;
 
                     // 判断是否为暗色主题
-                    double brightness = (bgColor.R * 0.299 + bgColor.G * 0.587 + bgColor.B * 0.114) / 255.0;
-                    bool isDarkTheme = brightness < 0.5;
+                    bool isDarkTheme = ThemeColorHelper.IsDark(bgColor);
 
                     // 边框颜色
-                    System.Windows.Media.Color borderColor;
-                    if (isDarkTheme)
-                    {
-                        borderColor = System.Windows.Media.Color.FromRgb(
-                            (byte)Math.Min(255, bgColor.R + 50),
-                            (byte)Math.Min(255, bgColor.G + 50),
-                            (byte)Math.Min(255, bgColor.B + 50)
-                        );
-                    }
-                    else
-                    {
-                        borderColor = System.Windows.Media.Color.FromRgb(
-                            (byte)Math.Max(0, bgColor.R - 40),
-                            (byte)Math.Max(0, bgColor.G - 40),
-                            (byte)Math.Max(0, bgColor.B - 40)
-                        );
-                    }
+                    System.Windows.Media.Color borderColor = ThemeColorHelper.GetSubtleBorderColor(bgColor);
                     mainBorder.BorderBrush = new System.Windows.Media.SolidColorBrush(borderColor);
 
                     // DataGrid 背景色
@@ -124,11 +108,7 @@ namespace TypeSunny.UI
                     tabControl.Background = menuBgBrush;
 
                     // 设置 TabControl 的边框颜色（参考 NavBorder.BorderBrush）
-                    var borderColor = System.Windows.Media.Color.FromRgb(
-                        (byte)Math.Max(0, menuBgColor.R - 30),
-                        (byte)Math.Max(0, menuBgColor.G - 30),
-                        (byte)Math.Max(0, menuBgColor.B - 30)
-                    );
+                    var borderColor = ThemeColorHelper.GetSubtleBorderColor(menuBgColor);
                     tabControl.BorderBrush = new System.Windows.Media.SolidColorBrush(borderColor);
                     System.Diagnostics.Debug.WriteLine($"[WinStatistics] TabControl 边框色: {borderColor}, 边框厚度: {tabControl.BorderThickness}");
                 }
@@ -742,7 +722,7 @@ namespace TypeSunny.UI
                     AvgCiRatio = s.AvgCiRatio,
                     BestSpeed = s.MaxSpeed,
                     TotalWords = s.TotalWords,
-                    TotalInputWords = s.TotalWords  // 简化处理
+                    TotalInputWords = s.TotalInputWords
                 }).OrderByDescending(s => s.GroupCount).ToList();
 
                 // 绑定到 DataGrid - 只有在有数据时才绑定

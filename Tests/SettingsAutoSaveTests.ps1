@@ -1,0 +1,47 @@
+$ErrorActionPreference = 'Stop'
+
+$root = Split-Path -Parent $PSScriptRoot
+$xaml = Get-Content -Path (Join-Path $root 'WinConfig\WinConfig.xaml') -Raw
+$code = Get-Content -Path (Join-Path $root 'WinConfig\WinConfig.xaml.cs') -Raw
+$mainCode = Get-Content -Path (Join-Path $root 'UI\MainWindow.xaml.cs') -Raw
+
+function Assert-Contains($name, $content, $needle) {
+    if (-not $content.Contains($needle)) {
+        throw "$name expected to contain [$needle]"
+    }
+}
+
+function Assert-NotContains($name, $content, $needle) {
+    if ($content.Contains($needle)) {
+        throw "$name expected not to contain [$needle]"
+    }
+}
+
+Assert-NotContains 'settings xaml removes bottom apply button' $xaml 'x:Name="Save"'
+Assert-NotContains 'settings xaml removes bottom close button' $xaml 'x:Name="Cancel"'
+Assert-Contains 'category switch saves current controls first' $code 'SaveCurrentCategoryControls();'
+Assert-Contains 'closing flushes autosaved config' $code 'Config.WriteConfig(0);'
+$closingMatch = [regex]::Match($code, 'private void Window_Closing[\s\S]*?(?=\n        /// <summary>|\n        private string FindLabelInContentPanel)')
+if (-not $closingMatch.Success) {
+    throw 'expected to find Window_Closing method'
+}
+Assert-NotContains 'closing no longer asks whether to save' $closingMatch.Value 'MessageBox.Show'
+Assert-Contains 'textboxes attach lost-focus autosave' $code 'AttachTextBoxAutoSave'
+Assert-Contains 'autosave supports enter commits' $code 'Key.Enter'
+Assert-Contains 'custom sections can register fallback saves' $code 'AddCategoryFallbackSave'
+Assert-Contains 'checkboxes attach autosave' $code 'AttachCheckBoxAutoSave'
+Assert-Contains 'comboboxes attach autosave' $code 'AttachComboBoxAutoSave'
+$endpointResetNeedle = 'SaveConfigValue' + '(itemKey, tb.Text'
+Assert-Contains 'endpoint reset buttons save immediately' $code $endpointResetNeedle
+$colorSaveNeedle = 'SaveConfigValue' + '(colorKey, colorHex'
+Assert-Contains 'color picker writes selected color immediately' $code $colorSaveNeedle
+Assert-Contains 'dynamic difficulty saves on selection change' $code 'SaveWenlaiDifficultySelection'
+Assert-Contains 'dynamic category saves on selection change' $code 'SaveWenlaiCategorySelection'
+
+$reloadCfgMatch = [regex]::Match($mainCode, 'private void ReloadCfg\(\)[\s\S]*?(?=\n        private bool ShouldLoadCiTiSegments)')
+if (-not $reloadCfgMatch.Success) {
+    throw 'expected to find MainWindow.ReloadCfg method'
+}
+Assert-Contains 'autosave config refresh recalculates top-right ZiTi hint' $reloadCfgMatch.Value 'UpdateZiTi();'
+
+Write-Host 'All SettingsAutoSave tests passed.'
