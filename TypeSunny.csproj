@@ -103,7 +103,6 @@
     <Compile Include="Version\VersionCheckPolicy.cs" />
     <Compile Include="Version\VersionManager.cs" />
     <Compile Include="Article\ArticleConfig.cs" />
-    <Compile Include="Article\LocalArticleDifficultyPolicy.cs" />
     <Compile Include="Article\ArticleManager.cs" />
     <Compile Include="Article\Filter.cs" />
     <Compile Include="Article\RegexFilter.cs" />
@@ -124,7 +123,16 @@
     <Compile Include="Utils\CodeDisplayHelper.cs" />
     <Compile Include="Config\ThemeManager.cs" />
     <Compile Include="Config\TxtConfig.cs" />
+    <Compile Include="Difficulty\QingDifficultyScorer.cs" />
     <Compile Include="Difficulty\DifficultyDict.cs" />
+    <Compile Include="Personalization\PersonalPredictionCalibration.cs" />
+    <Compile Include="Personalization\PersonalScorePredictionFormatter.cs" />
+    <Compile Include="Personalization\PersonalScorePredictor.cs" />
+    <Compile Include="Personalization\PersonalScorePredictionService.cs" />
+    <Compile Include="Personalization\PersonalTypingProfile.cs" />
+    <Compile Include="Personalization\PersonalTypingProfileStore.cs" />
+    <Compile Include="Personalization\PersonalTypingSessionBuilder.cs" />
+    <Compile Include="Personalization\QingDifficultyScale.cs" />
     <Compile Include="Diff\DiffNode.cs" />
     <Compile Include="Diff\DiffRes.cs" />
     <Compile Include="Diff\DiffTool.cs" />
@@ -293,34 +301,7 @@
     <Content Include="introimages\4.png" />
     <Content Include="introimages\5.png" />
     <Content Include="introimages\zitie.png" />
-    <Content Include="Resources\DIC\0.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Resources\DIC\1.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Resources\DIC\2.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Resources\DIC\3.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Resources\DIC\4.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Resources\DIC\5.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Resources\DIC\6.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Resources\DIC\7.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Resources\DIC\8.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Resources\DIC\9.txt">
+    <Content Include="Resources\Difficulty\valid_and_weight.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Resources\字提\*.txt">

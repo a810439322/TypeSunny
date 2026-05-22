@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 using System.Windows.Data;
 using System.Text.RegularExpressions;
 using TypeSunny.Difficulty;
-using TypeSunny.ArticleSender;
 using TypeSunny.UI;
 
 // EPUB支持（需要VersOne.Epub包）
@@ -47,7 +46,6 @@ namespace TypeSunny
 
         public static Dictionary <string,Article> Articles = new Dictionary<string,Article> ();
         private static DifficultyDict difficultyDict = new DifficultyDict();
-        private static readonly LocalArticleDifficultyPolicy difficultyPolicy = new LocalArticleDifficultyPolicy();
 
         public static string LastBlockReason { get; private set; }
 
@@ -282,27 +280,9 @@ namespace TypeSunny
             UpdateWindows();
         }
 
-        public static async Task<string> GetFormattedCurrentSection()
+        public static Task<string> GetFormattedCurrentSection()
         {
-            string difficultyText = null;
-            if (difficultyPolicy.ShouldRequestRemoteDifficulty)
-            {
-                var result = await ArticleFetcher.CalcDifficultyFromApiWithStatusAsync(GetCurrentSection());
-                difficultyPolicy.RecordRemoteDifficultyResult(result.DisableFutureRequests);
-                difficultyText = result.Text;
-            }
-
-            return GetPreviewCurrentSection(difficultyText);
-        }
-
-        public static bool ShouldRequestRemoteDifficulty()
-        {
-            return difficultyPolicy.ShouldRequestRemoteDifficulty;
-        }
-
-        public static void RecordRemoteDifficultyResult(bool timedOut)
-        {
-            difficultyPolicy.RecordRemoteDifficultyResult(timedOut);
+            return Task.FromResult(GetPreviewCurrentSection());
         }
 
         public static string GetPreviewCurrentSection(string difficultyText = null)
@@ -314,6 +294,8 @@ namespace TypeSunny
             if (txt == null) return null;
 
             StringBuilder sb = new StringBuilder();
+            if (difficultyText == null)
+                difficultyText = difficultyDict.CalcText(txt);
 
             // 第一行：[难度xx]标题 [字数xx]
             if (!string.IsNullOrEmpty(difficultyText))

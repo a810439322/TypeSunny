@@ -21,6 +21,7 @@ using TypeSunny.UI;
 using TypeSunny.Core;
 using TypeSunny.Utils;
 using TypeSunny.Versioning;
+using TypeSunny.Personalization;
 
 
 namespace TypeSunny
@@ -239,6 +240,15 @@ namespace TypeSunny
                     {
                         "成绩显示时间",
                         "成绩签名"
+                    }
+                },
+                new ConfigCategory
+                {
+                    Title = "预测",
+                    Items = new[]
+                    {
+                        "启用预测",
+                        "发文附带预测"
                     }
                 },
                 new ConfigCategory
@@ -547,6 +557,14 @@ namespace TypeSunny
                 {
                     tbk.ToolTip = "开启后，同一词组的字不会被拆到两行显示；行尾放不下时整词换行，每行字数可能不等。";
                 }
+                if (itemKey == "启用预测")
+                {
+                    tbk.ToolTip = "开启后在标题栏显示个人预测；关闭后不会显示预测，也不会在发文成绩中附带预测。";
+                }
+                if (itemKey == "发文附带预测")
+                {
+                    tbk.ToolTip = "只有启用预测且当前预测置信度大于80%时，才会把预测信息附加到发文成绩最后。";
+                }
 
                 FrameworkElement labelControl = CreateLabelControl(tbk);
                 Grid.SetRow(labelControl, currentRow);
@@ -570,6 +588,12 @@ namespace TypeSunny
             if (category.Title == "成绩")
             {
                 AppendScoreItemsList(currentRow);
+            }
+
+            // 如果是"预测"分类，在常规项后面内嵌预测显示项拖拽列表
+            if (category.Title == "预测")
+            {
+                AppendPredictionItemsList(currentRow);
             }
 
             // 如果是"首页"分类，构建首页入口排序与显示设置
@@ -3049,6 +3073,201 @@ namespace TypeSunny
                 listBox.Items.Insert(finalIndex, source);
 
                 // 拖拽完成后自动保存顺序
+                saveConfig();
+            };
+
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            Grid.SetRow(listBox, startRow + 1);
+            Grid.SetColumnSpan(listBox, 2);
+            ContentPanel.Children.Add(listBox);
+        }
+
+        /// <summary>
+        /// 在预测分类页面内嵌预测显示项拖拽排序列表
+        /// </summary>
+        private void AppendPredictionItemsList(int startRow)
+        {
+            var optTitle = new TextBlock
+            {
+                Text = "预测显示项（拖拽调整顺序，勾选控制显隐；速度和难度必开）",
+                FontSize = 13,
+                Foreground = new SolidColorBrush(Color.FromRgb(100, 150, 200)),
+                Margin = new Thickness(0, 10, 0, 5)
+            };
+            ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(optTitle, startRow);
+            Grid.SetColumnSpan(optTitle, 2);
+            ContentPanel.Children.Add(optTitle);
+
+            var currentOrder = PersonalScorePredictionFormatter.NormalizeOrder(Config.GetString("预测显示顺序"));
+            var listBox = new ListBox
+            {
+                MinHeight = 160,
+                MaxHeight = 360,
+                AllowDrop = true,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Margin = new Thickness(0, 5, 0, 0)
+            };
+
+            var checkboxes = new Dictionary<string, CheckBox>();
+            foreach (string item in currentOrder)
+            {
+                bool isForced = PersonalScorePredictionFormatter.IsForceShowItem(item);
+
+                var sp = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(2) };
+                var dragHandle = new TextBlock
+                {
+                    Text = "☰",
+                    FontSize = 14,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 8, 0),
+                    Cursor = System.Windows.Input.Cursors.SizeAll
+                };
+                var chk = new CheckBox
+                {
+                    Content = isForced ? item + "（必开）" : item,
+                    IsChecked = isForced || Config.GetBool("预测显示_" + item),
+                    IsEnabled = !isForced,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                checkboxes[item] = chk;
+                sp.Children.Add(dragHandle);
+                sp.Children.Add(chk);
+
+                var lbi = new ListBoxItem
+                {
+                    Content = sp,
+                    Tag = item,
+                    AllowDrop = true,
+                    Padding = new Thickness(4, 2, 4, 2)
+                };
+                listBox.Items.Add(lbi);
+            }
+
+            Action saveConfig = () =>
+            {
+                var orderItems = new List<string>();
+                foreach (ListBoxItem lbi in listBox.Items)
+                {
+                    string itemName = lbi.Tag as string;
+                    if (itemName != null && checkboxes.ContainsKey(itemName))
+                    {
+                        bool isForced = PersonalScorePredictionFormatter.IsForceShowItem(itemName);
+                        Config.Set("预测显示_" + itemName, isForced || checkboxes[itemName].IsChecked == true);
+                        orderItems.Add(itemName);
+                    }
+                }
+                Config.Set("预测显示顺序", string.Join(",", orderItems));
+                ScheduleConfigSavedRefresh();
+            };
+
+            foreach (var chk in checkboxes.Values)
+            {
+                chk.Checked += (s, e) => saveConfig();
+                chk.Unchecked += (s, e) => saveConfig();
+            }
+
+            ListBoxItem draggedItem = null;
+            Point dragStartPoint = default;
+            DragAdorner currentAdorner = null;
+            InsertionLineAdorner insertionAdorner = null;
+
+            listBox.PreviewMouseLeftButtonDown += (s, e) =>
+            {
+                dragStartPoint = e.GetPosition(listBox);
+                var hitItem = FindAncestor<ListBoxItem>((DependencyObject)e.OriginalSource);
+                if (hitItem != null)
+                    draggedItem = hitItem;
+            };
+
+            listBox.PreviewMouseMove += (s, e) =>
+            {
+                if (draggedItem == null || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
+                    return;
+
+                Point pos = e.GetPosition(listBox);
+                if (Math.Abs(pos.X - dragStartPoint.X) <= SystemParameters.MinimumHorizontalDragDistance &&
+                    Math.Abs(pos.Y - dragStartPoint.Y) <= SystemParameters.MinimumVerticalDragDistance)
+                    return;
+
+                var adornerLayer = AdornerLayer.GetAdornerLayer(listBox);
+                if (adornerLayer != null)
+                {
+                    currentAdorner = new DragAdorner(listBox, draggedItem, 0.6);
+                    adornerLayer.Add(currentAdorner);
+                }
+
+                draggedItem.Opacity = 0.3;
+                DragDrop.DoDragDrop(listBox, draggedItem, DragDropEffects.Move);
+
+                draggedItem.Opacity = 1.0;
+                if (currentAdorner != null && adornerLayer != null)
+                    adornerLayer.Remove(currentAdorner);
+                if (insertionAdorner != null && adornerLayer != null)
+                    adornerLayer.Remove(insertionAdorner);
+
+                currentAdorner = null;
+                insertionAdorner = null;
+                draggedItem = null;
+            };
+
+            listBox.DragOver += (s, e) =>
+            {
+                e.Effects = DragDropEffects.Move;
+                e.Handled = true;
+
+                if (currentAdorner != null)
+                    currentAdorner.UpdatePosition(e.GetPosition(listBox));
+
+                var adornerLayer = AdornerLayer.GetAdornerLayer(listBox);
+                if (adornerLayer == null)
+                    return;
+
+                if (insertionAdorner != null)
+                {
+                    adornerLayer.Remove(insertionAdorner);
+                    insertionAdorner = null;
+                }
+
+                var targetItem = FindAncestor<ListBoxItem>((DependencyObject)e.OriginalSource);
+                if (targetItem != null)
+                {
+                    Point posInTarget = e.GetPosition(targetItem);
+                    bool insertBefore = posInTarget.Y < targetItem.ActualHeight / 2;
+                    insertionAdorner = new InsertionLineAdorner(listBox, targetItem, insertBefore);
+                    adornerLayer.Add(insertionAdorner);
+                }
+            };
+
+            listBox.DragLeave += (s, e) =>
+            {
+                var adornerLayer = AdornerLayer.GetAdornerLayer(listBox);
+                if (insertionAdorner != null && adornerLayer != null)
+                {
+                    adornerLayer.Remove(insertionAdorner);
+                    insertionAdorner = null;
+                }
+            };
+
+            listBox.Drop += (s, e) =>
+            {
+                var source = e.Data.GetData(typeof(ListBoxItem)) as ListBoxItem;
+                if (source == null) return;
+
+                var targetItem = FindAncestor<ListBoxItem>((DependencyObject)e.OriginalSource);
+                if (targetItem == null || targetItem == source) return;
+
+                int sourceIndex = listBox.Items.IndexOf(source);
+                if (sourceIndex < 0) return;
+
+                Point posInTarget = e.GetPosition(targetItem);
+                bool insertBefore = posInTarget.Y < targetItem.ActualHeight / 2;
+
+                listBox.Items.RemoveAt(sourceIndex);
+                int finalIndex = listBox.Items.IndexOf(targetItem);
+                if (!insertBefore) finalIndex++;
+                listBox.Items.Insert(finalIndex, source);
+
                 saveConfig();
             };
 
