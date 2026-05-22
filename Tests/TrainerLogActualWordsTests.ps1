@@ -48,6 +48,9 @@ internal static class Program
         {
             PreservesLegacySummaryWordsWhenAddingNewActualWords();
             RecordsActualWordsFromNewTrainerRecord();
+            KeepsAllTrainerHistoryRecordsAndWritesCompactJson();
+            ReadRecentRecordsZeroReturnsNoRecords();
+            BacksUpCorruptRecentJsonBeforeStartingNewHistory();
 
             Console.WriteLine("TrainerLog actual words test passed.");
             return 0;
@@ -132,6 +135,99 @@ internal static class Program
             throw new Exception("expected legacy TotalInputWords 18, got " + item.TotalInputWords + ".");
     }
 
+    private static void KeepsAllTrainerHistoryRecordsAndWritesCompactJson()
+    {
+        const string title = "long-history-sample";
+        DateTime firstTime = DateTime.Now.AddDays(-10);
+
+        for (int i = 0; i < 35; i++)
+        {
+            TrainerLog.WriteRecord(new ArticleLog.ArticleRecord
+            {
+                Time = firstTime.AddMinutes(i),
+                ArticleName = title,
+                TotalWords = 10,
+                InputWords = 10 + i,
+                Speed = 40 + i,
+                HitRate = 4,
+                Accuracy = 0.95,
+                KPW = 4,
+                TotalSeconds = 12
+            });
+        }
+
+        WaitForRecentCount(title, 35);
+
+        var titleHistory = TrainerLog.GetRecordsByExercise(title);
+        if (titleHistory.Count != 35)
+            throw new Exception("expected title history count 35, got " + titleHistory.Count + ".");
+
+        if (titleHistory[0].Time < titleHistory[1].Time)
+            throw new Exception("expected title history to be sorted newest first.");
+
+        string recentJson = File.ReadAllText(GetTrainerRecentFilePath());
+        if (recentJson.Contains("\r") || recentJson.Contains("\n"))
+            throw new Exception("expected recent.json to be compact single-line JSON.");
+    }
+
+    private static void ReadRecentRecordsZeroReturnsNoRecords()
+    {
+        var records = TrainerLog.ReadRecentRecords(0);
+        if (records.Count != 0)
+            throw new Exception("expected ReadRecentRecords(0) to return 0 records, got " + records.Count + ".");
+    }
+
+    private static void BacksUpCorruptRecentJsonBeforeStartingNewHistory()
+    {
+        string recentPath = GetTrainerRecentFilePath();
+        string recentDir = Path.GetDirectoryName(recentPath);
+        Directory.CreateDirectory(recentDir);
+
+        string corruptJson = "{ corrupt recent json";
+        File.WriteAllText(recentPath, corruptJson);
+
+        TrainerLog.WriteRecord(new ArticleLog.ArticleRecord
+        {
+            Time = DateTime.Now,
+            ArticleName = "corruption-sample",
+            TotalWords = 10,
+            InputWords = 12,
+            Speed = 50,
+            HitRate = 4,
+            Accuracy = 0.9,
+            KPW = 4,
+            TotalSeconds = 12
+        });
+
+        WaitForRecentCount("corruption-sample", 1);
+
+        var backupFiles = Directory.GetFiles(recentDir, "recent.corrupt.*.json");
+        if (backupFiles.Length == 0)
+            throw new Exception("expected corrupt recent.json backup file.");
+
+        bool backupHasCorruptJson = backupFiles.Any(file => File.ReadAllText(file) == corruptJson);
+        if (!backupHasCorruptJson)
+            throw new Exception("expected corrupt recent.json backup to preserve original content.");
+    }
+
+    private static void WaitForRecentCount(string title, int expectedCount)
+    {
+        int lastCount = -1;
+        DateTime deadline = DateTime.Now.AddSeconds(5);
+        while (DateTime.Now < deadline)
+        {
+            var records = TrainerLog.ReadRecentRecords();
+            lastCount = records.Count(r => r.ArticleName == title);
+
+            if (lastCount == expectedCount)
+                return;
+
+            Thread.Sleep(50);
+        }
+
+        throw new Exception("expected recent history count " + expectedCount + " for '" + title + "', got " + lastCount + ".");
+    }
+
     private static ArticleLog.LocalArticleStatisticsItem WaitForStatsItem(string bookName, int? expectedTotalWords = null)
     {
         string lastSnapshot = "";
@@ -157,6 +253,12 @@ internal static class Program
     private static string GetTrainerSummaryFilePath()
     {
         var method = typeof(TrainerLog).GetMethod("GetSummaryFilePath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        return (string)method.Invoke(null, null);
+    }
+
+    private static string GetTrainerRecentFilePath()
+    {
+        var method = typeof(TrainerLog).GetMethod("GetRecentFilePath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
         return (string)method.Invoke(null, null);
     }
 

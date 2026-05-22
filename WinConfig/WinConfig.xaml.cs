@@ -851,6 +851,10 @@ namespace TypeSunny
                         var ciTiDisplayCheckBox = FindCheckBoxByLabel("词提编码下显");
                         if (ciTiDisplayCheckBox != null && ciTiDisplayCheckBox.IsChecked == true)
                             ciTiDisplayCheckBox.IsChecked = false;
+
+                        var ciTiNoSplitCheckBox = FindCheckBoxByLabel("词提不拆行");
+                        if (ciTiNoSplitCheckBox != null && ciTiNoSplitCheckBox.IsChecked == true)
+                            ciTiNoSplitCheckBox.IsChecked = false;
                     };
                 }
 
@@ -1766,7 +1770,7 @@ namespace TypeSunny
                                     var mainWindow = Application.Current.MainWindow as MainWindow;
                                     if (mainWindow != null)
                                     {
-                                        mainWindow.Dispatcher.BeginInvoke(new Action(() =>
+                                        _ = mainWindow.Dispatcher.BeginInvoke(new Action(() =>
                                         {
                                             var initMethod = mainWindow.GetType().GetMethod("InitializeWenlaiMenu",
                                                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
@@ -1849,7 +1853,7 @@ namespace TypeSunny
                     }
                 });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // 加载失败，显示错误信息
                 await Dispatcher.InvokeAsync(() =>
@@ -1911,7 +1915,7 @@ namespace TypeSunny
                     container.Children.Add(cb);
                 });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await Dispatcher.InvokeAsync(() =>
                 {
@@ -3614,7 +3618,7 @@ namespace TypeSunny
                 System.Diagnostics.Debug.WriteLine($"[Logo_SelectionChanged] 调用 ApplyCurrentLogo 失败: {ex.Message}");
             }
 
-            // 通知已打开的本地文章管理器同步 Logo。
+            // 通知已打开的本地文章管理器和练单器同步 Logo。
             try
             {
                 foreach (Window window in Application.Current.Windows)
@@ -3623,11 +3627,16 @@ namespace TypeSunny
                     {
                         articleWindow.RefreshTheme();
                     }
+
+                    if (window is WinTrainer trainerWindow)
+                    {
+                        trainerWindow.RefreshTheme();
+                    }
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Logo_SelectionChanged] 刷新文章管理器Logo失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[Logo_SelectionChanged] 刷新文章管理器或练单器Logo失败: {ex.Message}");
             }
         }
 
@@ -3810,6 +3819,7 @@ namespace TypeSunny
             var key = new List<string>();
             var value = new List<string>();
             ExtractControlValue(control, labelText, key, value);
+            FilterUnchangedConfigValues(key, value);
             ApplyCodeDisplayMutualExclusion(key, value);
             SaveChangedConfigValues(key, value);
         }
@@ -3836,6 +3846,7 @@ namespace TypeSunny
                 ExtractControlValue(item, labelText, key, value);
             }
 
+            FilterUnchangedConfigValues(key, value);
             ApplyCodeDisplayMutualExclusion(key, value);
             SaveChangedConfigValues(key, value);
 
@@ -3848,6 +3859,18 @@ namespace TypeSunny
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"设置页兜底保存失败: {ex.Message}");
+                }
+            }
+        }
+
+        private static void FilterUnchangedConfigValues(List<string> key, List<string> value)
+        {
+            for (int i = key.Count - 1; i >= 0; i--)
+            {
+                if (value[i] == Config.GetString(key[i]))
+                {
+                    key.RemoveAt(i);
+                    value.RemoveAt(i);
                 }
             }
         }
@@ -3937,6 +3960,13 @@ namespace TypeSunny
             int zitiBadgeIndex = key.IndexOf("字提选重数字角标");
             if (zitiBadgeIndex >= 0 && value[zitiBadgeIndex] == "是")
                 UpsertConfigValue(key, value, "字提编码下显", "否");
+
+            int citiEnabledIndex = key.IndexOf("启用词提");
+            if (citiEnabledIndex >= 0 && value[citiEnabledIndex] == "否")
+            {
+                UpsertConfigValue(key, value, "词提编码下显", "否");
+                UpsertConfigValue(key, value, "词提不拆行", "否");
+            }
         }
 
         private static void UpsertConfigValue(List<string> key, List<string> value, string targetKey, string targetValue)
@@ -3989,6 +4019,7 @@ namespace TypeSunny
             if (key == "启用词提" && value == "否")
             {
                 Config.Set("词提编码下显", "否");
+                Config.Set("词提不拆行", "否");
             }
             if (key == "启用字提" && value == "否")
             {

@@ -27,9 +27,6 @@ namespace TypeSunny.Logs
         private static bool _isRunning = true;
         private static readonly AutoResetEvent _hasRecords = new AutoResetEvent(false);
 
-        // 迁移状态
-        private static bool _migrationInProgress = false;
-
         static ArticleLog()
         {
             // 启动后台写入线程

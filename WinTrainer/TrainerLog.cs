@@ -201,40 +201,13 @@ namespace TypeSunny
         /// </summary>
         public static List<Logs.ArticleLog.ArticleRecord> GetRecordsByExercise(string exerciseName)
         {
-            List<Logs.ArticleLog.ArticleRecord> result = new List<Logs.ArticleLog.ArticleRecord>();
+            if (string.IsNullOrWhiteSpace(exerciseName))
+                return new List<Logs.ArticleLog.ArticleRecord>();
 
-            if (!Directory.Exists(LogFolder))
-                return result;
-
-            try
-            {
-                foreach (string file in Directory.GetFiles(LogFolder, "*.json"))
-                {
-                    try
-                    {
-                        string json = File.ReadAllText(file, Encoding.UTF8);
-                        if (!string.IsNullOrWhiteSpace(json))
-                        {
-                            var records = JsonConvert.DeserializeObject<List<Logs.ArticleLog.ArticleRecord>>(json);
-                            if (records != null)
-                            {
-                                foreach (var record in records)
-                                {
-                                    if (record.ArticleName == exerciseName)
-                                        result.Add(record);
-                                }
-                            }
-                        }
-                    }
-                    catch { }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"读取练单日志失败: {ex.Message}");
-            }
-
-            return result;
+            return ReadRecentRecords()
+                .Where(record => string.Equals(record.ArticleName, exerciseName, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(record => record.Time)
+                .ToList();
         }
 
         /// <summary>
@@ -349,8 +322,27 @@ namespace TypeSunny
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"加载最近记录失败: {ex.Message}");
+                BackupCorruptRecentFile(GetRecentFilePath());
             }
             return new Logs.ArticleLog.RecentRecords();
+        }
+
+        private static void BackupCorruptRecentFile(string file)
+        {
+            try
+            {
+                if (!File.Exists(file))
+                    return;
+
+                string folder = Path.GetDirectoryName(file);
+                string backupName = "recent.corrupt." + DateTime.Now.ToString("yyyyMMddHHmmssfff") + "." + Guid.NewGuid().ToString("N").Substring(0, 8) + ".json";
+                string backupPath = Path.Combine(folder, backupName);
+                File.Copy(file, backupPath, false);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"备份损坏练单最近记录失败: {ex.Message}");
+            }
         }
 
         private static void SaveRecentData(Logs.ArticleLog.RecentRecords data)
@@ -358,7 +350,7 @@ namespace TypeSunny
             try
             {
                 EnsureLogDirectory();
-                var settings = new JsonSerializerSettings { Formatting = Formatting.Indented };
+                var settings = new JsonSerializerSettings { Formatting = Formatting.None };
                 string json = JsonConvert.SerializeObject(data, settings);
                 File.WriteAllText(GetRecentFilePath(), json, Encoding.UTF8);
             }
@@ -370,15 +362,7 @@ namespace TypeSunny
 
         private static void CleanOldRecords(Logs.ArticleLog.RecentRecords recentData)
         {
-            DateTime cutoffTime = DateTime.Now.AddHours(-24);
-
-            var validRecords = recentData.Records
-                .Where(r => r.Time >= cutoffTime)
-                .OrderByDescending(r => r.Time)
-                .Take(30)
-                .ToList();
-
-            recentData.Records = validRecords;
+            // recent.json is the trainer history source. Keep every completed round.
         }
 
         private static bool ShouldCleanOldDetailFiles(Logs.ArticleLog.StatisticsData summaryData)
@@ -541,15 +525,27 @@ namespace TypeSunny
         }
 
         /// <summary>
-        /// 读取最近记录
+        /// 读取练单历史记录；count > 0 时只返回最新的 count 条
         /// </summary>
-        public static List<Logs.ArticleLog.ArticleRecord> ReadRecentRecords(int count = 30)
+        public static List<Logs.ArticleLog.ArticleRecord> ReadRecentRecords(int? count = null)
         {
             var recentData = LoadRecentData();
             if (recentData == null)
                 return new List<Logs.ArticleLog.ArticleRecord>();
 
-            return recentData.Records.Take(count).ToList();
+            var records = recentData.Records
+                .OrderByDescending(record => record.Time)
+                .ToList();
+
+            if (count.HasValue)
+            {
+                if (count.Value <= 0)
+                    return new List<Logs.ArticleLog.ArticleRecord>();
+
+                return records.Take(count.Value).ToList();
+            }
+
+            return records;
         }
 
         #endregion

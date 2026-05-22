@@ -1,5 +1,8 @@
-﻿using System;
+﻿// 调试 QQ 发送时取消下一行注释以启用 WriteSendDebugLog 所有调用（写 QQ发送调试.log）
+// #define DEBUG_QQ_SEND
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -15,12 +18,14 @@ namespace TypeSunny.Utils
     class MsgRequest
     {
         public string groupName = "";
+        public string msgContent = "";
 
         public  Window caller = null;
 
-        public MsgRequest(string groupName, Window caller)
+        public MsgRequest(string groupName, string msgContent, Window caller)
         {
             this.groupName = groupName;
+            this.msgContent = msgContent;
             this.caller = caller;
         }
     }
@@ -98,6 +103,130 @@ namespace TypeSunny.Utils
         static Dictionary<string, IUIAutomationElement> QunElementCache = new Dictionary<string, IUIAutomationElement>();
         static DateTime QunCacheTime = DateTime.MinValue;
         static readonly TimeSpan QunCacheExpiry = TimeSpan.FromSeconds(30); // 缓存30秒
+        private static readonly object SendAutomationLock = new object();
+        private static readonly object SendDebugLogLock = new object();
+        private static int SendAutomationPendingCount = 0;
+        private static int DeferredFocusInputRequested = 0;
+        private const int QQHoverClearDelayMs = 180;
+
+        public static string SendDebugLogPath
+        {
+            get { return System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "QQ发送调试.log"); }
+        }
+
+        [Conditional("DEBUG_QQ_SEND")]
+        public static void WriteSendDebugLog(string message)
+        {
+            try
+            {
+                string line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [T{Thread.CurrentThread.ManagedThreadId}] {message}\r\n";
+                lock (SendDebugLogLock)
+                {
+                    System.IO.File.AppendAllText(SendDebugLogPath, line, Encoding.UTF8);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        public static bool TryDeferFocusInput(string context)
+        {
+            if (Volatile.Read(ref SendAutomationPendingCount) <= 0)
+                return false;
+
+            Interlocked.Exchange(ref DeferredFocusInputRequested, 1);
+            WriteSendDebugLog($"FocusInput deferred: context={context}, pending={Volatile.Read(ref SendAutomationPendingCount)}");
+            return true;
+        }
+
+        private static void BeginSendAutomation(string context)
+        {
+            int pending = Interlocked.Increment(ref SendAutomationPendingCount);
+            WriteSendDebugLog($"Send automation begin: context={context}, pending={pending}");
+        }
+
+        private static void EndSendAutomation(Window caller, string context, bool focusCaller)
+        {
+            int pending = Interlocked.Decrement(ref SendAutomationPendingCount);
+            if (pending < 0)
+            {
+                Interlocked.Exchange(ref SendAutomationPendingCount, 0);
+                pending = 0;
+            }
+
+            int deferred = Interlocked.Exchange(ref DeferredFocusInputRequested, 0);
+            WriteSendDebugLog($"Send automation end: context={context}, pending={pending}, deferredFocus={deferred}, focusCaller={focusCaller}");
+            if (pending != 0)
+                return;
+            if (!focusCaller)
+            {
+                WriteSendDebugLog($"Send automation keep QQ foreground: context={context}");
+                return;
+            }
+
+            try
+            {
+                caller?.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    WriteSendDebugLog($"Send automation focus caller begin: context={context}");
+                    Current?.FocusInput();
+                    WriteSendDebugLog($"Send automation focus caller done: context={context}");
+                }), DispatcherPriority.Background);
+            }
+            catch (Exception ex)
+            {
+                WriteSendDebugLog($"Send automation focus caller dispatch failed: context={context}, error={ex.Message}");
+            }
+        }
+
+        private static string TrimForLog(string text, int maxLength)
+        {
+            if (text == null)
+                return "<null>";
+
+            string normalized = text.Replace("\r", "\\r").Replace("\n", "\\n").Replace("\t", "\\t");
+            if (normalized.Length <= maxLength)
+                return normalized;
+
+            return normalized.Substring(0, maxLength) + "...";
+        }
+
+        private static string ContentForLog(string name, string content)
+        {
+            return $"{name}: null={content == null}, empty={string.IsNullOrEmpty(content)}, white={string.IsNullOrWhiteSpace(content)}, len={content?.Length ?? 0}, preview=\"{TrimForLog(content, 80)}\"";
+        }
+
+        private static string ElementForLog(IUIAutomationElement element)
+        {
+            if (element == null)
+                return "<null>";
+
+            try
+            {
+                return $"type={GetControlTypeName(element.CurrentControlType)}, name=\"{TrimForLog(element.CurrentName, 80)}\", class=\"{TrimForLog(element.CurrentClassName, 80)}\", enabled={element.CurrentIsEnabled}, offscreen={element.CurrentIsOffscreen}, {RectForLog(element)}";
+            }
+            catch (Exception ex)
+            {
+                return $"<element read failed: {ex.Message}>";
+            }
+        }
+
+        private static string RectForLog(IUIAutomationElement element)
+        {
+            if (element == null)
+                return "rect=<null>";
+
+            try
+            {
+                var rect = element.CurrentBoundingRectangle;
+                return $"rect=({rect.left},{rect.top},{rect.right},{rect.bottom}), size=({rect.right - rect.left}x{rect.bottom - rect.top})";
+            }
+            catch (Exception ex)
+            {
+                return $"rect=<read failed: {ex.Message}>";
+            }
+        }
 
         // 保存调试信息到文件（追加模式）
         private static void SaveDebugInfo(string info, string prefix = "QQ发送")
@@ -208,67 +337,888 @@ namespace TypeSunny.Utils
         /// <summary>
         /// 激活Document输入框（点击Document底部）
         /// </summary>
-        static private void ActivateDocumentInput(IUIAutomationElement document)
+        static private void LogFocusedElement(string context)
+        {
+            try
+            {
+                WriteSendDebugLog($"{context} focused element: {ElementForLog(root.GetFocusedElement())}");
+            }
+            catch (Exception ex)
+            {
+                WriteSendDebugLog($"{context} focused element read failed: {ex.Message}");
+            }
+        }
+
+        static private bool IsSameElement(IUIAutomationElement first, IUIAutomationElement second)
+        {
+            if (first == null || second == null)
+                return false;
+
+            try
+            {
+                return root.CompareElements(first, second) != 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        static private bool IsElementInSubtree(IUIAutomationElement ancestor, IUIAutomationElement element)
+        {
+            if (ancestor == null || element == null)
+                return false;
+
+            try
+            {
+                var walker = root.RawViewWalker;
+                var current = element;
+                for (int i = 0; current != null && i < 64; i++)
+                {
+                    if (IsSameElement(ancestor, current))
+                        return true;
+
+                    current = walker.GetParentElement(current);
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        static private bool IsElementWithinConversationListBounds(IUIAutomationElement element, IUIAutomationElement groupList)
+        {
+            if (element == null || groupList == null)
+                return false;
+
+            var elementRect = element.CurrentBoundingRectangle;
+            var groupListRect = groupList.CurrentBoundingRectangle;
+
+            if (elementRect.right <= elementRect.left || elementRect.bottom <= elementRect.top)
+                return false;
+            if (groupListRect.right <= groupListRect.left || groupListRect.bottom <= groupListRect.top)
+                return false;
+
+            const double margin = 4;
+            double centerX = (elementRect.left + elementRect.right) / 2.0;
+            double centerY = (elementRect.top + elementRect.bottom) / 2.0;
+            return centerX >= groupListRect.left - margin
+                   && centerX <= groupListRect.right + margin
+                   && centerY >= groupListRect.top - margin
+                   && centerY <= groupListRect.bottom + margin;
+        }
+
+        static private bool IsNameCompatibleWithTargetGroup(string focusedName, string groupName)
+        {
+            if (string.IsNullOrWhiteSpace(focusedName) || string.IsNullOrWhiteSpace(groupName))
+                return true;
+
+            string name = focusedName.Trim();
+            string target = groupName.Trim();
+            return name == target
+                   || name.StartsWith(target + " ")
+                   || name.StartsWith(target + "\t")
+                   || name.StartsWith(target + "\r")
+                   || name.StartsWith(target + "\n")
+                   || name.StartsWith(target + "　");
+        }
+
+        static private bool IsFocusedElementNameSafeForTarget(IUIAutomationElement focused, IUIAutomationElement groupList, string groupName)
+        {
+            if (focused == null || groupList == null)
+                return true;
+
+            string focusedName = focused.CurrentName;
+            if (string.IsNullOrWhiteSpace(focusedName))
+                return true;
+
+            var focusedRect = focused.CurrentBoundingRectangle;
+            var groupListRect = groupList.CurrentBoundingRectangle;
+            if (focusedRect.right <= focusedRect.left || focusedRect.bottom <= focusedRect.top)
+                return true;
+            if (groupListRect.right <= groupListRect.left || groupListRect.bottom <= groupListRect.top)
+                return true;
+
+            int controlType = focused.CurrentControlType;
+            double height = focusedRect.bottom - focusedRect.top;
+            bool looksLikeRightConversationPane = focusedRect.left >= groupListRect.right - 5
+                                                  && height >= 100
+                                                  && (controlType == UIA_ControlTypeIds.UIA_GroupControlTypeId
+                                                      || controlType == UIA_ControlTypeIds.UIA_PaneControlTypeId
+                                                      || controlType == UIA_ControlTypeIds.UIA_DocumentControlTypeId);
+            if (!looksLikeRightConversationPane)
+                return true;
+
+            return IsNameCompatibleWithTargetGroup(focusedName, groupName);
+        }
+
+        static private bool IsFocusedElementSafeForTargetConversation(IUIAutomationElement q, IUIAutomationElement groupList, string groupName, string context)
+        {
+            try
+            {
+                var focused = root.GetFocusedElement();
+                bool isDescendantOfQQ = IsElementInSubtree(q, focused);
+                bool isInConversationList = IsElementInSubtree(groupList, focused) || IsElementWithinConversationListBounds(focused, groupList);
+                bool targetNameSafe = IsFocusedElementNameSafeForTarget(focused, groupList, groupName);
+                bool safe = isDescendantOfQQ && !isInConversationList && targetNameSafe;
+                WriteSendDebugLog($"{context} target focus safe={safe}, isDescendantOfQQ={isDescendantOfQQ}, isInConversationList={isInConversationList}, targetNameSafe={targetNameSafe}: {ElementForLog(focused)}");
+                return safe;
+            }
+            catch (Exception ex)
+            {
+                WriteSendDebugLog($"{context} target focus safe read failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        static private string ExtractConversationListItemName(IUIAutomationElement element)
+        {
+            if (element == null)
+                return "";
+
+            string itemName = element.CurrentName;
+            string extractedName = "";
+            if (string.IsNullOrWhiteSpace(itemName))
+            {
+                var descendants = element.FindAll(TreeScope.TreeScope_Descendants, root.CreateTrueCondition());
+                if (descendants != null && descendants.Length > 0)
+                {
+                    System.Text.StringBuilder nameBuilder = new System.Text.StringBuilder();
+                    for (int j = 0; j < descendants.Length; j++)
+                    {
+                        var desc = descendants.GetElement(j);
+                        string descName = desc.CurrentName;
+                        int descControlType = desc.CurrentControlType;
+
+                        if (string.IsNullOrWhiteSpace(descName))
+                            continue;
+
+                        if (IsTimeMarker(descName))
+                            break;
+
+                        if (descControlType == UIA_ControlTypeIds.UIA_TextControlTypeId)
+                            nameBuilder.Append(descName);
+                    }
+
+                    extractedName = nameBuilder.ToString();
+                }
+            }
+            else
+            {
+                extractedName = itemName;
+            }
+
+            extractedName = extractedName.Trim('\'', '"', '\u201c', '\u201d', '\u2018', '\u2019', ' ', '\t', '\r', '\n');
+            int timeIndex = -1;
+            for (int i = 1; i < extractedName.Length - 3; i++)
+            {
+                if (extractedName[i - 1] == ' ' && char.IsDigit(extractedName[i]) && extractedName[i + 1] == ':')
+                {
+                    if (i + 2 < extractedName.Length && char.IsDigit(extractedName[i + 2]))
+                    {
+                        timeIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            if (timeIndex > 0)
+                extractedName = extractedName.Substring(0, timeIndex).Trim();
+
+            return extractedName;
+        }
+
+        static private bool ConversationNameMatchesTarget(string candidateName, string groupName)
+        {
+            if (string.IsNullOrWhiteSpace(candidateName) || string.IsNullOrWhiteSpace(groupName))
+                return false;
+
+            return candidateName == groupName
+                   || candidateName.StartsWith(groupName)
+                   || candidateName.Contains(groupName);
+        }
+
+        static private bool TryReactivateTargetGroup(IUIAutomationElement q, IUIAutomationElement groupList, string groupName, string context)
+        {
+            if (q == null || groupList == null)
+                return false;
+
+            try
+            {
+                var allChildren = groupList.FindAll(TreeScope.TreeScope_Children, root.CreateTrueCondition());
+                WriteSendDebugLog($"{context} target group recovery scan: count={allChildren?.Length ?? 0}, group=\"{TrimForLog(groupName, 80)}\"");
+                if (allChildren == null || allChildren.Length <= 0)
+                    return false;
+
+                for (int i = 0; i < allChildren.Length; i++)
+                {
+                    var child = allChildren.GetElement(i);
+                    string extractedName = ExtractConversationListItemName(child);
+                    if (!ConversationNameMatchesTarget(extractedName, groupName))
+                        continue;
+
+                    WriteSendDebugLog($"{context} target group recovery matched child[{i}]: extracted=\"{TrimForLog(extractedName, 120)}\"");
+                    var sp = child.GetCurrentPattern(UIA_PatternIds.UIA_InvokePatternId) as IUIAutomationInvokePattern;
+                    if (sp == null)
+                    {
+                        WriteSendDebugLog($"{context} target group recovery failed: invoke pattern missing.");
+                        return false;
+                    }
+
+                    sp.Invoke();
+                    Win32.Delay(120);
+                    LogFocusedElement($"{context} after target group recovery invoke");
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteSendDebugLog($"{context} target group recovery failed: {ex.Message}");
+            }
+
+            return false;
+        }
+
+        static private void ClearQQHoverBeforeClick(string context, int clickX, int clickY)
+        {
+            WriteSendDebugLog($"{context} clear hover before click: x={clickX}, y={clickY}, delay={QQHoverClearDelayMs}ms");
+            Win32.MoveCursor(clickX, clickY);
+            Win32.Delay(QQHoverClearDelayMs);
+        }
+
+        static private void ActivateDocumentInput(IUIAutomationElement q, IUIAutomationElement document, int attemptIndex = 1)
         {
             if (document.CurrentControlType == UIA_ControlTypeIds.UIA_DocumentControlTypeId)
             {
+                IntPtr qHwnd = GetQQNativeWindowHandle(q);
                 var docRect = document.CurrentBoundingRectangle;
-                int clickX = (int)((docRect.left + docRect.right) / 2);
-                int clickY = (int)(docRect.bottom - 50);
-                Win32.Click(clickX, clickY);
+                double width = docRect.right - docRect.left;
+                double height = docRect.bottom - docRect.top;
+
+                double[] xFractions = attemptIndex <= 1
+                    ? new[] { 0.72, 0.72 }
+                    : new[] { 0.78, 0.72, 0.70 };
+                int[] yOffsets = attemptIndex <= 1
+                    ? new[] { 80, 60 }
+                    : new[] { 80, 60, 95 };
+
+                for (int i = 0; i < xFractions.Length; i++)
+                {
+                    int clickX = (int)(docRect.left + width * xFractions[i]);
+                    int clickY = height < 160
+                        ? (int)((docRect.top + docRect.bottom) / 2)
+                        : (int)(docRect.bottom - yOffsets[i]);
+
+                    if (clickX < docRect.left + 5)
+                        clickX = (int)docRect.left + 5;
+                    if (clickX > docRect.right - 5)
+                        clickX = (int)docRect.right - 5;
+                    if (clickY < docRect.top + 5)
+                        clickY = (int)docRect.top + 5;
+                    if (clickY > docRect.bottom - 5)
+                        clickY = (int)docRect.bottom - 5;
+
+                    if (qHwnd != IntPtr.Zero)
+                    {
+                        IntPtr fg = IntPtr.Zero;
+                        try { fg = Win32.GetForegroundWindow(); } catch { }
+                        if (fg != qHwnd)
+                        {
+                            WriteSendDebugLog($"ActivateDocumentInput skip click: attempt={attemptIndex}, index={i + 1}, foreground=0x{fg.ToInt64():X}, qHwnd=0x{qHwnd.ToInt64():X}");
+                            return;
+                        }
+                    }
+
+                    WriteSendDebugLog($"ActivateDocumentInput click: attempt={attemptIndex}, index={i + 1}, {RectForLog(document)}, x={clickX}, y={clickY}, xFraction={xFractions[i]:0.00}, yOffset={yOffsets[i]}");
+                    ClearQQHoverBeforeClick($"ActivateDocumentInput attempt={attemptIndex}, index={i + 1}", clickX, clickY);
+                    Win32.ClickCurrentPosition();
+                    if (i + 1 < xFractions.Length)
+                        Win32.Delay(30);
+                }
             }
+            else
+            {
+                WriteSendDebugLog($"ActivateDocumentInput skipped: control is {ElementForLog(document)}");
+            }
+        }
+
+        static private IUIAutomationElement FindBottomVisibleDocument(IUIAutomationElement q, string context)
+        {
+            try
+            {
+                var docCond = root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId);
+                var firstDoc = q.FindFirst(TreeScope.TreeScope_Descendants, docCond);
+                if (firstDoc != null)
+                {
+                    try
+                    {
+                        bool isOffscreen = firstDoc.CurrentIsOffscreen != 0;
+                        var rect = firstDoc.CurrentBoundingRectangle;
+                        bool rectValid = rect.right > rect.left && rect.bottom > rect.top;
+                        if (!isOffscreen && rectValid)
+                        {
+                            WriteSendDebugLog($"{context} document fast path hit: {ElementForLog(firstDoc)}");
+                            return firstDoc;
+                        }
+                        WriteSendDebugLog($"{context} document fast path rejected (offscreen={isOffscreen}, rectValid={rectValid}), falling back to FindAll: {ElementForLog(firstDoc)}");
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteSendDebugLog($"{context} document fast path probe failed: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteSendDebugLog($"{context} document fast path threw: {ex.Message}");
+            }
+
+            var allDocuments = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId));
+            WriteSendDebugLog($"{context} document scan: count={allDocuments?.Length ?? 0}");
+
+            IUIAutomationElement best = null;
+            double bestBottom = double.MinValue;
+
+            if (allDocuments != null && allDocuments.Length > 0)
+            {
+                for (int i = 0; i < allDocuments.Length; i++)
+                {
+                    var doc = allDocuments.GetElement(i);
+                    bool isOffscreen = doc.CurrentIsOffscreen != 0;
+                    string docInfo = ElementForLog(doc);
+                    WriteSendDebugLog($"{context} Document[{i}]: offscreen={isOffscreen}, {docInfo}");
+
+                    if (isOffscreen)
+                        continue;
+
+                    var rect = doc.CurrentBoundingRectangle;
+                    if (rect.right <= rect.left || rect.bottom <= rect.top)
+                        continue;
+
+                    if (best == null || rect.bottom > bestBottom)
+                    {
+                        best = doc;
+                        bestBottom = rect.bottom;
+                    }
+                }
+            }
+
+            WriteSendDebugLog($"{context} selected document: {ElementForLog(best)}");
+            return best;
+        }
+
+        static private void ActivateQQWindow(IUIAutomationElement q, string context)
+        {
+            if (q == null)
+                return;
+
+            try
+            {
+                WriteSendDebugLog($"{context} QQ activate begin: {ElementForLog(q)}");
+                var wp = q.GetCurrentPattern(UIA_PatternIds.UIA_WindowPatternId) as IUIAutomationWindowPattern;
+                wp?.SetWindowVisualState(WindowVisualState.WindowVisualState_Normal);
+                q.SetFocus();
+                TryEnsureQQForeground(q, $"{context} after QQ activate");
+                LogFocusedElement($"{context} after QQ activate");
+            }
+            catch (Exception ex)
+            {
+                WriteSendDebugLog($"{context} QQ activate failed: {ex.Message}");
+            }
+        }
+
+        static private IntPtr GetQQNativeWindowHandle(IUIAutomationElement q)
+        {
+            if (q == null)
+                return IntPtr.Zero;
+            try
+            {
+                return q.CurrentNativeWindowHandle;
+            }
+            catch
+            {
+                return IntPtr.Zero;
+            }
+        }
+
+        static private bool TryEnsureQQForeground(IUIAutomationElement q, string context)
+        {
+            IntPtr qHwnd = GetQQNativeWindowHandle(q);
+            return TryEnsureQQForeground(qHwnd, context);
+        }
+
+        static private bool TryEnsureQQForeground(IntPtr qHwnd, string context)
+        {
+            if (qHwnd == IntPtr.Zero)
+            {
+                WriteSendDebugLog($"{context} foreground ensure skipped: qHwnd is zero");
+                return false;
+            }
+
+            IntPtr before = IntPtr.Zero;
+            try { before = Win32.GetForegroundWindow(); } catch { }
+
+            if (before == qHwnd)
+            {
+                WriteSendDebugLog($"{context} foreground already QQ: hwnd=0x{qHwnd.ToInt64():X}");
+                return true;
+            }
+
+            bool setResult = false;
+            try { setResult = Win32.SetForegroundWindow(qHwnd); } catch (Exception ex)
+            {
+                WriteSendDebugLog($"{context} SetForegroundWindow threw: {ex.Message}");
+            }
+
+            IntPtr after = IntPtr.Zero;
+            try { after = Win32.GetForegroundWindow(); } catch { }
+
+            bool ok = after == qHwnd;
+            WriteSendDebugLog($"{context} foreground switch: before=0x{before.ToInt64():X}, after=0x{after.ToInt64():X}, qHwnd=0x{qHwnd.ToInt64():X}, setResult={setResult}, ok={ok}");
+            return ok;
+        }
+
+        static private IUIAutomationElement FindQQWindowOnce()
+        {
+            string mainTitle = "QQ";
+            var rootElement = root.GetRootElement();
+            var exact = rootElement.FindFirst(TreeScope.TreeScope_Children, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, mainTitle));
+            if (exact != null)
+                return exact;
+
+            var candidates = rootElement.FindAll(TreeScope.TreeScope_Children, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ClassNamePropertyId, "Chrome_WidgetWin_1"));
+            IUIAutomationElement groupListCandidate = null;
+
+            if (candidates != null)
+            {
+                for (int i = 0; i < candidates.Length; i++)
+                {
+                    var candidate = candidates.GetElement(i);
+                    string name = candidate.CurrentName;
+                    if (!string.IsNullOrWhiteSpace(name) && name.Trim() == mainTitle)
+                        return candidate;
+
+                    if (groupListCandidate == null)
+                    {
+                        var groupList = candidate.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "会话列表"));
+                        if (groupList != null)
+                            groupListCandidate = candidate;
+                    }
+                }
+            }
+
+            return groupListCandidate;
+        }
+
+        static private IUIAutomationElement FindQQWindowWithRetry(string context, int maxWaitTime = 1500)
+        {
+            DateTime startTime = DateTime.Now;
+            int waitedTime = 0;
+            int lastDetailedLogTime = -1000;
+
+            while (waitedTime <= maxWaitTime)
+            {
+                bool shouldLog = waitedTime == 0 || waitedTime - lastDetailedLogTime >= 300;
+                if (shouldLog)
+                {
+                    lastDetailedLogTime = waitedTime;
+                    WriteSendDebugLog($"{context} QQ window Find begin: waited={waitedTime}ms");
+                }
+
+                var q = FindQQWindowOnce();
+                if (shouldLog || q != null)
+                    WriteSendDebugLog($"{context} QQ window Find done: waited={waitedTime}ms, window={ElementForLog(q)}");
+
+                if (q != null)
+                    return q;
+
+                Win32.Delay(10);
+                waitedTime = (int)(DateTime.Now - startTime).TotalMilliseconds;
+            }
+
+            WriteSendDebugLog($"{context} QQ window timeout: waited={waitedTime}ms");
+            return null;
+        }
+
+        static private IUIAutomationElement FindGroupListWithRetry(IUIAutomationElement q, string context, int maxWaitTime = 1500)
+        {
+            DateTime startTime = DateTime.Now;
+            int waitedTime = 0;
+            int lastDetailedLogTime = -1000;
+
+            while (waitedTime <= maxWaitTime)
+            {
+                bool shouldLog = waitedTime == 0 || waitedTime - lastDetailedLogTime >= 300;
+                if (shouldLog)
+                {
+                    lastDetailedLogTime = waitedTime;
+                    WriteSendDebugLog($"{context} group list FindFirst begin: waited={waitedTime}ms");
+                }
+
+                var grouplist = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "会话列表"));
+                if (shouldLog || grouplist != null)
+                    WriteSendDebugLog($"{context} group list FindFirst done: waited={waitedTime}ms, groupList={ElementForLog(grouplist)}");
+
+                if (grouplist != null)
+                    return grouplist;
+
+                if (waitedTime == 0)
+                    ActivateQQWindow(q, $"{context} group list missing");
+
+                Win32.Delay(10);
+                waitedTime = (int)(DateTime.Now - startTime).TotalMilliseconds;
+            }
+
+            WriteSendDebugLog($"{context} group list timeout: waited={waitedTime}ms");
+            return null;
         }
 
         /// <summary>
         /// 发送消息（等待发送按钮启用后点击）
         /// </summary>
-        static private void SendMessage(IUIAutomationElement q, bool useEnterIfDisabled = false)
+        static private bool IsAlreadyInTargetGroup(IUIAutomationElement q, string groupName, string context)
+        {
+            if (q == null || string.IsNullOrWhiteSpace(groupName))
+                return false;
+            try
+            {
+                var c1 = root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_ButtonControlTypeId);
+                var c2 = root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, groupName);
+                var cond = root.CreateAndCondition(c1, c2);
+                var btn = q.FindFirst(TreeScope.TreeScope_Descendants, cond);
+                bool found = btn != null;
+                WriteSendDebugLog($"{context} alreadyInTargetGroup={found} via FindFirst(Button name=\"{groupName}\")");
+                return found;
+            }
+            catch (Exception ex)
+            {
+                WriteSendDebugLog($"{context} IsAlreadyInTargetGroup threw: {ex.Message}");
+                return false;
+            }
+        }
+
+        static private IUIAutomationElement TryFindSendButton(IUIAutomationElement q, string context)
+        {
+            if (q == null)
+                return null;
+            try
+            {
+                var btn = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "发送"));
+                WriteSendDebugLog($"{context} prefind send button: {ElementForLog(btn)}");
+                return btn;
+            }
+            catch (Exception ex)
+            {
+                WriteSendDebugLog($"{context} prefind send button threw: {ex.Message}");
+                return null;
+            }
+        }
+
+        static private bool TryInvokeCachedSendButton(IUIAutomationElement cachedButton, int maxWaitTime, string context)
+        {
+            if (cachedButton == null)
+                return false;
+
+            int waitInterval = 10;
+            DateTime startTime = DateTime.Now;
+            int waitedTime = 0;
+            int lastDetailedLogTime = -1000;
+
+            while (waitedTime < maxWaitTime)
+            {
+                bool shouldLog = waitedTime == 0 || waitedTime - lastDetailedLogTime >= 500;
+                bool enabled;
+                try
+                {
+                    enabled = cachedButton.CurrentIsEnabled != 0;
+                }
+                catch (Exception ex)
+                {
+                    WriteSendDebugLog($"{context} cached send button stale: {ex.Message}, waited={waitedTime}ms");
+                    return false;
+                }
+                if (shouldLog)
+                {
+                    lastDetailedLogTime = waitedTime;
+                    WriteSendDebugLog($"{context} cached send enabled read: waited={waitedTime}ms, enabled={enabled}");
+                }
+                if (enabled)
+                {
+                    try
+                    {
+                        var sp = cachedButton.GetCurrentPattern(UIA_PatternIds.UIA_InvokePatternId) as IUIAutomationInvokePattern;
+                        if (sp != null)
+                        {
+                            WriteSendDebugLog($"{context} cached send invoke begin: waited={waitedTime}ms");
+                            sp.Invoke();
+                            WriteSendDebugLog($"{context} cached send invoke done: waited={waitedTime}ms");
+                            return true;
+                        }
+                        WriteSendDebugLog($"{context} cached send invoke pattern missing: waited={waitedTime}ms");
+                        return false;
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteSendDebugLog($"{context} cached send invoke threw: {ex.Message}, waited={waitedTime}ms");
+                        return false;
+                    }
+                }
+
+                Win32.Delay(waitInterval);
+                waitedTime = (int)(DateTime.Now - startTime).TotalMilliseconds;
+            }
+
+            WriteSendDebugLog($"{context} cached send timeout: waited={waitedTime}ms");
+            return false;
+        }
+
+        static private bool SendMessage(IUIAutomationElement q, bool useEnterIfDisabled = false, int maxWaitTime = 5000)
         {
             // System.Text.StringBuilder sendLog = new System.Text.StringBuilder();
             // sendLog.AppendLine($"[SendMessage] 开始查找发送按钮...");
+            WriteSendDebugLog($"SendMessage begin: useEnterIfDisabled={useEnterIfDisabled}, maxWaitTime={maxWaitTime}");
 
             // 等待发送按钮启用（每隔10ms检测一次，最多等待5秒）
-            int maxWaitTime = 5000;
             int waitInterval = 10;
+            DateTime startTime = DateTime.Now;
             int waitedTime = 0;
+            int lastDetailedLogTime = -1000;
             IUIAutomationElement sendButton = null;
 
             while (waitedTime < maxWaitTime)
             {
+                bool shouldLog = waitedTime == 0 || waitedTime - lastDetailedLogTime >= 500;
+                if (shouldLog)
+                {
+                    lastDetailedLogTime = waitedTime;
+                    WriteSendDebugLog($"SendMessage FindFirst begin: waited={waitedTime}ms");
+                }
                 sendButton = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "发送"));
+                if (shouldLog)
+                    WriteSendDebugLog($"SendMessage FindFirst done: waited={waitedTime}ms, button={ElementForLog(sendButton)}");
                 if (sendButton != null)
                 {
+                    if (shouldLog)
+                        WriteSendDebugLog($"SendMessage enabled read begin: waited={waitedTime}ms");
                     bool sendButtonEnabled = sendButton.CurrentIsEnabled != 0;
+                    if (shouldLog || sendButtonEnabled)
+                        WriteSendDebugLog($"SendMessage enabled read done: waited={waitedTime}ms, enabled={sendButtonEnabled}");
                     // sendLog.AppendLine($"[SendMessage] 找到发送按钮 (Enabled={sendButtonEnabled}, Waited={waitedTime}ms)");
                     if (sendButtonEnabled)
                     {
                         // 按钮已启用，点击发送
+                        WriteSendDebugLog($"SendMessage invoke pattern begin: waited={waitedTime}ms");
                         var sp = sendButton.GetCurrentPattern(UIA_PatternIds.UIA_InvokePatternId) as IUIAutomationInvokePattern;
+                        WriteSendDebugLog($"SendMessage invoke pattern done: waited={waitedTime}ms, exists={sp != null}");
                         if (sp != null)
                         {
                             // sendLog.AppendLine($"[SendMessage] 点击发送按钮成功");
                             // SaveDebugInfo(sendLog.ToString(), "QQ发送");
+                            WriteSendDebugLog($"SendMessage invoke begin: waited={waitedTime}ms");
                             sp.Invoke();
-                            return;  // 发送成功，直接返回
+                            WriteSendDebugLog($"SendMessage invoke done: waited={waitedTime}ms");
+                            return true;  // 发送成功，直接返回
                         }
                     }
                 }
 
                 // 按钮未找到或未启用，等待后重试
                 Win32.Delay(waitInterval);
-                waitedTime += waitInterval;
+                waitedTime = (int)(DateTime.Now - startTime).TotalMilliseconds;
             }
 
             // sendLog.AppendLine($"[SendMessage] 等待超时({maxWaitTime}ms)，降级处理");
             // SaveDebugInfo(sendLog.ToString(), "QQ发送");
+            WriteSendDebugLog($"SendMessage timeout: waited={waitedTime}ms, useEnterIfDisabled={useEnterIfDisabled}");
 
             // 如果等待后仍未成功，降级使用回车键
             if (useEnterIfDisabled)
             {
                 // sendLog.AppendLine($"[SendMessage] 使用回车键发送");
                 // SaveDebugInfo(sendLog.ToString(), "QQ发送");
+                WriteSendDebugLog("SendMessage Enter begin.");
                 Win32.Enter();
+                WriteSendDebugLog("SendMessage Enter done.");
             }
+            WriteSendDebugLog("SendMessage end without invoke.");
+            return false;
+        }
+
+        static private bool WaitForSendButtonDisabled(IUIAutomationElement q, string context, IUIAutomationElement cachedSendButton = null, int maxWaitTime = 1500)
+        {
+            DateTime startTime = DateTime.Now;
+            int waitedTime = 0;
+            int lastDetailedLogTime = -1000;
+            IUIAutomationElement sendButton = cachedSendButton;
+            bool usingCached = sendButton != null;
+
+            while (waitedTime < maxWaitTime)
+            {
+                bool shouldLog = waitedTime == 0 || waitedTime - lastDetailedLogTime >= 300;
+
+                if (!usingCached)
+                {
+                    if (shouldLog)
+                    {
+                        lastDetailedLogTime = waitedTime;
+                        WriteSendDebugLog($"{context} wait send disabled FindFirst begin: waited={waitedTime}ms");
+                    }
+                    sendButton = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "发送"));
+                    if (shouldLog)
+                        WriteSendDebugLog($"{context} wait send disabled FindFirst done: waited={waitedTime}ms, button={ElementForLog(sendButton)}");
+                }
+
+                if (sendButton == null)
+                {
+                    WriteSendDebugLog($"{context} wait send disabled result: button missing, waited={waitedTime}ms");
+                    return true;
+                }
+
+                bool enabled;
+                try
+                {
+                    enabled = sendButton.CurrentIsEnabled != 0;
+                }
+                catch (Exception ex)
+                {
+                    WriteSendDebugLog($"{context} wait send disabled cached button stale: {ex.Message}, waited={waitedTime}ms");
+                    usingCached = false;
+                    sendButton = null;
+                    Win32.Delay(10);
+                    waitedTime = (int)(DateTime.Now - startTime).TotalMilliseconds;
+                    continue;
+                }
+
+                if (shouldLog && usingCached)
+                {
+                    lastDetailedLogTime = waitedTime;
+                    WriteSendDebugLog($"{context} wait send disabled cached read: waited={waitedTime}ms, enabled={enabled}");
+                }
+
+                if (!enabled)
+                {
+                    WriteSendDebugLog($"{context} wait send disabled result: disabled=True, waited={waitedTime}ms");
+                    return true;
+                }
+
+                Win32.Delay(10);
+                waitedTime = (int)(DateTime.Now - startTime).TotalMilliseconds;
+            }
+
+            WriteSendDebugLog($"{context} wait send disabled timeout: waited={waitedTime}ms");
+            return false;
+        }
+
+        static private bool PasteAndSendMessage(IUIAutomationElement q, IUIAutomationElement groupList, IUIAutomationElement input, string groupName, string msgContent, string context, ref IUIAutomationElement cachedSendButton)
+        {
+            IntPtr qHwnd = GetQQNativeWindowHandle(q);
+            if (cachedSendButton == null)
+                cachedSendButton = TryFindSendButton(q, $"{context} prepaste");
+
+            for (int attempt = 1; attempt <= 2; attempt++)
+            {
+                int sendWaitTime = attempt == 1 ? 1200 : 5000;
+                WriteSendDebugLog($"{context} paste/send attempt {attempt} begin: sendWaitTime={sendWaitTime}, {ContentForLog("msg", msgContent)}");
+
+                input.SetFocus();
+                WriteSendDebugLog($"{context} attempt {attempt} input focus set.");
+                bool focusSafeAfterSetFocus = IsFocusedElementSafeForTargetConversation(q, groupList, groupName, $"{context} attempt {attempt} after SetFocus");
+                if (!focusSafeAfterSetFocus)
+                {
+                    WriteSendDebugLog($"{context} attempt {attempt} focus is not in target conversation after SetFocus; recovering target group before paste.");
+                    TryReactivateTargetGroup(q, groupList, groupName, $"{context} attempt {attempt}");
+                    var refreshedInput = FindBottomVisibleDocument(q, $"{context} attempt {attempt} after target recovery");
+                    if (refreshedInput != null)
+                        input = refreshedInput;
+
+                    if (attempt < 2)
+                        continue;
+
+                    return false;
+                }
+
+                bool foregroundOk = TryEnsureQQForeground(qHwnd, $"{context} attempt {attempt} pre-paste");
+                if (!foregroundOk)
+                {
+                    WriteSendDebugLog($"{context} attempt {attempt} QQ is not foreground before paste; re-activating QQ and recovering target group.");
+                    ActivateQQWindow(q, $"{context} attempt {attempt} foreground re-activate");
+                    foregroundOk = TryEnsureQQForeground(qHwnd, $"{context} attempt {attempt} after re-activate");
+                    if (!foregroundOk)
+                    {
+                        WriteSendDebugLog($"{context} attempt {attempt} QQ still not foreground after re-activate; skip paste.");
+                        if (attempt < 2)
+                        {
+                            TryReactivateTargetGroup(q, groupList, groupName, $"{context} attempt {attempt}");
+                            var refreshedInput = FindBottomVisibleDocument(q, $"{context} attempt {attempt} after foreground recovery");
+                            if (refreshedInput != null)
+                                input = refreshedInput;
+                            continue;
+                        }
+                        return false;
+                    }
+
+                    input.SetFocus();
+                    WriteSendDebugLog($"{context} attempt {attempt} input focus re-set after foreground recovery.");
+                    if (!IsFocusedElementSafeForTargetConversation(q, groupList, groupName, $"{context} attempt {attempt} after SetFocus retry"))
+                    {
+                        WriteSendDebugLog($"{context} attempt {attempt} focus still not safe after foreground recovery; skip paste.");
+                        if (attempt < 2)
+                        {
+                            TryReactivateTargetGroup(q, groupList, groupName, $"{context} attempt {attempt}");
+                            var refreshedInput = FindBottomVisibleDocument(q, $"{context} attempt {attempt} after foreground recovery focus retry");
+                            if (refreshedInput != null)
+                                input = refreshedInput;
+                            continue;
+                        }
+                        return false;
+                    }
+                }
+                else
+                {
+                    WriteSendDebugLog($"{context} attempt {attempt} skipping physical click: SetFocus safe and QQ already foreground.");
+                }
+
+                Win32.Win32SetText(msgContent);
+                WriteSendDebugLog($"{context} attempt {attempt} copied to clipboard: {ContentForLog("msg", msgContent)}");
+
+                Win32.CtrlV();
+                WriteSendDebugLog($"{context} attempt {attempt} CtrlV done.");
+                if (!IsFocusedElementSafeForTargetConversation(q, groupList, groupName, $"{context} attempt {attempt} after CtrlV"))
+                {
+                    WriteSendDebugLog($"{context} attempt {attempt} focus is not in target conversation after CtrlV; skip send.");
+                    if (attempt < 2)
+                    {
+                        TryReactivateTargetGroup(q, groupList, groupName, $"{context} attempt {attempt}");
+                        var refreshedInput = FindBottomVisibleDocument(q, $"{context} attempt {attempt} after target recovery");
+                        if (refreshedInput != null)
+                            input = refreshedInput;
+                        cachedSendButton = TryFindSendButton(q, $"{context} attempt {attempt} refind after CtrlV recovery");
+                        continue;
+                    }
+
+                    return false;
+                }
+
+                bool sent = TryInvokeCachedSendButton(cachedSendButton, sendWaitTime, $"{context} attempt {attempt}");
+                if (!sent)
+                {
+                    if (cachedSendButton != null)
+                        WriteSendDebugLog($"{context} attempt {attempt} cached send button failed; falling back to SendMessage.");
+                    sent = SendMessage(q, false, sendWaitTime);
+                }
+                WriteSendDebugLog($"{context} paste/send attempt {attempt} result: sent={sent}");
+                if (sent)
+                    return true;
+
+                cachedSendButton = TryFindSendButton(q, $"{context} attempt {attempt} refind after send failure");
+
+                if (attempt < 2)
+                    WriteSendDebugLog($"{context} first paste did not enable/send QQ message; retrying input activation once.");
+            }
+
+            return false;
         }
 
         // ================================================
@@ -442,27 +1392,38 @@ namespace TypeSunny.Utils
             return QunList;
         }
 
-
         static Timer tmSend;
+
         public static void SendQQMessage (string groupName, string msgContent, int delayTime, Window caller)
         {
+            WriteSendDebugLog($"SendQQMessage schedule: group=\"{TrimForLog(groupName, 80)}\", delayArg={delayTime}, effectiveDelay=0, {ContentForLog("msg", msgContent)}");
 
-
-            Win32SetText(msgContent);
 
             if (msgContent == "" || groupName == "")
+            {
+                WriteSendDebugLog("SendQQMessage return: empty message or group.");
                 return;
+            }
 
+            BeginSendAutomation("SendQQMessage schedule");
+            bool timerScheduled = false;
             try
             {
-                MsgRequest m = new MsgRequest(groupName, caller);
+                MsgRequest m = new MsgRequest(groupName, msgContent, caller);
 
-                tmSend = new Timer(SendQQMessageHelper, m, delayTime, Timeout.Infinite);
+                tmSend = new Timer(SendQQMessageHelper, m, 0, Timeout.Infinite);
+                timerScheduled = true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                WriteSendDebugLog($"SendQQMessage schedule exception swallowed: {ex.Message}");
 
              
+            }
+            finally
+            {
+                if (!timerScheduled)
+                    EndSendAutomation(caller, "SendQQMessage schedule failed", false);
             }
 
 
@@ -471,16 +1432,24 @@ namespace TypeSunny.Utils
         private static void SendQQMessageHelper(object obj)
         {
             System.Text.StringBuilder debugLog = new System.Text.StringBuilder();
+            MsgRequest m = (MsgRequest)obj;
+            string groupName = m.groupName;
+            string msgContent = m.msgContent;
+            Window caller = m.caller;
+            bool focusCallerAfterAutomation = false;
+            WriteSendDebugLog($"SendQQMessageHelper queued: group=\"{TrimForLog(groupName, 80)}\", {ContentForLog("msg", msgContent)}");
 
+            WriteSendDebugLog("SendQQMessageHelper waiting for send automation lock.");
             try
             {
-                // 保存当前鼠标位置
-                Win32.SaveCursorPos();
-
-                MsgRequest m = (MsgRequest)obj;
-                string groupName = m.groupName;
-                string msgContent = Win32.Win32GetText(13);
-                Window caller = m.caller;
+                lock (SendAutomationLock)
+                {
+                    WriteSendDebugLog("SendQQMessageHelper acquired send automation lock.");
+                    try
+                    {
+                        // 保存当前鼠标位置
+                        Win32.SaveCursorPos();
+                        WriteSendDebugLog($"SendQQMessageHelper start: group=\"{TrimForLog(groupName, 80)}\", {ContentForLog("msg", msgContent)}");
 
                 // debugLog.AppendLine($"========== QQ消息发送开始 ==========");
                 // debugLog.AppendLine($"目标群名: [{groupName}]");
@@ -492,38 +1461,29 @@ namespace TypeSunny.Utils
 
 
                 // debugLog.AppendLine($"--- 开始查找QQ主窗口 ---");
-                    string MainTitle = "QQ";
-                    var q = root.GetRootElement().FindFirst(TreeScope.TreeScope_Children, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, MainTitle));
+                    var q = FindQQWindowWithRetry("SendQQMessageHelper");
+                    WriteSendDebugLog($"SendQQMessageHelper QQ window: {ElementForLog(q)}");
                     if (q == null)
                     {
                         // debugLog.AppendLine($"[错误] 未找到QQ主窗口");
                         // ShowDebugLog(debugLog.ToString());
+                        WriteSendDebugLog("SendQQMessageHelper return: QQ window not found.");
                         return;
                     }
                     // debugLog.AppendLine($"[成功] 找到QQ主窗口 (ClassName={q.CurrentClassName})");
 
-                    if (null == q.FindFirst(TreeScope.TreeScope_Children, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId)))
-                    {
-                        // debugLog.AppendLine($"[激活] QQ窗口未激活，正在激活窗口...");
-                        var wp = q.GetCurrentPattern(UIA_PatternIds.UIA_WindowPatternId) as IUIAutomationWindowPattern;
-                        wp.SetWindowVisualState(WindowVisualState.WindowVisualState_Normal);
-                        q.SetFocus();
-                        // Win32.Delay(1);
-                    }
-                    else
-                    {
-                        // debugLog.AppendLine($"[激活] QQ窗口已激活");
-                    }
+                    ActivateQQWindow(q, "SendQQMessageHelper");
 
 
                     //获取消息列表，群列表
                     // debugLog.AppendLine($"--- [会话列表] 开始查找 ---");
-                    var grouplist = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "会话列表"));
+                    var grouplist = FindGroupListWithRetry(q, "SendQQMessageHelper");
 
                     if (grouplist == null)
                     {
                         // debugLog.AppendLine($"[错误] 未找到会话列表");
                         // ShowDebugLog(debugLog.ToString());
+                        WriteSendDebugLog("SendQQMessageHelper return: group list not found.");
                         return;
                     }
                     // debugLog.AppendLine($"[成功] 找到会话列表");
@@ -533,27 +1493,7 @@ namespace TypeSunny.Utils
 
                     // 优化：先检查是否已在目标群（提前检测）
                     IUIAutomationElement edits = null;
-                    bool alreadyInTargetGroup = false;
-
-                    // 策略0：优先通过按钮检测是否已在目标群（适用于新旧版本QQ）
-                    var allButtons = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_ButtonControlTypeId));
-                    // debugLog.AppendLine($"[按钮检测] 找到 {allButtons?.Length ?? 0} 个按钮");
-                    if (allButtons != null && allButtons.Length > 0)
-                    {
-                        for (int i = 0; i < allButtons.Length; i++)
-                        {
-                            var btn = allButtons.GetElement(i);
-                            string btnName = btn.CurrentName;
-                            // debugLog.AppendLine($"  按钮[{i}]: Name=\"{btnName}\"");
-                            // 检测是否有按钮Name等于目标群名
-                            if (!string.IsNullOrWhiteSpace(btnName) && btnName == groupName)
-                            {
-                                alreadyInTargetGroup = true;
-                                // debugLog.AppendLine($"[检测成功] 已在目标群: [{groupName}]");
-                                break;
-                            }
-                        }
-                    }
+                    bool alreadyInTargetGroup = IsAlreadyInTargetGroup(q, groupName, "SendQQMessageHelper");
                     // SaveDebugInfo(debugLog.ToString(), "QQ发送");
 
                     // 如果已在目标群，直接查找输入框，跳过点击群
@@ -580,21 +1520,7 @@ namespace TypeSunny.Utils
                         // 策略2：如果没找到Edit，查找Document控件（新版QQ）
                         if (edits == null)
                         {
-                            var allDocuments = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId));
-                            if (allDocuments != null && allDocuments.Length > 0)
-                            {
-                                for (int i = 0; i < allDocuments.Length; i++)
-                                {
-                                    var doc = allDocuments.GetElement(i);
-                                    bool isOffscreen = doc.CurrentIsOffscreen != 0;
-                                    // 跳过不可见的Document
-                                    if (!isOffscreen)
-                                    {
-                                        edits = doc;
-                                        break;
-                                    }
-                                }
-                            }
+                            edits = FindBottomVisibleDocument(q, "SendQQMessageHelper already-in-group");
                         }
                     }
                     else
@@ -650,11 +1576,11 @@ namespace TypeSunny.Utils
                             {
                                 sp.Invoke();
 
-                                // 快速查找输入框
-                                edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, groupName));
+                                // 快速查找输入框。不要按群名找元素，那会命中左侧会话/标题 Text。
+                                edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId));
                                 if (edits == null)
                                 {
-                                    edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId));
+                                    edits = FindBottomVisibleDocument(q, "SendQQMessageHelper cached-group-click");
                                 }
                             }
                         }
@@ -816,21 +1742,7 @@ namespace TypeSunny.Utils
 
                                         if (edits == null)
                                         {
-                                            var allDocuments = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId));
-                                            if (allDocuments != null && allDocuments.Length > 0)
-                                            {
-                                                for (int di = 0; di < allDocuments.Length; di++)
-                                                {
-                                                    var doc = allDocuments.GetElement(di);
-                                                    bool isOffscreen = doc.CurrentIsOffscreen != 0;
-
-                                                    if (isOffscreen)
-                                                        continue;
-
-                                                    edits = doc;
-                                                    break;
-                                                }
-                                            }
+                                            edits = FindBottomVisibleDocument(q, "SendQQMessageHelper after-group-click");
                                         }
 
                                         if (edits == null)
@@ -840,7 +1752,7 @@ namespace TypeSunny.Utils
 
                                         if (edits == null)
                                         {
-                                            edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId));
+                                            edits = FindBottomVisibleDocument(q, "SendQQMessageHelper fallback");
                                         }
 
                                         break;
@@ -852,34 +1764,22 @@ namespace TypeSunny.Utils
 
                     if (edits != null)
                     {
+                        WriteSendDebugLog($"SendQQMessageHelper input found: {ElementForLog(edits)}");
                         // debugLog.AppendLine($"--- [步骤3] 找到输入框，开始发送 ---");
                         // debugLog.AppendLine($"[输入框类型] {GetControlTypeName(edits.CurrentControlType)} (Name=\"{edits.CurrentName}\")");
                         // SaveDebugInfo(debugLog.ToString(), "QQ发送");
 
-                        // debugLog.AppendLine($"[焦点] 设置输入框焦点...");
-                        edits.SetFocus();
-
-                        // 如果使用的是Document控件，需要额外激活输入框
-                        // 新版QQ的输入框在Document底部，需要点击Document才能激活
-                        ActivateDocumentInput(edits);
-
-                        // debugLog.AppendLine($"[粘贴] 执行 Ctrl+V 粘贴消息内容...");
-                        // SaveDebugInfo(debugLog.ToString(), "QQ发送");
-                        Win32.CtrlV();
-
-                        // debugLog.AppendLine($"[发送] 调用SendMessage点击发送按钮...");
+                        // debugLog.AppendLine($"[发送] 激活输入框、粘贴并发送...");
                         // SaveDebugInfo(debugLog.ToString(), "QQ发送");
                         // SendQQMessage用于发送文章内容，始终发送
-                        SendMessage(q);
+                        IUIAutomationElement cachedSendButton = null;
+                        bool sent = PasteAndSendMessage(q, grouplist, edits, groupName, msgContent, "SendQQMessageHelper", ref cachedSendButton);
+                        WriteSendDebugLog($"SendQQMessageHelper SendMessage final result: sent={sent}");
+                        focusCallerAfterAutomation = sent;
 
                         // debugLog.AppendLine($"[完成] 切换回TypeSunny窗口");
                         // debugLog.AppendLine($"========== QQ消息发送成功 ==========");
                         // SaveDebugInfo(debugLog.ToString(), "QQ发送");
-                        caller.Dispatcher.Invoke(() => {
-                            Current?.FocusInput();
-                        });
-                        // 恢复鼠标位置
-                        Win32.RestoreCursorPos();
 
                     }
                     else
@@ -887,81 +1787,80 @@ namespace TypeSunny.Utils
                         // debugLog.AppendLine($"[错误] 未找到输入框，发送失败");
                         // debugLog.AppendLine($"========== QQ消息发送失败 ==========");
                         // SaveDebugInfo(debugLog.ToString(), "QQ发送");
+                        WriteSendDebugLog("SendQQMessageHelper failed: input not found.");
                     }
-            }
-            catch (Exception ex)
-            {
-                // debugLog.AppendLine($"[异常] QQ消息发送出错: {ex.Message}");
-                // debugLog.AppendLine($"[异常] 堆栈: {ex.StackTrace}");
-                // debugLog.AppendLine($"========== QQ消息发送异常结束 ==========");
-                // ShowDebugLog(debugLog.ToString());
+                }
+                catch (Exception ex)
+                {
+                    // debugLog.AppendLine($"[异常] QQ消息发送出错: {ex.Message}");
+                    // debugLog.AppendLine($"[异常] 堆栈: {ex.StackTrace}");
+                    // debugLog.AppendLine($"========== QQ消息发送异常结束 ==========");
+                    // ShowDebugLog(debugLog.ToString());
+                    WriteSendDebugLog($"SendQQMessageHelper exception: {ex}");
+                }
+                finally
+                {
+                    // 无论成功或失败，都恢复鼠标位置
+                    Win32.RestoreCursorPos();
+                    WriteSendDebugLog("SendQQMessageHelper released send automation lock.");
+                }
+                }
             }
             finally
             {
-                // 无论成功或失败，都恢复鼠标位置
-                Win32.RestoreCursorPos();
+                EndSendAutomation(caller, "SendQQMessageHelper", focusCallerAfterAutomation);
             }
-
-
         }
 
 
         public static void SendQQMessageD(string groupName, string msgContent1, string msgContent2, int delayTime, Window caller)
         {
-            Win32SetText(msgContent1);
+            WriteSendDebugLog($"SendQQMessageD start: group=\"{TrimForLog(groupName, 80)}\", delayArg={delayTime}, {ContentForLog("score", msgContent1)}, {ContentForLog("article", msgContent2)}");
 
             if (msgContent1 == "" || msgContent2 == ""  || groupName == "")
+            {
+                WriteSendDebugLog("SendQQMessageD return: empty score/article/group.");
                 return;
+            }
 
-            // 保存当前鼠标位置
-            Win32.SaveCursorPos();
-
+            BeginSendAutomation("SendQQMessageD");
+            bool focusCallerAfterAutomation = false;
             try
             {
+                WriteSendDebugLog("SendQQMessageD waiting for send automation lock.");
+                lock (SendAutomationLock)
+                {
+                    WriteSendDebugLog("SendQQMessageD acquired send automation lock.");
+                    // 保存当前鼠标位置
+                    Win32.SaveCursorPos();
+                    WriteSendDebugLog("SendQQMessageD cursor saved.");
+
+                    try
+                    {
 
                 // Win32.Delay(1);
 
-                string MainTitle = "QQ";
-                var q = root.GetRootElement().FindFirst(TreeScope.TreeScope_Children, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, MainTitle));
+                var q = FindQQWindowWithRetry("SendQQMessageD");
+                WriteSendDebugLog($"SendQQMessageD QQ window: {ElementForLog(q)}");
                 if (q == null)
-                    return;
-
-                if (null == q.FindFirst(TreeScope.TreeScope_Children, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId)))
                 {
-                    var wp = q.GetCurrentPattern(UIA_PatternIds.UIA_WindowPatternId) as IUIAutomationWindowPattern;
-                    wp.SetWindowVisualState(WindowVisualState.WindowVisualState_Normal);
-                    q.SetFocus();
-                    // Win32.Delay(1);
-
+                    WriteSendDebugLog("SendQQMessageD return: QQ window not found.");
+                    return;
                 }
 
-                var grouplist = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "会话列表"));
+                ActivateQQWindow(q, "SendQQMessageD");
+
+                var grouplist = FindGroupListWithRetry(q, "SendQQMessageD");
 
                 if (grouplist == null)
                 {
+                    WriteSendDebugLog("SendQQMessageD return: group list not found.");
                     return;
                 }
 
                     // 第一步：智能检测是否已在目标群（兼容新旧版本QQ）
                     IUIAutomationElement edits = null;
-                    bool alreadyInTargetGroup = false;
-
-                    // 策略0：优先通过按钮检测是否已在目标群（适用于新旧版本QQ）
-                    var allButtons = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_ButtonControlTypeId));
-                    if (allButtons != null && allButtons.Length > 0)
-                    {
-                        for (int i = 0; i < allButtons.Length; i++)
-                        {
-                            var btn = allButtons.GetElement(i);
-                            string btnName = btn.CurrentName;
-                            // 检测是否有按钮Name等于目标群名
-                            if (!string.IsNullOrWhiteSpace(btnName) && btnName == groupName)
-                            {
-                                alreadyInTargetGroup = true;
-                                break;
-                            }
-                        }
-                    }
+                    bool alreadyInTargetGroup = IsAlreadyInTargetGroup(q, groupName, "SendQQMessageD");
 
                     // 如果已在目标群，直接查找输入框，跳过点击群
                     if (alreadyInTargetGroup)
@@ -980,6 +1879,7 @@ namespace TypeSunny.Utils
                                     continue;
                                 }
                                 edits = edit;
+                                WriteSendDebugLog($"SendQQMessageD input found while already in group via Edit[{i}]: {ElementForLog(edits)}");
                                 break;
                             }
                         }
@@ -987,27 +1887,15 @@ namespace TypeSunny.Utils
                         // 策略2：如果没找到Edit，查找Document控件（新版QQ）
                         if (edits == null)
                         {
-                            var allDocuments = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId));
-                            if (allDocuments != null && allDocuments.Length > 0)
-                            {
-                                for (int i = 0; i < allDocuments.Length; i++)
-                                {
-                                    var doc = allDocuments.GetElement(i);
-                                    bool isOffscreen = doc.CurrentIsOffscreen != 0;
-                                    // 跳过不可见的Document
-                                    if (!isOffscreen)
-                                    {
-                                        edits = doc;
-                                        break;
-                                    }
-                                }
-                            }
+                            edits = FindBottomVisibleDocument(q, "SendQQMessageD already-in-group");
+                            WriteSendDebugLog($"SendQQMessageD input found while already in group via bottom Document: {ElementForLog(edits)}");
                         }
                     }
                     else
                     {
                         // 不在目标群，使用前缀匹配查找输入框（兼容旧逻辑）
                         var allEdits = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId));
+                        WriteSendDebugLog($"SendQQMessageD not in target group; editCountBeforeClick={allEdits?.Length ?? 0}");
                         if (allEdits != null && allEdits.Length > 0)
                         {
                             for (int i = 0; i < allEdits.Length; i++)
@@ -1020,6 +1908,7 @@ namespace TypeSunny.Utils
                                 {
                                     edits = edit;
                                     alreadyInTargetGroup = true;
+                                    WriteSendDebugLog($"SendQQMessageD input matched by Edit name prefix[{i}]: {ElementForLog(edits)}");
                                     break;
                                 }
                             }
@@ -1031,6 +1920,7 @@ namespace TypeSunny.Utils
                     {
                         // 获取会话列表的所有子元素（和GetQunList逻辑一致）
                         var allChildren = grouplist.FindAll(TreeScope.TreeScope_Children, root.CreateTrueCondition());
+                        WriteSendDebugLog($"SendQQMessageD scanning group list children: count={allChildren?.Length ?? 0}");
 
                         if (allChildren.Length > 0)
                         {
@@ -1125,6 +2015,7 @@ namespace TypeSunny.Utils
 
                                 if (!isMatch)
                                     continue;
+                                WriteSendDebugLog($"SendQQMessageD matched group child[{i}]: raw=\"{TrimForLog(itemName, 120)}\", extracted=\"{TrimForLog(extractedName, 120)}\"");
 
                                 var sp = elem.GetCurrentPattern(UIA_PatternIds.UIA_InvokePatternId) as IUIAutomationInvokePattern;
                                 if (sp != null)
@@ -1150,7 +2041,12 @@ namespace TypeSunny.Utils
                                     // 如果已经在目标群，跳过点击
                                     if (!alreadyInTargetGroup)
                                     {
+                                        WriteSendDebugLog("SendQQMessageD invoking matched group item.");
                                         sp.Invoke();
+                                    }
+                                    else
+                                    {
+                                        WriteSendDebugLog("SendQQMessageD matched group already active; skip invoking group item.");
                                     }
 
                                     // 点击后查找任意可编辑的输入框
@@ -1173,6 +2069,7 @@ namespace TypeSunny.Utils
 
                                             // 使用第一个非搜索框的Edit控件
                                             edits = eedit;
+                                            WriteSendDebugLog($"SendQQMessageD input found after group click via Edit[{ei}]: {ElementForLog(edits)}");
                                             break;
                                         }
                                     }
@@ -1180,35 +2077,22 @@ namespace TypeSunny.Utils
                                     // 策略2：如果没找到合适的Edit，尝试使用Document控件（新版QQ可能用Document作为输入区）
                                     if (edits == null)
                                     {
-                                        var allDocumentsForD = q.FindAll(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId));
-                                        if (allDocumentsForD != null && allDocumentsForD.Length > 0)
-                                        {
-                                            for (int di = 0; di < allDocumentsForD.Length; di++)
-                                            {
-                                                var doc = allDocumentsForD.GetElement(di);
-                                                bool isOffscreen = doc.CurrentIsOffscreen != 0;
-
-                                                // 跳过不可见的Document
-                                                if (isOffscreen)
-                                                    continue;
-
-                                                // 使用第一个可见的Document控件
-                                                edits = doc;
-                                                break;
-                                            }
-                                        }
+                                        edits = FindBottomVisibleDocument(q, "SendQQMessageD after-group-click");
+                                        WriteSendDebugLog($"SendQQMessageD input found after group click via bottom Document: {ElementForLog(edits)}");
                                     }
 
                                     // 策略3：如果还是失败，降级到原来的逻辑（兼容旧版QQ）
                                     if (edits == null)
                                     {
                                         edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_EditControlTypeId));
+                                        WriteSendDebugLog($"SendQQMessageD input fallback Edit: {ElementForLog(edits)}");
                                     }
 
                                     // 最后尝试：如果还是失败，尝试查找Document
                                     if (edits == null)
                                     {
-                                        edits = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_ControlTypePropertyId, UIA_ControlTypeIds.UIA_DocumentControlTypeId));
+                                        edits = FindBottomVisibleDocument(q, "SendQQMessageD fallback");
+                                        WriteSendDebugLog($"SendQQMessageD input fallback Document: {ElementForLog(edits)}");
                                     }
 
                                     break;
@@ -1220,64 +2104,57 @@ namespace TypeSunny.Utils
 
                     if (edits != null)
                     {
-                        edits.SetFocus();
-
-                        // 新版QQ的输入框在Document底部，需要点击Document才能激活
-                        ActivateDocumentInput(edits);
-
-                        // 第一次：发送msgContent1（成绩）
-                        Win32.Win32SetText(msgContent1);
-                        Win32.CtrlV();
+                        WriteSendDebugLog($"SendQQMessageD final input: {ElementForLog(edits)}");
 
                         // 新版QQ的发送成绩逻辑
+                        IUIAutomationElement cachedSendButton = null;
                         if (Config.GetBool("自动发送成绩"))
                         {
-                            var send = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "发送"));
-                            if (send != null)
-                            {
-                                var sp = send.GetCurrentPattern(UIA_PatternIds.UIA_InvokePatternId) as IUIAutomationInvokePattern;
-                                if (sp != null)
-                                {
-                                    sp.Invoke();
-                                }
-                            }
+                            bool scoreSent = PasteAndSendMessage(q, grouplist, edits, groupName, msgContent1, "SendQQMessageD score", ref cachedSendButton);
+                            WriteSendDebugLog($"SendQQMessageD score final result: sent={scoreSent}");
+                            focusCallerAfterAutomation = focusCallerAfterAutomation || scoreSent;
+                            if (scoreSent)
+                                WaitForSendButtonDisabled(q, "SendQQMessageD score after send", cachedSendButton);
+                        }
+                        else
+                        {
+                            WriteSendDebugLog("SendQQMessageD score send skipped: 自动发送成绩=false.");
                         }
 
                         // 第二次：发送msgContent2（新文章）
                         if (!string.IsNullOrWhiteSpace(msgContent2))
                         {
-                            Win32.Win32SetText(msgContent2);
-                            Win32.CtrlV();
-
-                            // 始终发送文章
-                            var send = q.FindFirst(TreeScope.TreeScope_Descendants, root.CreatePropertyCondition(UIA_PropertyIds.UIA_NamePropertyId, "发送"));
-                            if (send != null)
-                            {
-                                var sp = send.GetCurrentPattern(UIA_PatternIds.UIA_InvokePatternId) as IUIAutomationInvokePattern;
-                                if (sp != null)
-                                {
-                                    sp.Invoke();
-                                }
-                            }
+                            bool articleSent = PasteAndSendMessage(q, grouplist, edits, groupName, msgContent2, "SendQQMessageD article", ref cachedSendButton);
+                            WriteSendDebugLog($"SendQQMessageD article final result: sent={articleSent}");
+                            focusCallerAfterAutomation = focusCallerAfterAutomation || articleSent;
+                        }
+                        else
+                        {
+                            WriteSendDebugLog("SendQQMessageD article send skipped: article is white-space.");
                         }
 
-                        // Win32.Delay(50);  // 等待所有操作完成再切换焦点
-                        caller.Dispatcher.Invoke(() => {
-                            Current?.FocusInput();
-                        });
-                        // 恢复鼠标位置
-                        Win32.RestoreCursorPos();
-
                     }
-            }
-            catch (Exception)
-            {
+                    else
+                    {
+                        WriteSendDebugLog("SendQQMessageD failed: input not found.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteSendDebugLog($"SendQQMessageD exception: {ex}");
 
+                }
+                finally
+                {
+                    // 无论成功或失败，都恢复鼠标位置
+                    Win32.RestoreCursorPos();
+                    WriteSendDebugLog("SendQQMessageD finally cursor restored; releasing send automation lock.");
+                }
+                }
             }
             finally
             {
-                // 无论成功或失败，都恢复鼠标位置
-                Win32.RestoreCursorPos();
+                EndSendAutomation(caller, "SendQQMessageD", focusCallerAfterAutomation);
             }
         }
 

@@ -46,9 +46,9 @@ namespace TypeSunny.UI
                 difficulties = await ArticleFetcher.GetDifficultiesAsync();
 
                 // 加载所有 Tab 的今日数据
-                LoadWenlaiStatistics(StatsRange.Today);
-                LoadLocalStatistics(StatsRange.Today);
-                LoadTrainerStatistics(StatsRange.Today);
+                await LoadWenlaiStatistics(StatsRange.Today);
+                await LoadLocalStatistics(StatsRange.Today);
+                await LoadTrainerStatistics(StatsRange.Today);
             };
         }
 

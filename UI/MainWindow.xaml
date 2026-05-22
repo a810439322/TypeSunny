@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:TypeSunny"
         xmlns:sys="clr-namespace:System;assembly=mscorlib"
         mc:Ignorable="d"
-      Title="晴跟打" Name="MainWin" Icon="/Resources/ico/sunny.ico" xml:lang="zh-CN" Loaded="Window_Loaded" Closing="Window_Closing" Deactivated="MainWin_Deactivated" WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResize" BorderThickness="0" Background="Transparent" Padding="0" PreviewMouseWheel="Window_PreviewMouseWheel">
+      Title="晴跟打" Name="MainWin" Icon="/Resources/ico/sunny.ico" xml:lang="zh-CN" Loaded="Window_Loaded" Closing="Window_Closing" Deactivated="MainWin_Deactivated" WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResize" BorderThickness="0" Background="Transparent" Padding="0" PreviewMouseWheel="Window_PreviewMouseWheel" PreviewMouseMove="MainWin_PreviewMouseMove" PreviewMouseDown="MainWin_PreviewMouseInteraction">
 
     <Window.Resources>
 
@@ -712,7 +712,7 @@
 
         <!-- 成绩区（成绩显示） -->
         <Border Grid.Row="6" x:Name="resultsTextBoxGrid" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="15,5,15,10">
-            <TextBox Name="TbxResults" IsReadOnly="True" IsReadOnlyCaretVisible="True" Loaded="TbxResults_Loaded" Background="{Binding ElementName=MainWin,Path=Background}" Foreground="{Binding ElementName=MainWin,Path=Foreground}" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" FontSize="15" FontFamily="Consolas" FontWeight="Bold" PreviewMouseWheel="Control_PreviewMouseWheel" PreviewMouseLeftButtonDown="TbxResults_PreviewMouseLeftButtonDown" PreviewMouseLeftButtonUp="TbxResults_PreviewMouseLeftButtonUp" PreviewMouseMove="TbxResults_PreviewMouseMove">
+            <TextBox Name="TbxResults" IsReadOnly="True" IsReadOnlyCaretVisible="True" Loaded="TbxResults_Loaded" Background="{Binding ElementName=MainWin,Path=Background}" Foreground="{Binding ElementName=MainWin,Path=Foreground}" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" FontSize="15" FontFamily="Consolas" PreviewMouseWheel="Control_PreviewMouseWheel" PreviewMouseLeftButtonDown="TbxResults_PreviewMouseLeftButtonDown" PreviewMouseLeftButtonUp="TbxResults_PreviewMouseLeftButtonUp" PreviewMouseMove="TbxResults_PreviewMouseMove">
                 <TextBox.Resources>
                     <Style TargetType="{x:Type Border}">
                         <Setter Property="CornerRadius" Value="4"/>

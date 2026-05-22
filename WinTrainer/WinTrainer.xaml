@@ -210,7 +210,7 @@
                             <ColumnDefinition Width="auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
-                            <Image Source="/Resources/ico/sunny.ico" Width="14" Height="14" Margin="0,0,6,0"/>
+                            <Image x:Name="TitleBarIcon" Source="/Resources/ico/sunny.ico" Width="14" Height="14" Margin="0,0,6,0"/>
                             <TextBlock Text="晴练单" FontSize="11" Foreground="{DynamicResource TextForeground}"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
@@ -249,11 +249,15 @@
                         <ColumnDefinition Width="auto"/>
                         <ColumnDefinition Width="auto"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock x:Name="stattxt" Grid.Column="0" Text="status" Foreground="{DynamicResource TextForeground}" VerticalAlignment="Center" Margin="0,0,8,0" FontSize="11"/>
                     <TextBlock x:Name="stattxt2" Grid.Column="1" Text="" Foreground="{DynamicResource AccentColor}" VerticalAlignment="Center" Margin="0,0,8,0" FontSize="11"/>
                     <Slider x:Name="sld" Grid.Column="2" HorizontalAlignment="Stretch" VerticalAlignment="Center" ValueChanged="Slider_ValueChanged" IsSnapToTickEnabled="True" Opacity="0.6"/>
-                    <Button x:Name="BtnReset" Grid.Column="2" Content="重置统计" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="15,4" Click="BtnReset_Click" Style="{StaticResource ModernButtonStyle}" Visibility="Collapsed"/>
+                    <StackPanel Grid.Column="2" HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal">
+                        <Button x:Name="BtnReset" Content="重置统计" Padding="15,4" Click="BtnReset_Click" Style="{StaticResource ModernButtonStyle}" Visibility="Collapsed"/>
+                    </StackPanel>
+                    <Button x:Name="BtnHistory" Grid.Column="3" Content="历史" Margin="5,0,0,0" Padding="15,4" Click="BtnHistory_Click" Style="{StaticResource ModernButtonStyle}"/>
                 </Grid>
 
                 <!-- 设置面板 -->

@@ -159,6 +159,10 @@ namespace TypeSunny.Utils
         public static extern IntPtr GetForegroundWindow();
 
         [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
         public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr ProcessId);
         [DllImport("user32.dll")]
         public static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
@@ -432,7 +436,6 @@ namespace TypeSunny.Utils
             EmptyClipboard();
             SetClipboardData(13, Marshal.StringToHGlobalUni(text));
             CloseClipboard();
-            Bitmap bmp = null;
         }
 
 
@@ -875,6 +878,19 @@ namespace TypeSunny.Utils
             mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
         }
 
+        static public void MoveCursor(int x, int y)
+        {
+            SetCursorPos(x, y);
+        }
+
+        static public void ClickCurrentPosition()
+        {
+            Win32.Delay(10);
+            mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+            Win32.Delay(10);
+            mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+        }
+
         private static POINT savedCursorPos;
 
         static public void SaveCursorPos()
@@ -891,4 +907,3 @@ namespace TypeSunny.Utils
 
     }
 }
-

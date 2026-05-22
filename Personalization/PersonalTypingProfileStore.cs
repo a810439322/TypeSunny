@@ -10,7 +10,7 @@ namespace TypeSunny.Personalization
         private readonly string path;
 
         public PersonalTypingProfileStore()
-            : this(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PersonalTypingProfile.json"))
+            : this(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "预测日志", "PersonalTypingProfile.json"))
         {
         }
 

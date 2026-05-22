@@ -34,11 +34,11 @@ Assert-Contains 'main exposes typing code helper' $mainCode 'internal string Get
 Assert-Contains 'main computes CiTi through a shared segment loading helper' $mainCode 'private bool ShouldLoadCiTiSegments()'
 Assert-Contains 'main computes CiTi when CiTi prompt is enabled' $mainCode 'Config.GetBool("启用词提")'
 Assert-Contains 'main computes CiTi when CiTi display is requested' $mainCode 'Config.GetBool("词提编码下显")'
-Assert-Contains 'main suppresses corner ZiTi when lower ZiTi display is on' $mainCode 'Config.GetBool("字提编码下显")'
+Assert-Contains 'main still references ZiTi lower display settings' $mainCode 'Config.GetBool("字提编码下显")'
 Assert-Contains 'main applies CiTi alternate bolding' $mainCode 'CiTiHelper.ShouldBold(segIdx)'
 Assert-Contains 'main applies no-split line grouping' $mainCode 'Config.GetBool("词提不拆行")'
 Assert-Contains 'main loads CiTi segment data for no-split line grouping' $mainCode 'ShouldLoadCiTiSegments()'
-Assert-Contains 'main considers no-split line grouping when loading CiTi data' $mainCode 'Config.GetBool("词提不拆行")'
+Assert-NotContains 'main should not load CiTi segments for standalone no-split when CiTi is disabled' $mainCode '|| Config.GetBool("词提不拆行")'
 Assert-Contains 'main reloads CiTi segments through a current-text helper' $mainCode 'ReloadCiTiSegmentsForCurrentText();'
 Assert-Contains 'main uses displayed words as CiTi reload source' $mainCode 'private string GetCurrentCiTiSegmentSourceText()'
 Assert-Contains 'main falls back to displayed Words for CiTi config reload' $mainCode 'return string.Concat(TextInfo.Words);'
@@ -60,7 +60,13 @@ $noSplitMatch = [regex]::Match($mainCode, 'private bool IsCiTiNoSplitLineEnabled
 if (-not $noSplitMatch.Success) {
     throw 'Unable to find MainWindow.IsCiTiNoSplitLineEnabled.'
 }
-Assert-NotContains 'CiTi no-split should not depend on source color prompt switch' $noSplitMatch.Groups['body'].Value 'Config.GetBool("启用词提")'
+Assert-Contains 'CiTi no-split should be inactive when CiTi prompt is disabled' $noSplitMatch.Groups['body'].Value 'Config.GetBool("启用词提")'
+
+$updateZiTiMatch = [regex]::Match($mainCode, 'internal void UpdateZiTi\(\)\s*\{(?<body>.*?)\n        \}', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+if (-not $updateZiTiMatch.Success) {
+    throw 'Unable to find MainWindow.UpdateZiTi.'
+}
+Assert-NotContains 'top-right ZiTi should not be hidden by ZiTi lower display' $updateZiTiMatch.Groups['body'].Value 'Config.GetBool("字提编码下显")'
 
 Assert-NotContains 'paginator no longer expands line height for code display' $paginatorCode 'lineH *= 1.5'
 Assert-NotContains 'paginator does not implement CiTi visual no-split-line wrapping' $paginatorCode '"词提不拆行"'
@@ -79,7 +85,9 @@ Assert-Contains 'WinConfig turns off ZiTi display when CiTi display is enabled' 
 Assert-Contains 'WinConfig turns off CiTi display when ZiTi display is enabled' $winConfigCode 'Config.Set("词提编码下显", "否")'
 Assert-Contains 'WinConfig turns on CiTi when CiTi display is enabled' $winConfigCode 'Config.Set("启用词提", "是")'
 Assert-Contains 'WinConfig turns on ZiTi when ZiTi display is enabled' $winConfigCode 'Config.Set("启用字提", "是")'
+Assert-Contains 'WinConfig turns off CiTi no-split when CiTi is disabled' $winConfigCode 'Config.Set("词提不拆行", "否")'
 Assert-Contains 'WinConfig checks CiTi main switch when CiTi display is enabled' $winConfigCode 'FindCheckBoxByLabel("启用词提")'
+Assert-Contains 'WinConfig unchecks CiTi no-split when CiTi is disabled' $winConfigCode 'FindCheckBoxByLabel("词提不拆行")'
 Assert-Contains 'WinConfig checks ZiTi main switch when ZiTi display is enabled' $winConfigCode 'FindCheckBoxByLabel("启用字提")'
 Assert-Contains 'WinConfig creates tooltip label indicator' $winConfigCode 'CreateLabelControl'
 Assert-Contains 'WinConfig marks tooltip indicator for discoverability' $winConfigCode 'ConfigTooltipIndicator'

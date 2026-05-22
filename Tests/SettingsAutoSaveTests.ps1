@@ -17,6 +17,14 @@ function Assert-NotContains($name, $content, $needle) {
     }
 }
 
+function Assert-Ordered($name, $content, $first, $second) {
+    $firstIndex = $content.IndexOf($first, [System.StringComparison]::Ordinal)
+    $secondIndex = $content.IndexOf($second, [System.StringComparison]::Ordinal)
+    if ($firstIndex -lt 0 -or $secondIndex -lt 0 -or $firstIndex -ge $secondIndex) {
+        throw "$name expected [$first] before [$second]"
+    }
+}
+
 Assert-NotContains 'settings xaml removes bottom apply button' $xaml 'x:Name="Save"'
 Assert-NotContains 'settings xaml removes bottom close button' $xaml 'x:Name="Cancel"'
 Assert-Contains 'category switch saves current controls first' $code 'SaveCurrentCategoryControls();'
@@ -37,6 +45,14 @@ $colorSaveNeedle = 'SaveConfigValue' + '(colorKey, colorHex'
 Assert-Contains 'color picker writes selected color immediately' $code $colorSaveNeedle
 Assert-Contains 'dynamic difficulty saves on selection change' $code 'SaveWenlaiDifficultySelection'
 Assert-Contains 'dynamic category saves on selection change' $code 'SaveWenlaiCategorySelection'
+Assert-Contains 'unchanged-value filter compares against current config' $code 'value[i] == Config.GetString(key[i])'
+Assert-Contains 'unchanged-value filter removes unchanged keys' $code 'key.RemoveAt(i);'
+$saveCurrentMatch = [regex]::Match($code, 'private void SaveCurrentCategoryControls\(\)[\s\S]*?(?=\n        private static void FilterUnchangedConfigValues)')
+if (-not $saveCurrentMatch.Success) {
+    throw 'expected to find SaveCurrentCategoryControls method'
+}
+Assert-Contains 'category fallback has unchanged-value filter' $saveCurrentMatch.Value 'FilterUnchangedConfigValues(key, value);'
+Assert-Ordered 'category fallback filters unchanged values before code-display side effects' $saveCurrentMatch.Value 'FilterUnchangedConfigValues(key, value);' 'ApplyCodeDisplayMutualExclusion(key, value);'
 
 $reloadCfgMatch = [regex]::Match($mainCode, 'private void ReloadCfg\(\)[\s\S]*?(?=\n        private bool ShouldLoadCiTiSegments)')
 if (-not $reloadCfgMatch.Success) {

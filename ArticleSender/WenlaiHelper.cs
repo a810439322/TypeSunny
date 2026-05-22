@@ -59,7 +59,7 @@ namespace TypeSunny.ArticleSender
         /// <summary>
         /// 获取或创建 ApiClient 实例（使用 JwtAuthProvider）
         /// </summary>
-        private async Task<ApiClient> GetInstanceAsync()
+        private Task<ApiClient> GetInstanceAsync()
         {
             string serverUrl = Config.GetString("文来接口地址");
 
@@ -129,7 +129,7 @@ namespace TypeSunny.ArticleSender
                 }
             }
 
-            return apiClient;
+            return Task.FromResult(apiClient);
         }
 
         /// <summary>

@@ -20,10 +20,10 @@ namespace TypeSunny.Core
         }
         public struct RecItem
         {
-            public int key;
-            public long time;
-            public int keystate;
-            public int modifier;
+            public int key { get; set; }
+            public long time { get; set; }
+            public int keystate { get; set; }
+            public int modifier { get; set; }
  
         }
 

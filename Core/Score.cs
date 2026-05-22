@@ -18,6 +18,8 @@ namespace TypeSunny.Core
     };
 static internal class Score
     {
+        public const string TrainerSummaryPrefix = "[晴练单]";
+
         public static int Hit = 0;
         public static int LeftCount = 0;
         public static int RightCount = 0;
@@ -558,11 +560,16 @@ static internal class Score
                 if (row.Count > cols) cols = row.Count;
             int[] maxWidths = new int[cols];
             foreach (var row in rows)
+            {
+                if (ShouldIgnoreForScoreAlignment(row))
+                    continue;
+
                 for (int i = 0; i < row.Count; i++)
                 {
                     int w = GetDisplayWidth(row[i]);
                     if (w > maxWidths[i]) maxWidths[i] = w;
                 }
+            }
             var sb = new System.Text.StringBuilder();
             for (int r = 0; r < rows.Count; r++)
             {
@@ -578,6 +585,13 @@ static internal class Score
                 }
             }
             return sb.ToString();
+        }
+
+        private static bool ShouldIgnoreForScoreAlignment(List<string> row)
+        {
+            return row != null
+                && row.Count > 0
+                && row[0].StartsWith(TrainerSummaryPrefix, StringComparison.Ordinal);
         }
 
         static List<Key> KeysLeft = new List<Key>

@@ -180,7 +180,7 @@ namespace TypeSunny.Net
             }
         }
 
-        public async Task<string> SubmitScore(
+        public Task<string> SubmitScore(
             double speed, TimeSpan time, int charCount,
             double keystroke, double codeLength, int backspaceCount,
             int keyCount, double keyAccuracy, double wordRate, string inputMethod)
@@ -189,17 +189,17 @@ namespace TypeSunny.Net
             var account = accountManager.GetAccount("文来") ?? accountManager.GetAccount(SERVICE_NAME);
 
             if (account == null || string.IsNullOrWhiteSpace(account.JwtToken))
-                return "请先登录文来账号";
+                return Task.FromResult("请先登录文来账号");
 
             string articleIdStr = Config.GetString("赛文当前文章ID");
             if (!int.TryParse(articleIdStr, out int articleId) || articleId < 0)
-                return "未载文";
+                return Task.FromResult("未载文");
 
             try
             {
                 string serverUrl = Config.GetString("赛文服务器地址");
                 if (string.IsNullOrWhiteSpace(serverUrl))
-                    return "赛文服务器地址未配置";
+                    return Task.FromResult("赛文服务器地址未配置");
 
                 var jwtAuth = new JwtAuthProvider(account.JwtToken);
                 var apiClient = new ApiClient(serverUrl, jwtAuth);
@@ -207,11 +207,11 @@ namespace TypeSunny.Net
 
                 // 旧版 Helper 没有 serverPublicKey/keyId，无法使用新加密提交
                 // 需要先 init 获取这些信息
-                return "旧版赛文助手不支持新加密提交，请使用赛文菜单中的服务器载文";
+                return Task.FromResult("旧版赛文助手不支持新加密提交，请使用赛文菜单中的服务器载文");
             }
             catch (Exception ex)
             {
-                return $"提交失败: {ex.Message}";
+                return Task.FromResult($"提交失败: {ex.Message}");
             }
         }
     }

@@ -29,7 +29,6 @@ namespace TypeSunny.UI.Modes
         private readonly FinishOnceGate _finishGate = new FinishOnceGate();
         private int _currentIndex;
         private bool _isActive;
-        private bool _manualScrollActive;
         private int _visualAdvanceVersion;
         private bool _isImeComposing;
         private string _activeCompositionText = "";
@@ -155,6 +154,7 @@ namespace TypeSunny.UI.Modes
             _inputCapture.PreviewTextInput += OnTextInput;
             _inputCapture.PreviewKeyDown += OnPreviewKeyDown;
             _inputCapture.AddHandler(Keyboard.PreviewKeyUpEvent, new KeyEventHandler(OnPreviewKeyUp), true);
+            _inputCapture.TextChanged += OnInputCaptureTextChanged;
             _inputCapture.LostFocus += OnLostFocus;
             _inputCapture.GotFocus += OnGotFocus;
             _main.Activated += OnWindowActivated;
@@ -181,6 +181,7 @@ namespace TypeSunny.UI.Modes
                 _inputCapture.PreviewTextInput -= OnTextInput;
                 _inputCapture.PreviewKeyDown -= OnPreviewKeyDown;
                 _inputCapture.RemoveHandler(Keyboard.PreviewKeyUpEvent, new KeyEventHandler(OnPreviewKeyUp));
+                _inputCapture.TextChanged -= OnInputCaptureTextChanged;
                 _inputCapture.LostFocus -= OnLostFocus;
                 _inputCapture.GotFocus -= OnGotFocus;
                 _overlay.PreviewMouseWheel -= OnOverlayPreviewMouseWheel;
@@ -342,7 +343,6 @@ namespace TypeSunny.UI.Modes
             if (!_isActive)
                 return;
 
-            _manualScrollActive = true;
             _main.ScDisplay.ScrollToVerticalOffset(_main.ScDisplay.VerticalOffset - e.Delta);
             e.Handled = true;
         }
@@ -417,7 +417,6 @@ namespace TypeSunny.UI.Modes
             string committedComposition = _activeCompositionText;
             ClearImeCompositionState(clearFeedback: false);
             ProcessInputText(inputText, committedComposition);
-            _manualScrollActive = false;
 
             // 不设 e.Handled = true —— 让事件继续流向 TextBox 内部处理器，
             // 否则 TSF 五码顶字时"提交+首码进新composition"的连续链路会被打断。
@@ -508,13 +507,23 @@ namespace TypeSunny.UI.Modes
         {
             _main.Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (!_isActive || _inputCapture == null) return;
-                // 只在没有活跃 composition 时清理，避免打断正在进行的输入
-                if (!HasActiveComposition() && _inputCapture.Text.Length > 0)
-                {
-                    _inputCapture.Text = "";
-                }
-            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                TrimInputCaptureTextAfterCommit();
+            }), System.Windows.Threading.DispatcherPriority.Normal);
+        }
+
+        private void OnInputCaptureTextChanged(object sender, TextChangedEventArgs e)
+        {
+            TrimInputCaptureTextAfterCommit();
+        }
+
+        private void TrimInputCaptureTextAfterCommit()
+        {
+            if (!_isActive || _inputCapture == null) return;
+            // 只在没有活跃 composition 时清理，避免打断正在进行的输入
+            if (HasActiveComposition() || _inputCapture.Text.Length == 0)
+                return;
+
+            _inputCapture.Text = "";
         }
 
         private void ScheduleAdvanceVisuals()
@@ -525,7 +534,6 @@ namespace TypeSunny.UI.Modes
                 if (!_isActive || requestVersion != _visualAdvanceVersion)
                     return;
 
-                _manualScrollActive = false;
                 // 先滚动再定位光标，否则滚动会改变 TextBlock 相对于 Grid 的坐标
                 if (Config.GetBool("贪吃蛇模式") || StateManager.txtSource == TxtSource.raceApi)
                     _main.SnakeModeUpdateFromCopybook(_currentIndex);
@@ -595,7 +603,6 @@ namespace TypeSunny.UI.Modes
             if (inputKey == Key.Space && e.Key == Key.Space)
             {
                 ProcessInputText(" ");
-                _manualScrollActive = false;
                 ScheduleInputCaptureTrim();
                 e.Handled = true;
                 return;
@@ -624,7 +631,6 @@ namespace TypeSunny.UI.Modes
                     Score.InputWordCount = _currentIndex;
 
                     UpdatePosition();
-                    _manualScrollActive = false;
                     if (Config.GetBool("贪吃蛇模式") || StateManager.txtSource == TxtSource.raceApi)
                         _main.SnakeModeUpdateFromCopybook(_currentIndex);
                     else

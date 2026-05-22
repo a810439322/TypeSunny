@@ -14,6 +14,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Interop;
 using CoreTextInfo = TypeSunny.Core.TextInfo;
 using TypeSunny.Core;
@@ -236,7 +237,6 @@ namespace TypeSunny
             fld.FontSize = ftsize;
             fld.Text = string.Join("", DisplayRoot[Convert.ToInt32(cfg["上次的段数"])]);
             fld.FontFamily = MainWindow.Current.GetCurrentFontFamily();
-            fld.Background = MainWindow.Current.BdDisplay.Background;
             fld.Foreground = Colors.DisplayForeground;
 
 
@@ -1498,7 +1498,7 @@ namespace TypeSunny
             avgAccuracy = GetRoundAccuracy() * 100;
 
             // 生成成绩记录格式，添加到主窗口成绩区
-            string resultRecord = string.Format("[晴练单] {0} 均击{1:F2} 均速{2:F2} 均准{3:F2}% 字数{4} 实际{5} 用时{6}",
+            string resultRecord = string.Format(Score.TrainerSummaryPrefix + " {0} 均击{1:F2} 均速{2:F2} 均准{3:F2}% 字数{4} 实际{5} 用时{6}",
                 TxtFile, avgHitRate, avgSpeed, avgAccuracy, roundTotalWords, roundActualWords, Score.FormatTime(roundTotalTime));
             if (MainWindow.Current != null)
             {
@@ -1647,6 +1647,7 @@ namespace TypeSunny
 
             // 应用主题颜色
             ApplyThemeColors();
+            ApplyCurrentLogo();
 
             UpdateFileList();
             InitCfg();
@@ -2121,6 +2122,19 @@ namespace TypeSunny
             MainWindow.Current.SendContentToClipboardOrQQ(matchText, true, 150);
         }
 
+        private void BtnHistory_Click(object sender, RoutedEventArgs e)
+        {
+            string currentTitle = TxtFile;
+            if (string.IsNullOrWhiteSpace(currentTitle) && FileSelector.SelectedItem != null)
+                currentTitle = GetActualFileName(FileSelector.SelectedItem.ToString());
+
+            var window = new WinTrainerHistoryWindow(currentTitle)
+            {
+                Owner = this
+            };
+            window.ShowDialog();
+        }
+
         /// <summary>
         /// 重置统计数据按钮点击事件
         /// </summary>
@@ -2541,6 +2555,32 @@ namespace TypeSunny
         public void RefreshTheme()
         {
             ApplyThemeColors();
+            ApplyCurrentLogo();
+        }
+
+        /// <summary>
+        /// 应用当前选中的 Logo 到窗口和标题栏图标
+        /// </summary>
+        private void ApplyCurrentLogo()
+        {
+            try
+            {
+                string currentLogo = Config.GetString("当前Logo");
+                string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "ico", $"{currentLogo}.ico");
+                if (!File.Exists(iconPath))
+                {
+                    Debug.WriteLine($"晴练单Logo文件不存在: {iconPath}");
+                    return;
+                }
+
+                var iconUri = new Uri(iconPath, UriKind.Absolute);
+                this.Icon = new BitmapImage(iconUri);
+                TitleBarIcon.Source = new BitmapImage(iconUri);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"晴练单应用Logo失败: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -2554,12 +2594,14 @@ namespace TypeSunny
                 string windowBgColor = Config.GetString("窗体背景色");
                 string windowFgColor = Config.GetString("窗体字体色");
                 string displayBgColor = Config.GetString("跟打区背景色");
+                string displayFgColor = Config.GetString("发文区字体色");
                 string accentColor = Config.GetString("标题栏进度条颜色");
 
                 // 转换颜色
                 var bgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + windowBgColor));
                 var fgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + windowFgColor));
                 var displayBgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + displayBgColor));
+                var displayFgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + displayFgColor));
                 var accentColorBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + accentColor));
 
                 // 计算派生颜色
@@ -2593,6 +2635,7 @@ namespace TypeSunny
                 this.Resources["ButtonBackground"] = buttonBgBrush;
                 this.Resources["ButtonHoverBackground"] = buttonHoverBrush;
                 this.Resources["AccentColor"] = accentColorBrush;
+                Colors.DisplayForeground = displayFgBrush;
 
                 // 更新DisplayGrid的背景色
                 if (DisplayGrid != null)
@@ -2603,7 +2646,8 @@ namespace TypeSunny
                 // 更新fld的前景色
                 if (fld != null)
                 {
-                    fld.Foreground = fgBrush;
+                    fld.Background = displayBgBrush;
+                    fld.Foreground = displayFgBrush;
                 }
             }
             catch (Exception ex)

@@ -193,6 +193,7 @@
     <Compile Include="WinTrainer\TrainerConfig.cs" />
     <Compile Include="WinTrainer\TrainerAutoSendPolicy.cs" />
     <Compile Include="WinTrainer\TrainerLog.cs" />
+    <Compile Include="WinTrainer\WinTrainerHistoryWindow.cs" />
     <Compile Include="WinTrainer\WinTrainer.xaml.cs">
       <DependentUpon>WinTrainer.xaml</DependentUpon>
     </Compile>

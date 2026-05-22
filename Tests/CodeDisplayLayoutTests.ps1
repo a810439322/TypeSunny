@@ -30,6 +30,47 @@ Assert-Contains 'main should clear lower code label feedback when input is undon
 Assert-Contains 'main should clear all lower code feedback when code display is turned off' $mainCode 'ClearAllCodeLabelProgress();'
 Assert-Contains 'copybook composition position should follow full code display offset' $copybook 'codeDisplayExtra'
 Assert-Contains 'tracing composition position should follow full code display offset' $tracing 'codeDisplayExtra'
+Assert-Contains 'copybook input capture trim should run before input-priority visual positioning' $copybook 'DispatcherPriority.Normal'
+Assert-Contains 'tracing input capture trim should run before input-priority visual positioning' $tracing 'DispatcherPriority.Normal'
+Assert-NotContains 'copybook input capture trim should not wait for application idle' $copybook 'DispatcherPriority.ApplicationIdle'
+Assert-NotContains 'tracing input capture trim should not wait for application idle' $tracing 'DispatcherPriority.ApplicationIdle'
+Assert-Contains 'copybook should trim committed TextBox residue as soon as TextChanged fires' $copybook '_inputCapture.TextChanged += OnInputCaptureTextChanged'
+Assert-Contains 'tracing should trim committed TextBox residue as soon as TextChanged fires' $tracing '_inputCapture.TextChanged += OnInputCaptureTextChanged'
+Assert-Contains 'copybook immediate trim should reuse composition-aware guard' $copybook 'TrimInputCaptureTextAfterCommit();'
+Assert-Contains 'tracing immediate trim should reuse composition-aware guard' $tracing 'TrimInputCaptureTextAfterCommit();'
+Assert-Contains 'main should focus loaded text only after layout settles' $mainCode 'FocusInputAfterLoadedTextLayout(focus);'
+$prepareStart = $mainCode.IndexOf('public void PrepareLoadedTextForInput(bool focus = true)')
+if ($prepareStart -lt 0) {
+    throw 'Unable to find MainWindow.PrepareLoadedTextForInput.'
+}
+$prepareEnd = $mainCode.IndexOf('/// <summary>', $prepareStart)
+if ($prepareEnd -lt 0) {
+    throw 'Unable to find end of MainWindow.PrepareLoadedTextForInput.'
+}
+$prepareBody = $mainCode.Substring($prepareStart, $prepareEnd - $prepareStart)
+$scrollIndex = $prepareBody.IndexOf('ScDisplay.ScrollToVerticalOffset(0);')
+$updateIndex = $prepareBody.IndexOf('UpdateDisplay(UpdateLevel.PageArrange);')
+if ($scrollIndex -lt 0 -or $updateIndex -lt 0 -or $scrollIndex -gt $updateIndex) {
+    throw 'loaded text should reset display scroll before page arrange and mode input positioning'
+}
+if ([regex]::Matches($prepareBody, 'ScDisplay\.ScrollToVerticalOffset\(0\);').Count -ne 1) {
+    throw 'loaded text should reset display scroll exactly once before layout focus scheduling'
+}
+Assert-NotContains 'loaded text should not schedule a second loaded-priority scroll reset' $prepareBody 'DispatcherPriority.Loaded'
+if ([regex]::IsMatch($prepareBody, 'if\s*\(\s*focus\s*\)\s*\{?\s*FocusInput\(\);')) {
+    throw 'loaded text should not focus immediately before mode positioning settles'
+}
+$loadTextStart = $mainCode.IndexOf('public void LoadText(string rawTxt')
+if ($loadTextStart -lt 0) {
+    throw 'Unable to find MainWindow.LoadText.'
+}
+$loadTextEnd = $mainCode.IndexOf('private void LoadTextFromClipBoard', $loadTextStart)
+if ($loadTextEnd -lt 0) {
+    throw 'Unable to find end of MainWindow.LoadText.'
+}
+$loadTextBody = $mainCode.Substring($loadTextStart, $loadTextEnd - $loadTextStart)
+Assert-Contains 'loaded text should clear stale page number before display rebuild' $loadTextBody 'TextInfo.PageNum = -1;'
+Assert-Contains 'loaded text should clear stale page start before display rebuild' $loadTextBody 'TextInfo.PageStartIndex = 0;'
 Assert-NotContains 'tracing speed follow hint should not anchor to mirror typing row' $mainCode 'TryGetMirrorBlockPosition(nextToType'
 Assert-NotContains 'copybook should not create extra persistent typed-code hints' $copybook 'ShowTypedCodeHint'
 Assert-NotContains 'tracing should not create extra persistent typed-code hints' $tracing 'ShowTypedCodeHint'

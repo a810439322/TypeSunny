@@ -77,10 +77,15 @@ namespace TypeSunny.UI
         private const double NormalCollapsedBottomBorderHeight = 10;
         private const string SuperCompactModeConfigKey = "一键极简";
         private const string ContinuationShortcutHint = "（Ctrl+O上一段 / Ctrl+P下一段）";
+        private const int MouseCursorTemporaryRevealMilliseconds = 3000;
+        private const double MouseCursorRevealMovementThreshold = 2.0;
         private bool _isSuperCompactLayoutApplied;
         private SuperCompactLayoutSnapshot _superCompactLayoutSnapshot;
         private int _suppressWindowSizeChangeUpdatesDepth;
         private int _resultsLayoutVersion;
+        private DispatcherTimer _mouseCursorRevealTimer;
+        private bool _isMouseCursorTemporarilyRevealed;
+        private Point? _lastMouseCursorRevealPosition;
 
         private sealed class SuperCompactLayoutSnapshot
         {
@@ -1250,7 +1255,8 @@ namespace TypeSunny.UI
 
         private bool IsCiTiNoSplitLineEnabled()
         {
-            return Config.GetBool("词提不拆行")
+            return Config.GetBool("启用词提")
+                   && Config.GetBool("词提不拆行")
                    && TextInfo.CiTiSegmentIndices.Count > 0
                    && TextInfo.CiTiSegments.Count > 0;
         }
@@ -1553,12 +1559,6 @@ namespace TypeSunny.UI
 
         internal void UpdateZiTi()
         {
-            if (Config.GetBool("字提编码下显"))
-            {
-                TbkZiTi.Text = "";
-                return;
-            }
-
             // 检查是否启用字提功能
             if (!Config.GetBool("启用字提"))
             {
@@ -2185,7 +2185,7 @@ namespace TypeSunny.UI
 
             if (winTrainer != null)
             {
-                WinTrainer.Current.DisplayGrid.Background = BdDisplay.Background;
+                WinTrainer.Current.RefreshTheme();
                 winTrainer.Background = this.Background;
             }
 
@@ -2418,7 +2418,7 @@ namespace TypeSunny.UI
 
             if (winTrainer != null)
             {
-                WinTrainer.Current.DisplayGrid.Background = BdDisplay.Background;
+                WinTrainer.Current.RefreshTheme();
                 winTrainer.Background = this.Background;
             }
 
@@ -2586,10 +2586,7 @@ namespace TypeSunny.UI
 
         private bool ShouldLoadCiTiSegments()
         {
-            return Config.GetBool("启用词提")
-                   || Config.GetBool("词提编码下显")
-                   || Config.GetBool("词提不拆行")
-                   || Config.GetBool("词提选重数字角标");
+            return Config.GetBool("启用词提");
         }
 
         private void RefreshCurrentDifficultyPredictionDisplay()
@@ -3554,6 +3551,11 @@ namespace TypeSunny.UI
             System.Diagnostics.Debug.WriteLine($"发文区字体大小调整: {currentSize} -> {newSize}");
         }
 
+        private void MainWin_PreviewMouseInteraction(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            TemporarilyRevealMouseCursorDuringTyping();
+        }
+
         /// <summary>
         /// Ctrl+鼠标滚轮调整字体大小
         /// </summary>
@@ -4155,7 +4157,7 @@ namespace TypeSunny.UI
                 await Dispatcher.InvokeAsync(() => { TbkStatusTop.Text = Score.Progress(); });
 
                 var typingStatItems = Score.ReportItems(); // 提前计算，避免异步竞争
-                Dispatcher.BeginInvoke(new Action(() =>
+                _ = Dispatcher.BeginInvoke(new Action(() =>
                 {
                     if (savedRetypeType != RetypeType.wrongRetype && savedRetypeType != RetypeType.slowRetype)
                         UpdateTypingStat(typingStatItems);
@@ -4303,7 +4305,7 @@ namespace TypeSunny.UI
                     int charCount = Score.TotalWordCount; // 字数
 
                     // 异步提交成绩
-                    Task.Run(async () =>
+                    _ = Task.Run(async () =>
                     {
                         string sendResult = await raceHelperV2.SubmitScore(
                             StateManager.CurrentRaceServerId,
@@ -4760,7 +4762,7 @@ namespace TypeSunny.UI
                                 ArticleLog.WriteRecord(record);
                             }
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             // 记录文章日志失败
                         }
@@ -4780,8 +4782,6 @@ namespace TypeSunny.UI
 
 
         Timer tm1;
-        int lastInputLength = 0; // 记录上次输入框长度，用于判断是否真正上屏
-
         void ProcInput()
         {
 
@@ -5017,7 +5017,7 @@ namespace TypeSunny.UI
                 }
 
                 // 使用 Task.Run + Dispatcher.Invoke 模式，不等待（fire-and-forget）
-                Task.Run(() =>
+                _ = Task.Run(() =>
                 {
                     Dispatcher.Invoke(() =>
                     {
@@ -5097,7 +5097,7 @@ namespace TypeSunny.UI
                 }
 
                 // 使用 Task.Run + Dispatcher.Invoke 模式，不等待（fire-and-forget）
-                Task.Run(() =>
+                _ = Task.Run(() =>
                 {
                     Dispatcher.Invoke(() =>
                     {
@@ -5224,19 +5224,30 @@ namespace TypeSunny.UI
                     TbxInput.IsReadOnly = false;
 
                 TbxInput.Clear();
+                ScDisplay.ScrollToVerticalOffset(0);
                 UpdateDisplay(UpdateLevel.PageArrange);
 
                 if (_copybookMode != null && _copybookMode.IsActive)
                     _copybookMode.ScheduleUpdatePosition();
 
-                if (focus)
-                    FocusInput();
+                FocusInputAfterLoadedTextLayout(focus);
             }));
+        }
 
-            Dispatcher.BeginInvoke(new Action(() =>
+        private void FocusInputAfterLoadedTextLayout(bool focus)
+        {
+            if (!focus)
+                return;
+
+            bool modeInputUsesOverlay = (_copybookMode != null && _copybookMode.IsActive)
+                                        || (_tracingMode != null && _tracingMode.IsActive);
+            if (!modeInputUsesOverlay)
             {
-                ScDisplay.ScrollToVerticalOffset(0);
-            }), System.Windows.Threading.DispatcherPriority.Loaded);
+                FocusInput();
+                return;
+            }
+
+            Dispatcher.BeginInvoke(new Action(FocusInput), System.Windows.Threading.DispatcherPriority.Render);
         }
 
         /// <summary>
@@ -5478,8 +5489,89 @@ public async Task SendArticle()
                 return;
             }
 
+            if (StateManager.typingState != TypingState.typing)
+            {
+                StopMouseCursorRevealTimer();
+            }
+
+            if (StateManager.typingState == TypingState.typing && _isMouseCursorTemporarilyRevealed)
+            {
+                SetMouseCursor(Cursors.Arrow, null);
+                return;
+            }
+
             Cursor = StateManager.typingState == TypingState.typing ? Cursors.None : Cursors.Arrow;
             Mouse.OverrideCursor = StateManager.typingState == TypingState.typing ? Cursors.None : null;
+        }
+
+        private void SetMouseCursor(Cursor cursor, Cursor overrideCursor)
+        {
+            Cursor = cursor;
+            Mouse.OverrideCursor = overrideCursor;
+        }
+
+        private void TemporarilyRevealMouseCursorDuringTyping()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(TemporarilyRevealMouseCursorDuringTyping));
+                return;
+            }
+
+            if (StateManager.typingState != TypingState.typing)
+                return;
+
+            _isMouseCursorTemporarilyRevealed = true;
+            SetMouseCursor(Cursors.Arrow, null);
+
+            if (_mouseCursorRevealTimer == null)
+            {
+                _mouseCursorRevealTimer = new DispatcherTimer();
+                _mouseCursorRevealTimer.Tick += HideMouseCursorAfterRevealTimer;
+            }
+
+            _mouseCursorRevealTimer.Stop();
+            _mouseCursorRevealTimer.Interval = TimeSpan.FromMilliseconds(MouseCursorTemporaryRevealMilliseconds);
+            _mouseCursorRevealTimer.Start();
+        }
+
+        private void HideMouseCursorAfterRevealTimer(object sender, EventArgs e)
+        {
+            StopMouseCursorRevealTimer();
+            UpdateMouseCursorForTypingState();
+        }
+
+        private void StopMouseCursorRevealTimer()
+        {
+            _isMouseCursorTemporarilyRevealed = false;
+            _lastMouseCursorRevealPosition = null;
+            if (_mouseCursorRevealTimer != null)
+                _mouseCursorRevealTimer.Stop();
+        }
+
+        private void MainWin_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if (!ShouldRevealMouseCursorForPointerPosition(e.GetPosition(this)))
+                return;
+
+            TemporarilyRevealMouseCursorDuringTyping();
+        }
+
+        private bool ShouldRevealMouseCursorForPointerPosition(Point currentPosition)
+        {
+            if (!_lastMouseCursorRevealPosition.HasValue)
+            {
+                _lastMouseCursorRevealPosition = currentPosition;
+                return false;
+            }
+
+            Point lastPosition = _lastMouseCursorRevealPosition.Value;
+            double deltaX = currentPosition.X - lastPosition.X;
+            double deltaY = currentPosition.Y - lastPosition.Y;
+            double distanceSquared = deltaX * deltaX + deltaY * deltaY;
+            _lastMouseCursorRevealPosition = currentPosition;
+
+            return distanceSquared >= MouseCursorRevealMovementThreshold * MouseCursorRevealMovementThreshold;
         }
 
         private void StartTypingSessionFromInput()
@@ -5957,7 +6049,7 @@ public async Task SendArticle()
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // 忽略异常
             }
@@ -6193,6 +6285,8 @@ public async Task SendArticle()
             TextInfo.CodeLabels.Clear();
             TextInfo.StateBackgrounds.Clear();
             TextInfo.CodeLabelInputs.Clear();
+            TextInfo.PageNum = -1;
+            TextInfo.PageStartIndex = 0;
 
 
 
@@ -7327,6 +7421,8 @@ public async Task SendArticle()
                 _versionCheckTimer = null;
             }
 
+            StopMouseCursorRevealTimer();
+
             CounterLog.Add("字数", CounterLog.Buffer[0]);
             CounterLog.Buffer[0] = 0;
             CounterLog.Add("击键数", CounterLog.Buffer[1]);
@@ -8296,12 +8392,12 @@ public async Task SendArticle()
                         difficultyItem.Items.Add(loadingItem);
 
                         // 后台异步加载
-                        System.Threading.Tasks.Task.Run(async () =>
+                        _ = System.Threading.Tasks.Task.Run(async () =>
                         {
                             var loadedDifficulties = await ArticleFetcher.GetDifficultiesAsync();
                             if (loadedDifficulties != null && loadedDifficulties.Count > 0)
                             {
-                                this.Dispatcher.BeginInvoke(new Action(() =>
+                                _ = this.Dispatcher.BeginInvoke(new Action(() =>
                                 {
                                     InitializeWenlaiMenu();  // 重新加载菜单
                                 }));
@@ -8399,12 +8495,12 @@ public async Task SendArticle()
                         };
                         categoryItem.Items.Add(loadingCatItem);
 
-                        System.Threading.Tasks.Task.Run(async () =>
+                        _ = System.Threading.Tasks.Task.Run(async () =>
                         {
                             var loaded = await ArticleFetcher.GetCategoriesAsync();
                             if (loaded != null && loaded.Count > 0)
                             {
-                                this.Dispatcher.BeginInvoke(new Action(() =>
+                                _ = this.Dispatcher.BeginInvoke(new Action(() =>
                                 {
                                     InitializeWenlaiMenu();
                                 }));
@@ -8984,7 +9080,7 @@ public async Task SendArticle()
         }
 
         // 添加赛文服务器
-        private async void MenuItemAddRaceServer_Click(object sender, RoutedEventArgs e)
+        private void MenuItemAddRaceServer_Click(object sender, RoutedEventArgs e)
         {
             // 创建简单的输入对话框
             var dialog = new Window
@@ -9321,7 +9417,7 @@ public async Task SendArticle()
                     }
                     finally
                     {
-                        Dispatcher.BeginInvoke(new Action(() =>
+                        _ = Dispatcher.BeginInvoke(new Action(() =>
                         {
                             isRebuildingFromRefresh = true;
                             try
@@ -9706,7 +9802,7 @@ public async Task SendArticle()
                 }
 
                 // 异步渲染文本，不等待渲染完成（fire-and-forget）
-                System.Threading.Tasks.Task.Run(() =>
+                _ = System.Threading.Tasks.Task.Run(() =>
                 {
                     Dispatcher.Invoke(() =>
                     {
@@ -10455,6 +10551,9 @@ public async Task SendArticle()
 
         public void FocusInput()
         {
+            if (QQHelper.TryDeferFocusInput("MainWindow.FocusInput"))
+                return;
+
             Dispatcher.Invoke(() =>
             {
                 this.Activate();

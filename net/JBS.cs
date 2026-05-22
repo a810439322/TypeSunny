@@ -139,7 +139,7 @@ namespace Net
                 title = msg["a_name"].ToString();
                 article = msg["a_content"].ToString();
             }
-            catch (Exception e)
+            catch (Exception)
             {
                 return article;
             }
