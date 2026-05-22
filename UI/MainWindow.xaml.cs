@@ -37,6 +37,7 @@ using TypeSunny.Utils;
 using TypeSunny.UI;
 using TypeSunny.Versioning;
 using TypeSunny.Difficulty;
+using TypeSunny.Personalization;
 using TypeSunny.ArticleSender;
 using TypeSunny.UI.Modes;
 
@@ -179,6 +180,8 @@ namespace TypeSunny.UI
 
         internal Stopwatch sw = new Stopwatch();
         DifficultyDict difficultyDict = new DifficultyDict();
+        private readonly PersonalScorePredictionService personalScorePredictionService;
+        private PersonalScorePredictionSnapshot currentPersonalPredictionSnapshot = new PersonalScorePredictionSnapshot();
 
         // 保存窗口恢复时的位置和大小
         private Rect _restoreBounds = new Rect();
@@ -1815,6 +1818,10 @@ namespace TypeSunny.UI
         {
             // InitCfg();
 
+            personalScorePredictionService = new PersonalScorePredictionService(
+                new PersonalTypingProfileStore(),
+                text => difficultyDict.Calc(text),
+                text => difficultyDict.SegmentText(text));
             InitializeComponent();
 
             // 一键极简模式下：先透明，等 Window_Loaded 里布局套用完再恢复。
@@ -2549,6 +2556,7 @@ namespace TypeSunny.UI
 
             ForceDisplayRebuildAfterConfigChange();
             UpdateZiTi();
+            RefreshCurrentDifficultyPredictionDisplay();
 
             // 主题切换后刷新字帖/临摹模式的光标颜色和位置
             if (_copybookMode != null && _copybookMode.IsActive)
@@ -2582,6 +2590,55 @@ namespace TypeSunny.UI
                    || Config.GetBool("词提编码下显")
                    || Config.GetBool("词提不拆行")
                    || Config.GetBool("词提选重数字角标");
+        }
+
+        private void RefreshCurrentDifficultyPredictionDisplay()
+        {
+            try
+            {
+                int totalWords = TextInfo.Words != null ? TextInfo.Words.Count : 0;
+                if (totalWords <= 0)
+                {
+                    currentPersonalPredictionSnapshot = new PersonalScorePredictionSnapshot();
+                    currentDifficultyText = "";
+                    UpdateWindowTitle(0, 0);
+                    return;
+                }
+
+                string currentText = string.Concat(TextInfo.Words);
+                string difficulty = Score.DifficultyText;
+                if (string.IsNullOrWhiteSpace(difficulty))
+                    difficulty = difficultyDict.CalcText(currentText);
+
+                Score.DifficultyText = difficulty;
+                currentPersonalPredictionSnapshot = CreateCurrentPredictionSnapshot(currentText, difficulty);
+
+                string displayDifficulty = AppendPredictionSnapshotToDifficulty(difficulty, currentPersonalPredictionSnapshot);
+                currentDifficultyText = string.IsNullOrEmpty(displayDifficulty) ? "" : "难度：" + displayDifficulty;
+                UpdateWindowTitle(GetCurrentTitleTypedWords(), totalWords);
+            }
+            catch
+            {
+            }
+        }
+
+        private int GetCurrentTitleTypedWords()
+        {
+            int totalWords = TextInfo.Words != null ? TextInfo.Words.Count : 0;
+            int typedWords = 0;
+
+            if (_copybookMode != null && _copybookMode.IsActive)
+                typedWords = _copybookMode.CurrentIndex;
+            else if (_tracingMode != null && _tracingMode.IsActive)
+                typedWords = _tracingMode.CurrentIndex;
+            else if (TbxInput != null)
+                typedWords = new System.Globalization.StringInfo(TbxInput.Text ?? "").LengthInTextElements;
+
+            if (typedWords < 0)
+                typedWords = 0;
+            if (typedWords > totalWords)
+                typedWords = totalWords;
+            return typedWords;
         }
 
         private void ReloadCiTiSegmentsForCurrentText()
@@ -4106,7 +4163,7 @@ namespace TypeSunny.UI
                         UpdateTypingStat();
                 }));
 
-                string result = Score.Report(); // + " " + Config.GetString("成绩签名");
+                string result = AppendPredictionToScoreResult(Score.Report()); // + " " + Config.GetString("成绩签名");
 
 
 
@@ -4667,6 +4724,30 @@ namespace TypeSunny.UI
                                 DifficultyName = savedDifficultyName
                             };
 
+                            var roundStats = new PersonalTypingRoundStats
+                            {
+                                TotalWords = savedTotalWords,
+                                TotalSeconds = savedTotalSeconds,
+                                TotalHits = savedTotalHit,
+                                Speed = savedSpeed,
+                                HitRate = savedHitRate,
+                                Kpw = savedKPW,
+                                Accuracy = savedAccuracy,
+                                Backs = savedBacks,
+                                Correction = savedCorrection,
+                                WasteCodes = savedWasteCodes,
+                                Choose = savedChoose
+                            };
+
+                            personalScorePredictionService.Calibrate(currentPersonalPredictionSnapshot, roundStats);
+
+                            personalScorePredictionService.Train(
+                                string.Concat(TextInfo.Words),
+                                Score.CommitText,
+                                Score.CommitTime,
+                                Score.KeyTime,
+                                roundStats);
+
                             // 根据来源记录到不同的日志（使用保存的 txtSource）
                             if (savedTxtSource == TxtSource.articlesender)
                             {
@@ -4816,6 +4897,70 @@ namespace TypeSunny.UI
                 Win32SetText(result);
                 FocusInput();
             }
+        }
+
+        private string AppendPredictionToScoreResult(string result)
+        {
+            if (string.IsNullOrEmpty(result)
+                || !Config.GetBool("启用预测")
+                || !Config.GetBool("发文附带预测"))
+                return result;
+
+            try
+            {
+                PersonalScorePredictionSnapshot snapshot = currentPersonalPredictionSnapshot;
+                if (snapshot == null || !snapshot.HasPrediction)
+                    return result;
+
+                PersonalScorePrediction prediction = snapshot.ToPrediction();
+                if (!PersonalScorePredictionFormatter.CanAttachToScore(prediction))
+                    return result;
+
+                string predictionText = PersonalScorePredictionFormatter.Format(
+                    prediction,
+                    GetPredictionDisplayOrder(),
+                    IsPredictionDisplayItemVisible);
+
+                if (string.IsNullOrWhiteSpace(predictionText))
+                    return result;
+
+                return result + "  " + predictionText;
+            }
+            catch
+            {
+                return result;
+            }
+        }
+
+        private static List<string> GetPredictionDisplayOrder()
+        {
+            return PersonalScorePredictionFormatter.NormalizeOrder(Config.GetString("预测显示顺序"));
+        }
+
+        private static bool IsPredictionDisplayItemVisible(string item)
+        {
+            return PersonalScorePredictionFormatter.IsForceShowItem(item)
+                || Config.GetBool("预测显示_" + item);
+        }
+
+        private PersonalScorePredictionSnapshot CreateCurrentPredictionSnapshot(string text, string baseDifficultyText)
+        {
+            if (!Config.GetBool("启用预测"))
+                return new PersonalScorePredictionSnapshot();
+
+            return personalScorePredictionService.CreateSnapshot(text, baseDifficultyText);
+        }
+
+        private string AppendPredictionSnapshotToDifficulty(
+            string baseDifficultyText,
+            PersonalScorePredictionSnapshot snapshot)
+        {
+            return personalScorePredictionService.AppendPredictionSnapshot(
+                baseDifficultyText,
+                snapshot,
+                Config.GetBool("启用预测"),
+                GetPredictionDisplayOrder(),
+                IsPredictionDisplayItemVisible);
         }
 
         CUIAutomation root = new CUIAutomation();
@@ -5399,6 +5544,8 @@ public async Task SendArticle()
             }
 
             Score.Hit++;
+            if (IsValidInputKey(e.Key))
+                Score.KeyTime.Add(sw.ElapsedMilliseconds);
 
             switch (e.Key)
             {
@@ -6120,69 +6267,17 @@ public async Task SendArticle()
 
                 PrepareLoadedTextForInput(focus: switchBack);
 
-                // 计算并显示难度（文来模式优先使用接口返回的难度）
+                // 计算并显示本地难度
                 // 更新字提和标题（需要在UI线程中执行）
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     System.Diagnostics.Trace.WriteLine($"[难度] BeginInvoke进入, source={source}, articleCache.HasArticle={articleCache.HasArticle()}");
-                    if (source == TxtSource.articlesender && articleCache.HasArticle())
-                    {
-                        string wenlaiDifficulty = articleCache.GetCurrentDifficulty();
-                        if (!string.IsNullOrEmpty(wenlaiDifficulty))
-                        {
-                            // 使用文来返回的难度
-                            currentDifficultyText = "难度：" + wenlaiDifficulty;
-                            Score.DifficultyText = wenlaiDifficulty;
-                            UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
-                        }
-                        else
-                        {
-                            // 文来没有返回难度，调用接口获取（异步）
-                            string currentText = String.Join("", TextInfo.Words);
-                            Task.Run(async () =>
-                            {
-                                string difficulty = await ArticleFetcher.CalcDifficultyFromApiAsync(currentText);
-                                Dispatcher.Invoke(() =>
-                                {
-                                    if (!string.IsNullOrEmpty(difficulty))
-                                    {
-                                        currentDifficultyText = "难度：" + difficulty;
-                                        Score.DifficultyText = difficulty;
-                                        UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
-                                    }
-                                });
-                            });
-                        }
-                    }
-                    else
-                    {
-                        // 本地文章模式：首次远程难度超时后，本次运行不再请求难度，避免服务不可用时拖慢发文。
-                        string currentText = String.Join("", TextInfo.Words);
-                        if (source == TxtSource.book && !ArticleManager.ShouldRequestRemoteDifficulty())
-                        {
-                            currentDifficultyText = "";
-                            Score.DifficultyText = "";
-                        }
-                        else
-                        {
-                            Task.Run(async () =>
-                            {
-                                var result = await ArticleFetcher.CalcDifficultyFromApiWithStatusAsync(currentText);
-                                if (source == TxtSource.book)
-                                    ArticleManager.RecordRemoteDifficultyResult(result.DisableFutureRequests);
-
-                                Dispatcher.Invoke(() =>
-                                {
-                                    if (!string.IsNullOrEmpty(result.Text))
-                                    {
-                                        currentDifficultyText = "难度：" + result.Text;
-                                        Score.DifficultyText = result.Text;
-                                        UpdateWindowTitle(0, TextInfo.Words.Count);  // 重新更新标题
-                                    }
-                                });
-                            });
-                        }
-                    }
+                    string currentText = String.Join("", TextInfo.Words);
+                    string difficulty = difficultyDict.CalcText(currentText);
+                    currentPersonalPredictionSnapshot = CreateCurrentPredictionSnapshot(currentText, difficulty);
+                    string displayDifficulty = AppendPredictionSnapshotToDifficulty(difficulty, currentPersonalPredictionSnapshot);
+                    currentDifficultyText = string.IsNullOrEmpty(displayDifficulty) ? "" : "难度：" + displayDifficulty;
+                    Score.DifficultyText = difficulty;
 
                     // 更新字提显示
                     UpdateZiTi();

@@ -43,5 +43,7 @@ if (-not $reloadCfgMatch.Success) {
     throw 'expected to find MainWindow.ReloadCfg method'
 }
 Assert-Contains 'autosave config refresh recalculates top-right ZiTi hint' $reloadCfgMatch.Value 'UpdateZiTi();'
+Assert-Contains 'autosave config refresh recalculates prediction title display' $reloadCfgMatch.Value 'RefreshCurrentDifficultyPredictionDisplay();'
+Assert-Contains 'prediction display list changes notify main window refresh' $code 'ScheduleConfigSavedRefresh();'
 
 Write-Host 'All SettingsAutoSave tests passed.'

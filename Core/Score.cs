@@ -58,6 +58,7 @@ static internal class Score
 
 
         public static List<long> ImeKeyTime = new List<long>();
+        public static List<long> KeyTime = new List<long>();
         public static List<long> CommitTime = new List<long>();
         public static List<int> ImeKeyValue  = new List<int>();
         public static List<string> CommitStr = new List<string>();
@@ -208,6 +209,7 @@ static internal class Score
             CompositionStartHit = 0;
 
             ImeKeyTime.Clear();
+            KeyTime.Clear();
             CommitTime.Clear();
             ImeKeyValue.Clear();
             CommitStr.Clear();

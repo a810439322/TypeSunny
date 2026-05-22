@@ -27,15 +27,6 @@ namespace TypeSunny.ArticleSender
     }
 
     /// <summary>
-    /// 难度计算结果
-    /// </summary>
-    public class DifficultyCalculationResult
-    {
-        public string Text { get; set; }
-        public bool DisableFutureRequests { get; set; }
-    }
-
-    /// <summary>
     /// 文章获取器，通过 ApiClient 获取文章
     /// </summary>
     public class ArticleFetcher
@@ -640,60 +631,6 @@ namespace TypeSunny.ArticleSender
             return FetchArticleAsync(difficulty, maxLength).GetAwaiter().GetResult();
         }
 
-        /// <summary>
-        /// 从接口计算文本难度
-        /// </summary>
-        /// <param name="content">待计算难度的文本内容</param>
-        /// <returns>格式化的难度文本，如 "普(1.23)"，失败返回空字符串</returns>
-        public static async Task<string> CalcDifficultyFromApiAsync(string content)
-        {
-            var result = await CalcDifficultyFromApiWithStatusAsync(content);
-            return result.Text;
-        }
-
-        /// <summary>
-        /// 从接口计算文本难度，并返回超时状态
-        /// </summary>
-        /// <param name="content">待计算难度的文本内容</param>
-        /// <returns>格式化难度文本及是否超时</returns>
-        public static async Task<DifficultyCalculationResult> CalcDifficultyFromApiWithStatusAsync(string content)
-        {
-            if (string.IsNullOrWhiteSpace(content))
-            {
-                System.Diagnostics.Trace.WriteLine("[难度] content为空，跳过");
-                return new DifficultyCalculationResult { Text = "", DisableFutureRequests = false };
-            }
-
-            try
-            {
-                var client = EnsureClient();
-                if (client == null)
-                {
-                    System.Diagnostics.Trace.WriteLine("[难度] EnsureClient返回null");
-                    return new DifficultyCalculationResult { Text = "", DisableFutureRequests = false };
-                }
-
-                var response = await client.PostAsync("/api/texts/calcDifficulty", new { text = content });
-                System.Diagnostics.Trace.WriteLine($"[难度] 接口返回: IsSuccess={response.IsSuccess}, Code={response.Code}, RawData={response.RawData}");
-
-                if (response.IsSuccess && response.RawData != null)
-                {
-                    var data = response.RawData;
-                    double score = data["difficultyScore"]?.ToObject<double>() ?? 0;
-                    string label = data["difficultyLabel"]?.ToString() ?? "";
-                    System.Diagnostics.Trace.WriteLine($"[难度] 解析结果: score={score}, label={label}");
-                    if (!string.IsNullOrEmpty(label))
-                        return new DifficultyCalculationResult { Text = $"{label}({score:F2})", DisableFutureRequests = false };
-                }
-
-                return new DifficultyCalculationResult { Text = "", DisableFutureRequests = true };
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Trace.WriteLine($"[难度] 接口调用失败: {ex.Message}");
-            }
-            return new DifficultyCalculationResult { Text = "", DisableFutureRequests = true };
-        }
     }
 
     /// <summary>
