@@ -174,6 +174,14 @@ namespace TypeSunny.Personalization
 
     }
 
+    /// <summary>
+    /// 个人化打字画像。SQLite 化之前是一个"反序列化整张 JSON"得到的全量内存模型，
+    /// 之后 Predictor/Trainer 通过 <see cref="IPersonalTypingProfileStore.LoadWithUnits"/> 只把
+    /// "本次预测/训练相关"的 unit 装进 <see cref="Units"/>。
+    ///
+    /// 这意味着运行期不要再假设可以遍历 <see cref="Units"/> 拿到"用户学过的所有词"——
+    /// 那只有 <c>store.Load()</c>（兼容入口，会全量加载）能拿到。
+    /// </summary>
     internal sealed class PersonalTypingProfile
     {
         public int EffectiveStatCharacters { get; set; }
@@ -186,6 +194,11 @@ namespace TypeSunny.Personalization
         public double BaselineWasteCodesPerChar { get; set; }
         public double BaselineChoosePerChar { get; set; }
         public PersonalPredictionCalibration Calibration { get; set; }
+
+        /// <summary>
+        /// 单元词条字典。SQLite 化之后该集合的语义从"全部历史 unit"变成"本次操作相关 unit"，
+        /// 见类注释。
+        /// </summary>
         public Dictionary<string, PersonalTypingUnitStats> Units { get; set; }
 
         public PersonalTypingProfile()
@@ -240,7 +253,25 @@ namespace TypeSunny.Personalization
                 return;
 
             EnsureCollections();
-            Calibration.Add(snapshot, actual);
+            int effectiveChars = ComputeEffectiveChars(snapshot, actual);
+            if (effectiveChars <= 0)
+                return;
+            Calibration.Add(snapshot, actual, effectiveChars);
+        }
+
+        /// <summary>
+        /// 校准权重用的"有效字符数"：取 snapshot.TargetCharacters 和 actual 完成字符数的较小值，
+        /// 避免极端情况（用户中途断掉 / 文本字数与跟打记录字数不一致）权重失真。
+        /// </summary>
+        private static int ComputeEffectiveChars(PersonalScorePredictionSnapshot snapshot, PersonalTypingRoundStats actual)
+        {
+            int target = snapshot.TargetCharacters;
+            int round = actual.TotalWords;
+            if (target <= 0)
+                return round > 0 ? round : 0;
+            if (round <= 0)
+                return target;
+            return Math.Min(target, round);
         }
 
         private void EnsureCollections()

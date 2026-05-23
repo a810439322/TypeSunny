@@ -1,0 +1,17 @@
+System.Data.SQLite is in the public domain.
+
+See: https://system.data.sqlite.org/index.html/doc/trunk/www/copyright.wiki
+
+The author(s) disclaim copyright to this source code.  In place of a legal
+notice, here is a blessing:
+
+   May you do good and not evil.
+   May you find forgiveness for yourself and forgive others.
+   May you share freely, never taking more than you give.
+
+Binaries deployed in this folder:
+- System.Data.SQLite.dll        (managed ADO.NET provider, version 1.0.118.0)
+- x86/SQLite.Interop.dll        (32-bit native interop)
+- x64/SQLite.Interop.dll        (64-bit native interop)
+
+Source: https://system.data.sqlite.org/downloads/1.0.118.0/

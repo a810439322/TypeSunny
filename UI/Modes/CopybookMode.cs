@@ -154,7 +154,6 @@ namespace TypeSunny.UI.Modes
             _inputCapture.PreviewTextInput += OnTextInput;
             _inputCapture.PreviewKeyDown += OnPreviewKeyDown;
             _inputCapture.AddHandler(Keyboard.PreviewKeyUpEvent, new KeyEventHandler(OnPreviewKeyUp), true);
-            _inputCapture.TextChanged += OnInputCaptureTextChanged;
             _inputCapture.LostFocus += OnLostFocus;
             _inputCapture.GotFocus += OnGotFocus;
             _main.Activated += OnWindowActivated;
@@ -181,7 +180,6 @@ namespace TypeSunny.UI.Modes
                 _inputCapture.PreviewTextInput -= OnTextInput;
                 _inputCapture.PreviewKeyDown -= OnPreviewKeyDown;
                 _inputCapture.RemoveHandler(Keyboard.PreviewKeyUpEvent, new KeyEventHandler(OnPreviewKeyUp));
-                _inputCapture.TextChanged -= OnInputCaptureTextChanged;
                 _inputCapture.LostFocus -= OnLostFocus;
                 _inputCapture.GotFocus -= OnGotFocus;
                 _overlay.PreviewMouseWheel -= OnOverlayPreviewMouseWheel;
@@ -280,6 +278,7 @@ namespace TypeSunny.UI.Modes
             {
                 if (!_isActive || _currentIndex >= TextInfo.Blocks.Count) return;
                 UpdatePosition();
+                ResetInputCaptureHostIfIdle();
                 _inputCapture.Focus();
             }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
@@ -287,6 +286,7 @@ namespace TypeSunny.UI.Modes
         public void FocusInputCapture()
         {
             if (!_isActive || _inputCapture == null) return;
+            ResetInputCaptureHostIfIdle();
             _inputCapture.Focus();
         }
 
@@ -350,6 +350,7 @@ namespace TypeSunny.UI.Modes
         private void OnCompositionStart(object sender, TextCompositionEventArgs e)
         {
             SetImeCompositionState(e.TextComposition.CompositionText ?? "");
+            _main.RefreshImeCandidateWindowPosition();
             if (!Score.IsComposing)
             {
                 Score.IsComposing = true;
@@ -508,22 +509,26 @@ namespace TypeSunny.UI.Modes
             _main.Dispatcher.BeginInvoke(new Action(() =>
             {
                 TrimInputCaptureTextAfterCommit();
-            }), System.Windows.Threading.DispatcherPriority.Normal);
-        }
-
-        private void OnInputCaptureTextChanged(object sender, TextChangedEventArgs e)
-        {
-            TrimInputCaptureTextAfterCommit();
+            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         }
 
         private void TrimInputCaptureTextAfterCommit()
         {
-            if (!_isActive || _inputCapture == null) return;
-            // 只在没有活跃 composition 时清理，避免打断正在进行的输入
-            if (HasActiveComposition() || _inputCapture.Text.Length == 0)
+            ResetInputCaptureHostIfIdle();
+        }
+
+        private void ResetInputCaptureHostIfIdle()
+        {
+            if (!_isActive || _inputCapture == null)
                 return;
 
-            _inputCapture.Text = "";
+            if (HasActiveComposition())
+                return;
+
+            if (_inputCapture.Text.Length > 0)
+                _inputCapture.Text = "";
+
+            _inputCapture.Select(0, 0);
         }
 
         private void ScheduleAdvanceVisuals()
@@ -568,6 +573,8 @@ namespace TypeSunny.UI.Modes
             if (isBackspace)
             {
                 bool isImeProcessedBackspace = e.Key == Key.ImeProcessed && e.ImeProcessedKey == Key.Back;
+                if (isImeProcessedBackspace)
+                    _imeBackspacePolicy.NotifyImeBackspaceStarted();
                 shouldDeletePreviousWord = _imeBackspacePolicy.ShouldDeletePreviousWord(
                     isImeProcessedBackspace,
                     HasActiveComposition());
@@ -658,7 +665,7 @@ namespace TypeSunny.UI.Modes
         private void SetImeCompositionState(string composition)
         {
             _activeCompositionText = composition ?? "";
-            _imeBackspacePolicy.NotifyCompositionText(_activeCompositionText, IsPhysicalBackspaceDown());
+            _imeBackspacePolicy.NotifyCompositionText(_activeCompositionText);
             _isImeComposing = !string.IsNullOrEmpty(_activeCompositionText);
             if (_main.IsCodeDisplayEnabled())
             {
@@ -682,11 +689,6 @@ namespace TypeSunny.UI.Modes
             if (_main.IsCodeDisplayEnabled() && clearFeedback)
                 _main.ClearCodeLabelProgress(_currentIndex);
             HideCompositionText();
-        }
-
-        private bool IsPhysicalBackspaceDown()
-        {
-            return TypeSunny.Utils.Win32.GetKeyState(TypeSunny.Utils.Win32.VK_BACK) < 0;
         }
 
         private void UpdateCompositionText(string composition)
@@ -921,7 +923,7 @@ namespace TypeSunny.UI.Modes
                 double y = pos.Y;
                 double fs = MainWindow.DisplayFontSize;
                 double candidateOffset = Config.GetDouble("字帖候选框高度") * fs;
-                double codeDisplayExtra = _main.IsFullCodeDisplayEnabled() ? fs * 0.55 : 0.0;
+                double codeDisplayExtra = _main.GetCodeDisplayImeOffset(fs);
 
                 // 计算文字在 TextBlock 内的实际 padTop（与 PageReArrange 一致）
                 var fm = _main.GetCurrentFontFamily();
@@ -931,7 +933,9 @@ namespace TypeSunny.UI.Modes
 
                 // InputCapture 控制 IME 候选框位置
                 Canvas.SetLeft(_inputCapture, x);
-                Canvas.SetTop(_inputCapture, y + 1.0 * fs + candidateOffset + codeDisplayExtra);
+                double inputTop = y + 1.0 * fs + candidateOffset + codeDisplayExtra;
+                Canvas.SetTop(_inputCapture, inputTop);
+                _main.UpdateImeCandidateWindowPosition(grid, new Point(x, inputTop));
 
                 // 自定义光标定位到当前字左侧，与文字垂直居中对齐
                 if (_cursor != null)

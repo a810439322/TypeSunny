@@ -159,28 +159,51 @@ namespace TypeSunny.Personalization
             public bool IsMature;
         }
 
+        /// <summary>
+        /// 贝叶斯收缩"先验权重"：count=1 时 (1/(1+K)) 真实 + (K/(1+K)) 基线。
+        /// K=3 让单次样本只贡献 25%，count=3 时 50/50，count=10 时真实占 77%。
+        /// 目的：防止偶然一次卡顿/走神的样本完全主导 DP。
+        /// </summary>
+        private const double LearnedUnitPriorWeight = 3.0;
+
         private static CandidateCost GetCost(string unit, int charCount, PersonalTypingProfile profile)
         {
+            double baselineSpeed = profile.BaselineSpeed > 0 ? profile.BaselineSpeed : 120;
+            double baselineKpw = profile.BaselineKpw > 0 ? profile.BaselineKpw : 4;
+            double baselineMsForUnit = charCount * 60000.0 / baselineSpeed;
+            double baselineKeysForUnit = charCount * baselineKpw;
+
             PersonalTypingUnitStats stats;
             if (profile.Units != null && profile.Units.TryGetValue(unit, out stats) && stats.Count > 0)
             {
+                // 贝叶斯收缩：用 (真实 * count + 基线 * K) / (count + K) 平滑
+                double count = stats.Count;
+                double denom = count + LearnedUnitPriorWeight;
+                double smoothedMs = (stats.AverageMilliseconds * count + baselineMsForUnit * LearnedUnitPriorWeight) / denom;
+                double smoothedKeys = (stats.AverageKeys * count + baselineKeysForUnit * LearnedUnitPriorWeight) / denom;
                 return new CandidateCost
                 {
-                    Milliseconds = Math.Max(1, stats.AverageMilliseconds),
-                    Keys = Math.Max(1, stats.AverageKeys),
+                    Milliseconds = Math.Max(1, smoothedMs),
+                    Keys = Math.Max(1, smoothedKeys),
                     IsMature = stats.Count >= 3 || stats.ObservedCharacters >= 8
                 };
             }
 
-            double speed = profile.BaselineSpeed > 0 ? profile.BaselineSpeed : 120;
-            double kpw = profile.BaselineKpw > 0 ? profile.BaselineKpw : 4;
             return new CandidateCost
             {
-                Milliseconds = Math.Max(1, charCount * 60000.0 / speed),
-                Keys = Math.Max(1, charCount * kpw),
+                Milliseconds = Math.Max(1, baselineMsForUnit),
+                Keys = Math.Max(1, baselineKeysForUnit),
                 IsMature = false
             };
         }
+
+        /// <summary>
+        /// 是否将该 unit 加入 DP 多字段候选。要求 <c>Count &gt;= 2</c> 才"已学过"——
+        /// 单次样本太容易是噪声（卡顿/走神），不让它直接主导切分偏好。
+        /// （注意：即便不在 DP 候选里，单字仍会走 fallback 代价，且 GetCost 仍会平滑使用学过的统计；
+        ///  这里只影响"是否给该多字段切分加分"。）
+        /// </summary>
+        private const int MinSamplesToConsiderLearned = 2;
 
         private static bool HasLearnedUnit(string unit, PersonalTypingProfile profile)
         {
@@ -189,7 +212,7 @@ namespace TypeSunny.Personalization
                 && profile.Units != null
                 && profile.Units.TryGetValue(unit, out stats)
                 && stats != null
-                && stats.Count > 0;
+                && stats.Count >= MinSamplesToConsiderLearned;
         }
 
         private static HashSet<string> BuildFallbackSegmentKeys(string[] chars, IEnumerable<string> fallbackSegments)

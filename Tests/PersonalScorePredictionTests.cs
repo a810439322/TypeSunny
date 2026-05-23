@@ -30,8 +30,15 @@ namespace TypeSunny.Tests
                 PredictorIgnoresPunctuationPairUnits();
                 PredictorFormatsWholeScorePrediction();
                 CalibrationAdjustsFuturePredictionTowardActualScore();
+                CalibrationWeightsLongRunsMoreThanShortRuns();
+                CalibrationClampedSampleHasReducedWeight();
+                CalibrationServiceSkipsBelowColdStartThreshold();
+                CalibrationServiceSkipsWhenTextHashMismatches();
+                CalibrateAndTrainAsyncRunsSequentiallyOffUiThread();
+                PredictorIgnoresSingletonLearnedUnit();
+                FormatterHidesBelowMinDisplayConfidence();
                 FormatterDefaultsConfidenceVisibleButNotForced();
-                FormatterForcesSpeedAndDifficultyOnlyByDefault();
+                FormatterForcesOnlySpeedByDefault();
                 FormatterRequiresConfidenceAboveEightyPercentForScoreAttachment();
 
                 Console.WriteLine("All PersonalScorePrediction tests passed.");
@@ -218,30 +225,33 @@ namespace TypeSunny.Tests
         private static void PredictionServiceAppendsPredictionOutsideMainWindow()
         {
             string tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");
+            PersonalTypingProfileStore store = null;
             try
             {
-                var store = new PersonalTypingProfileStore(tempPath);
+                store = new PersonalTypingProfileStore(tempPath);
                 store.Save(CreatePredictionProfile());
                 var service = new PersonalScorePredictionService(store, text => 2.0);
 
                 string displayText = service.AppendPrediction("中国人", "");
 
-                AssertTrue("service appends predicted speed", displayText.Contains("预测速度180.00"));
-                AssertTrue("service appends personal difficulty", displayText.Contains("个难普(1.33)"));
+                // 数字会随贝叶斯收缩等算法常数微调而变化，这里只断言形状
+                AssertTrue("service appends predicted speed", System.Text.RegularExpressions.Regex.IsMatch(displayText, "预测速度\\d+\\.\\d{2}"));
+                AssertTrue("service appends personal difficulty", System.Text.RegularExpressions.Regex.IsMatch(displayText, "个难[淼水易普难虐]\\(\\d+\\.\\d{2}\\)"));
             }
             finally
             {
-                if (System.IO.File.Exists(tempPath))
-                    System.IO.File.Delete(tempPath);
+                if (store != null) store.Dispose();
+                DeleteTempStoreFiles(tempPath);
             }
         }
 
         private static void PredictionServiceLearnsDifficultySegmentFromSingleCharacterCommits()
         {
             string tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");
+            PersonalTypingProfileStore store = null;
             try
             {
-                var store = new PersonalTypingProfileStore(tempPath);
+                store = new PersonalTypingProfileStore(tempPath);
                 var service = new PersonalScorePredictionService(
                     store,
                     text => 2.0,
@@ -271,14 +281,15 @@ namespace TypeSunny.Tests
             }
             finally
             {
-                if (System.IO.File.Exists(tempPath))
-                    System.IO.File.Delete(tempPath);
+                if (store != null) store.Dispose();
+                DeleteTempStoreFiles(tempPath);
             }
         }
 
         private static void PredictionServiceUsesDifficultySegmentsWhenPredicting()
         {
             string tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");
+            PersonalTypingProfileStore store = null;
             try
             {
                 var profile = new PersonalTypingProfile();
@@ -286,7 +297,7 @@ namespace TypeSunny.Tests
                 profile.BaselineSpeed = 120;
                 profile.BaselineKpw = 2;
 
-                var store = new PersonalTypingProfileStore(tempPath);
+                store = new PersonalTypingProfileStore(tempPath);
                 store.Save(profile);
                 var service = new PersonalScorePredictionService(
                     store,
@@ -303,17 +314,18 @@ namespace TypeSunny.Tests
             }
             finally
             {
-                if (System.IO.File.Exists(tempPath))
-                    System.IO.File.Delete(tempPath);
+                if (store != null) store.Dispose();
+                DeleteTempStoreFiles(tempPath);
             }
         }
 
         private static void PredictionServicePersistsCalibrationFromSnapshot()
         {
             string tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");
+            PersonalTypingProfileStore store = null;
             try
             {
-                var store = new PersonalTypingProfileStore(tempPath);
+                store = new PersonalTypingProfileStore(tempPath);
                 store.Save(CreatePredictionProfile());
                 var service = new PersonalScorePredictionService(store, text => 2.0);
 
@@ -336,8 +348,8 @@ namespace TypeSunny.Tests
             }
             finally
             {
-                if (System.IO.File.Exists(tempPath))
-                    System.IO.File.Delete(tempPath);
+                if (store != null) store.Dispose();
+                DeleteTempStoreFiles(tempPath);
             }
         }
 
@@ -349,8 +361,10 @@ namespace TypeSunny.Tests
 
             AssertEqual("first predicted unit", "中国", prediction.Units[0]);
             AssertEqual("second predicted unit", "人", prediction.Units[1]);
-            AssertEqual("predicted hits", 6.0, prediction.PredictedTotalHits, 0.001);
-            AssertEqual("predicted seconds", 1.0, prediction.PredictedSeconds, 0.001);
+            // 贝叶斯收缩后：keys = (4*10+8*3)/13 + (2*10+4*3)/13 ≈ 4.92 + 2.46 ≈ 7.38
+            //                seconds = ((600*10+1000*3) + (400*10+500*3)) / 13 / 1000 ≈ 1.115
+            AssertEqual("predicted hits", 7.38, prediction.PredictedTotalHits, 0.05);
+            AssertEqual("predicted seconds", 1.115, prediction.PredictedSeconds, 0.01);
         }
 
         private static void PredictorUsesDifficultySegmentsForUnlearnedWords()
@@ -409,12 +423,17 @@ namespace TypeSunny.Tests
 
             var prediction = PersonalScorePredictor.Predict("中国人", profile, 2.0);
 
-            AssertEqual("predicted speed", 180.0, prediction.PredictedSpeed, 0.001);
-            AssertEqual("predicted kpw", 2.0, prediction.PredictedKpw, 0.001);
-            AssertEqual("predicted hit rate", 6.0, prediction.PredictedHitRate, 0.001);
-            AssertEqual("personal difficulty score", 1.33, prediction.PersonalDifficultyScore, 0.01);
-            AssertTrue("formatted text has speed", prediction.FormatScoreLine().Contains("预测速度180.00"));
-            AssertTrue("formatted text has difficulty", prediction.FormatScoreLine().Contains("个难普(1.33)"));
+            // 数值精确到贝叶斯收缩公式：
+            // GetCost("中国",2): (600*10 + 1000*3)/13 ≈ 692.31 ms, (4*10 + 8*3)/13 ≈ 4.92 keys
+            // GetCost("人", 1): (400*10 + 500*3)/13 ≈ 423.08 ms, (2*10 + 4*3)/13 ≈ 2.46 keys
+            // 总 ms ≈ 1115.38 ⇒ Speed = 3/(1.1154/60) ≈ 161.38, kpw ≈ 2.46, hitRate ≈ 6.62
+            // PersonalDifficulty = 2 × 120/161.38 ≈ 1.49
+            AssertEqual("predicted speed", 161.38, prediction.PredictedSpeed, 0.1);
+            AssertEqual("predicted kpw", 2.46, prediction.PredictedKpw, 0.05);
+            AssertEqual("predicted hit rate", 6.62, prediction.PredictedHitRate, 0.05);
+            AssertEqual("personal difficulty score", 1.49, prediction.PersonalDifficultyScore, 0.02);
+            AssertTrue("formatted text has speed", prediction.FormatScoreLine().Contains("预测速度161"));
+            AssertTrue("formatted text has difficulty", prediction.FormatScoreLine().Contains("个难普("));
         }
 
         private static void CalibrationAdjustsFuturePredictionTowardActualScore()
@@ -442,7 +461,254 @@ namespace TypeSunny.Tests
             AssertTrue("calibration keeps confidence", calibrated.Confidence >= prediction.Confidence);
         }
 
-        private static void FormatterForcesSpeedAndDifficultyOnlyByDefault()
+        private static void CalibrationWeightsLongRunsMoreThanShortRuns()
+        {
+            // 关键场景：两条样本，ratio 不同，混到同一个 Calibration 里。
+            // - 短局：chars=10，ratio=1.0 (actual 与 predicted 等)
+            // - 长局：chars=1000，ratio=2.0 (actual 是 predicted 的 2 倍)
+            // 旧实现（按"轮"等权）TimeFactor ≈ (1 + 2) / 2 = 1.5
+            // 新实现（按字数加权）TimeFactor ≈ (1*10 + 2*1000) / (10 + 1000) ≈ 1.99
+            var shortRun = NewSnapshotWith(chars: 10, predictedSeconds: 10, predictedHits: 100);
+            var longRun = NewSnapshotWith(chars: 1000, predictedSeconds: 1000, predictedHits: 10000);
+
+            var cal = new PersonalPredictionCalibration();
+            cal.Add(shortRun, new PersonalTypingRoundStats { TotalWords = 10, TotalSeconds = 10, TotalHits = 100 }, 10);
+            cal.Add(longRun, new PersonalTypingRoundStats { TotalWords = 1000, TotalSeconds = 2000, TotalHits = 20000 }, 1000);
+
+            // 长局应主导：TimeFactor 接近 2.0 而不是 (1+2)/2=1.5
+            AssertTrue("long run dominates TimeFactor",
+                cal.TimeFactor > 1.8 && cal.TimeFactor <= 2.0);
+        }
+
+        private static void CalibrationClampedSampleHasReducedWeight()
+        {
+            // 一条正常样本 (ratio=1.5, chars=100) 后跟一条极端样本 (ratio 钳到 4, chars=100):
+            // - 正常样本权重 = 100
+            // - 极端样本权重 = 100 * 0.25 = 25 (ClampedSampleWeightFactor 折扣)
+            // → 加权平均 ≈ (1.5*100 + 4*25) / (100+25) ≈ 2.0
+            // 如果没有折扣，会 = (1.5+4)/2 = 2.75（按等权）或 (1.5*100+4*100)/200 = 2.75（按字数等权）
+            var normalRun = NewSnapshotWith(chars: 100, predictedSeconds: 100, predictedHits: 500);
+            var extremeRun = NewSnapshotWith(chars: 100, predictedSeconds: 100, predictedHits: 500);
+
+            var cal = new PersonalPredictionCalibration();
+            cal.Add(normalRun, new PersonalTypingRoundStats { TotalWords = 100, TotalSeconds = 150, TotalHits = 750 }, 100);
+            cal.Add(extremeRun, new PersonalTypingRoundStats { TotalWords = 100, TotalSeconds = 1000, TotalHits = 5000 }, 100); // ratio=10 钳到 4
+
+            // 钳过的极端样本权重被压制 → TimeFactor 不会跳到接近 4，而是被正常样本拉住
+            AssertTrue("clamped sample's weight is reduced relative to unclamped",
+                cal.TimeFactor < 2.5 && cal.TimeFactor > 1.5);
+        }
+
+        private static void CalibrationServiceSkipsBelowColdStartThreshold()
+        {
+            string tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");
+            PersonalTypingProfileStore store = null;
+            try
+            {
+                // 故意做一个 EffectiveStatCharacters 远低于 200 阈值的 profile
+                var profile = new PersonalTypingProfile
+                {
+                    EffectiveStatCharacters = 50,
+                    BaselineSpeed = 100,
+                    BaselineKpw = 2
+                };
+                store = new PersonalTypingProfileStore(tempPath);
+                store.Save(profile);
+
+                var service = new PersonalScorePredictionService(store, text => 2.0);
+                var snapshot = NewSnapshotWith(chars: 5, predictedSeconds: 5, predictedHits: 20);
+
+                service.Calibrate(snapshot, new PersonalTypingRoundStats
+                {
+                    TotalWords = 5,
+                    TotalSeconds = 30,   // 6x predicted —— 如果不门控会被钳到 4 并污染 factor
+                    TotalHits = 200,
+                });
+
+                PersonalTypingProfile reloaded = store.Load();
+                AssertEqual("cold start skips calibration count", 0, reloaded.Calibration.Count);
+                AssertTrue("cold start preserves default TimeFactor", reloaded.Calibration.TimeFactor == 1.0);
+            }
+            finally
+            {
+                if (store != null) store.Dispose();
+                DeleteTempStoreFiles(tempPath);
+            }
+        }
+
+        private static void CalibrationServiceSkipsWhenTextHashMismatches()
+        {
+            string tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");
+            PersonalTypingProfileStore store = null;
+            try
+            {
+                store = new PersonalTypingProfileStore(tempPath);
+                store.Save(CreatePredictionProfile()); // EffectiveStatCharacters=20000 已过冷启动门控
+
+                var service = new PersonalScorePredictionService(store, text => 2.0);
+
+                // 拍一个 "中国人" 的 snapshot
+                var prediction = PersonalScorePredictor.Predict("中国人", CreatePredictionProfile(), 2.0);
+                var snapshot = PersonalScorePredictionSnapshot.FromPrediction("中国人", 2.0, prediction);
+
+                // 用 "完全不同的文章" 的 hash 调用 Calibrate —— 应该被拒绝
+                service.Calibrate(snapshot,
+                    new PersonalTypingRoundStats
+                    {
+                        TotalWords = 100,
+                        TotalSeconds = 50,
+                        TotalHits = 600,
+                    },
+                    expectedTextHash: PersonalScorePredictionSnapshot.ComputeTextHash("完全不同的文章"));
+
+                PersonalTypingProfile reloaded = store.Load();
+                AssertEqual("mismatched hash skips calibration", 0, reloaded.Calibration.Count);
+
+                // 用正确 hash 再调一次，应该被接受
+                service.Calibrate(snapshot,
+                    new PersonalTypingRoundStats
+                    {
+                        TotalWords = 3,
+                        TotalSeconds = 2,
+                        TotalHits = 10,
+                    },
+                    expectedTextHash: PersonalScorePredictionSnapshot.ComputeTextHash("中国人"));
+
+                reloaded = store.Load();
+                AssertEqual("matched hash accepts calibration", 1, reloaded.Calibration.Count);
+            }
+            finally
+            {
+                if (store != null) store.Dispose();
+                DeleteTempStoreFiles(tempPath);
+            }
+        }
+
+        private static void CalibrateAndTrainAsyncRunsSequentiallyOffUiThread()
+        {
+            string tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");
+            PersonalTypingProfileStore store = null;
+            try
+            {
+                store = new PersonalTypingProfileStore(tempPath);
+                store.Save(CreatePredictionProfile());
+                var service = new PersonalScorePredictionService(store, text => 2.0);
+
+                var prediction = PersonalScorePredictor.Predict("中国人", CreatePredictionProfile(), 2.0);
+                var snapshot = PersonalScorePredictionSnapshot.FromPrediction("中国人", 2.0, prediction);
+
+                // 同时调两次，验证 FIFO 串行（第二次必须等第一次写完）
+                System.Threading.Tasks.Task t1 = service.CalibrateAndTrainAsync(
+                    snapshot,
+                    new PersonalTypingRoundStats { TotalWords = 3, TotalSeconds = 2, TotalHits = 10, Speed = 90, HitRate = 5, Kpw = 3, Accuracy = 98 },
+                    PersonalScorePredictionSnapshot.ComputeTextHash("中国人"),
+                    "中国人",
+                    new[] { "中", "国", "人" },
+                    new long[] { 1000, 1500, 2000 },
+                    new long[] { 900, 1400, 1900 });
+
+                System.Threading.Tasks.Task t2 = service.CalibrateAndTrainAsync(
+                    snapshot,
+                    new PersonalTypingRoundStats { TotalWords = 3, TotalSeconds = 2.5, TotalHits = 11, Speed = 80, HitRate = 4.4, Kpw = 3.67, Accuracy = 97 },
+                    PersonalScorePredictionSnapshot.ComputeTextHash("中国人"),
+                    "中国人",
+                    new[] { "中", "国", "人" },
+                    new long[] { 3000, 3500, 4000 },
+                    new long[] { 2900, 3400, 3900 });
+
+                // 调用立即返回（即便 SQLite 还没写完）
+                AssertTrue("returns tasks without blocking", t1 != null && t2 != null);
+
+                // 等齐两个任务
+                System.Threading.Tasks.Task.WaitAll(new[] { t1, t2 }, 10000);
+                AssertTrue("t1 completes", t1.IsCompleted);
+                AssertTrue("t2 completes", t2.IsCompleted);
+
+                PersonalTypingProfile reloaded = store.Load();
+                // 两次 Calibrate 都生效，Count = 2
+                AssertEqual("two calibrations applied in sequence", 2, reloaded.Calibration.Count);
+                // Train 也跑过，至少保留原 4 个 unit
+                AssertTrue("train applied", reloaded.Units.Count >= 4);
+            }
+            finally
+            {
+                if (store != null) store.Dispose();
+                DeleteTempStoreFiles(tempPath);
+            }
+        }
+
+        private static void PredictorIgnoresSingletonLearnedUnit()
+        {
+            // 一个 unit 仅打过 1 次的样本不算"已学过"——不应让 DP 优先把它拆成多字段
+            var profile = new PersonalTypingProfile();
+            profile.EffectiveStatCharacters = 1000;
+            profile.BaselineSpeed = 120;
+            profile.BaselineKpw = 4;
+            profile.Units["中国"] = new PersonalTypingUnitStats("中国")
+            {
+                Count = 1,
+                ObservedCharacters = 2,
+                TotalMilliseconds = 100,  // 一个超快异常样本
+                TotalKeys = 4
+            };
+
+            var prediction = PersonalScorePredictor.Predict("中国人", profile, 2.0);
+
+            // 单次样本不让 "中国" 进 DP 多字候选 —— Units 应该是 [中, 国, 人] 而非 [中国, 人]
+            AssertEqual("singleton learned unit not used for multi-char segmentation",
+                3, prediction.Units.Count);
+        }
+
+        private static void FormatterHidesBelowMinDisplayConfidence()
+        {
+            // 低置信预测：完全不显示，让调用方退回纯基础难度
+            var prediction = new PersonalScorePrediction
+            {
+                Units = new List<string> { "中" },
+                PredictedSeconds = 1,
+                PredictedTotalHits = 4,
+                PredictedSpeed = 60,
+                PredictedHitRate = 4,
+                PredictedKpw = 4,
+                PersonalDifficultyScore = 1,
+                Confidence = 0.10  // 远低于 0.30 阈值
+            };
+
+            string formatted = PersonalScorePredictionFormatter.Format(
+                prediction,
+                PersonalScorePredictionFormatter.DefaultOrder,
+                _ => true);
+
+            AssertEqual("low confidence hides everything", "", formatted);
+
+            // 边界：0.30 刚好 —— 也应该被屏蔽（< 严格小于）
+            prediction.Confidence = PersonalScorePredictionFormatter.MinDisplayConfidence - 0.001;
+            AssertEqual("just below threshold still hidden",
+                "",
+                PersonalScorePredictionFormatter.Format(prediction, PersonalScorePredictionFormatter.DefaultOrder, _ => true));
+
+            // 高于阈值：正常显示
+            prediction.Confidence = PersonalScorePredictionFormatter.MinDisplayConfidence + 0.001;
+            AssertTrue("at threshold shows content",
+                PersonalScorePredictionFormatter.Format(prediction, PersonalScorePredictionFormatter.DefaultOrder, _ => true).Contains("预测速度"));
+        }
+
+        private static PersonalScorePredictionSnapshot NewSnapshotWith(int chars, double predictedSeconds, double predictedHits)
+        {
+            return new PersonalScorePredictionSnapshot
+            {
+                TargetCharacters = chars,
+                PredictedSeconds = predictedSeconds,
+                PredictedTotalHits = predictedHits,
+                PredictedSpeed = chars / (predictedSeconds / 60.0),
+                PredictedHitRate = predictedHits / predictedSeconds,
+                PredictedKpw = predictedHits / chars,
+                PredictedPersonalDifficultyScore = 1.0,
+                Confidence = 1.0
+            };
+        }
+
+        private static void FormatterForcesOnlySpeedByDefault()
         {
             var prediction = PersonalScorePredictor.Predict("中国人", CreatePredictionProfile(), 2.0);
             string formatted = PersonalScorePredictionFormatter.Format(
@@ -450,8 +716,9 @@ namespace TypeSunny.Tests
                 PersonalScorePredictionFormatter.DefaultOrder,
                 item => false);
 
-            AssertTrue("forced speed", formatted.Contains("预测速度180.00"));
-            AssertTrue("forced difficulty", formatted.Contains("个难普(1.33)"));
+            AssertTrue("forced speed", formatted.Contains("预测速度161"));
+            AssertFalse("difficulty can be hidden by user", formatted.Contains("个难"));
+            AssertFalse("difficulty is not forced", PersonalScorePredictionFormatter.IsForceShowItem("难度"));
             AssertFalse("optional time hidden", formatted.Contains("用时"));
             AssertFalse("optional confidence hidden", formatted.Contains("置信"));
         }
@@ -512,6 +779,35 @@ namespace TypeSunny.Tests
                 TotalKeys = 20
             };
             return profile;
+        }
+
+        /// <summary>
+        /// 清理一组测试 store 文件。SQLite 化后单个 "<c>xxx.json</c>" tempPath 实际对应
+        /// "<c>xxx.db</c>" + 可能的 WAL/SHM 伴随文件 "<c>xxx.db-wal</c>"/"<c>xxx.db-shm</c>"。
+        /// </summary>
+        private static void DeleteTempStoreFiles(string tempPath)
+        {
+            if (string.IsNullOrEmpty(tempPath))
+                return;
+
+            string dbPath = PersonalTypingProfileStore.NormalizePathToDb(tempPath);
+            TryDelete(tempPath); // 老 .json 路径，若 store 没创建也无副作用
+            TryDelete(dbPath);
+            TryDelete(dbPath + "-wal");
+            TryDelete(dbPath + "-shm");
+            TryDelete(dbPath + ".migrating");
+        }
+
+        private static void TryDelete(string path)
+        {
+            try
+            {
+                if (System.IO.File.Exists(path))
+                    System.IO.File.Delete(path);
+            }
+            catch
+            {
+            }
         }
 
         private static void AssertTrue(string name, bool condition)

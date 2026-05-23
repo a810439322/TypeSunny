@@ -16,6 +16,9 @@ Debug/
 *.pdb
 *.log
 
+# 例外：手工部署的 SQLite native + managed dll 需要进仓库
+!lib/SQLite/**/*.dll
+
 # NuGet Packages
 packages/
 *.nupkg

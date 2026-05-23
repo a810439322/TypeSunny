@@ -1,16 +1,19 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace TypeSunny.Personalization
 {
     internal sealed class PersonalScorePredictionService
     {
-        private readonly PersonalTypingProfileStore store;
+        private readonly IPersonalTypingProfileStore store;
         private readonly Func<string, double> baseDifficultyCalculator;
         private readonly Func<string, IEnumerable<string>> difficultySegmenter;
+        private readonly object pendingWriteLock = new object();
+        private Task pendingWrite;
 
         public PersonalScorePredictionService(
-            PersonalTypingProfileStore store,
+            IPersonalTypingProfileStore store,
             Func<string, double> baseDifficultyCalculator,
             Func<string, IEnumerable<string>> difficultySegmenter = null)
         {
@@ -19,6 +22,11 @@ namespace TypeSunny.Personalization
             this.difficultySegmenter = difficultySegmenter ?? (_ => new string[0]);
         }
 
+        /// <summary>
+        /// 同步训练入口：构造 session、按需查 DB、应用增量更新。
+        /// 该方法**返回前**数据已落盘，便于测试断言。MainWindow 等 UI 调用应该走
+        /// <see cref="TrainAsync"/>，避免阻塞主线程。
+        /// </summary>
         public void Train(
             string targetText,
             IEnumerable<string> commitTexts,
@@ -28,30 +36,142 @@ namespace TypeSunny.Personalization
         {
             try
             {
+                string[] fallbackSegments = ToArray(difficultySegmenter(targetText ?? ""));
+
                 PersonalTypingSession session = PersonalTypingSessionBuilder.Build(
                     targetText,
                     commitTexts,
                     commitTimes,
                     keyTimes,
-                    difficultySegmenter(targetText ?? ""));
+                    fallbackSegments);
 
                 if (session.EffectiveStatCharacters <= 0)
                     return;
 
-                PersonalTypingProfile profile = store.Load();
+                // 只把 session.Samples 里出现的 text 拉到内存（这些是真正会被修改的 unit）
+                var sampleTexts = new HashSet<string>();
+                foreach (var s in session.Samples)
+                {
+                    if (s != null && !string.IsNullOrEmpty(s.Text))
+                        sampleTexts.Add(s.Text);
+                }
+
+                PersonalTypingProfile profile = store.LoadWithUnits(sampleTexts);
                 profile.Update(session, stats);
-                store.Save(profile);
+                // profile.Units 此时包含本次相关 unit 的最新值；ApplyTraining 只 UPSERT 这些行 + 写 Baseline。
+                store.ApplyTraining(profile);
             }
             catch
             {
             }
         }
 
+        /// <summary>
+        /// 异步训练入口：把 <see cref="Train"/> 扔到后台线程，立刻返回。
+        /// 多次调用串行执行（后一次等前一次完成），避免乱序写入。
+        /// 关窗时主窗口应 <see cref="FlushPendingWrites"/> 等待落盘。
+        /// </summary>
+        public Task TrainAsync(
+            string targetText,
+            IEnumerable<string> commitTexts,
+            IEnumerable<long> commitTimes,
+            IEnumerable<long> keyTimes,
+            PersonalTypingRoundStats stats)
+        {
+            // 复制成数组避免后台线程读到正在被外部修改的集合
+            string[] commitTextArr = ToArray(commitTexts);
+            long[] commitTimeArr = ToArray(commitTimes);
+            long[] keyTimeArr = ToArray(keyTimes);
+
+            lock (pendingWriteLock)
+            {
+                Task previous = pendingWrite;
+                Task next;
+                if (previous == null || previous.IsCompleted)
+                {
+                    next = Task.Run(() => Train(targetText, commitTextArr, commitTimeArr, keyTimeArr, stats));
+                }
+                else
+                {
+                    next = previous.ContinueWith(_ =>
+                    {
+                        try { Train(targetText, commitTextArr, commitTimeArr, keyTimeArr, stats); }
+                        catch { }
+                    }, TaskContinuationOptions.ExecuteSynchronously);
+                }
+                pendingWrite = next;
+                return next;
+            }
+        }
+
+        /// <summary>
+        /// 把一轮的 <see cref="Calibrate"/> 和 <see cref="TrainAsync"/> 串到同一条后台任务上，
+        /// 严格顺序：先 Calibrate（更新 TimeFactor/KeyFactor）再 Train（更新 Baseline + Units）。
+        ///
+        /// 优势：
+        /// - UI 线程在 StopHelper 里完全不阻塞（之前 Calibrate 是同步的，可能等上一轮 TrainAsync 落盘）；
+        /// - 同一轮内 Calibrate 与 Train 串行，跨轮之间也按 FIFO 排队，不会乱序；
+        /// - 关窗时调 <see cref="FlushPendingWrites"/> 一并等齐。
+        /// </summary>
+        public Task CalibrateAndTrainAsync(
+            PersonalScorePredictionSnapshot snapshot,
+            PersonalTypingRoundStats stats,
+            string expectedTextHash,
+            string targetText,
+            IEnumerable<string> commitTexts,
+            IEnumerable<long> commitTimes,
+            IEnumerable<long> keyTimes)
+        {
+            // 复制集合避免后台线程读到外部正在变化的状态
+            string[] commitTextArr = ToArray(commitTexts);
+            long[] commitTimeArr = ToArray(commitTimes);
+            long[] keyTimeArr = ToArray(keyTimes);
+
+            lock (pendingWriteLock)
+            {
+                Task previous = pendingWrite;
+                Action job = () =>
+                {
+                    try { Calibrate(snapshot, stats, expectedTextHash); } catch { }
+                    try { Train(targetText, commitTextArr, commitTimeArr, keyTimeArr, stats); } catch { }
+                };
+
+                Task next = (previous == null || previous.IsCompleted)
+                    ? Task.Run(job)
+                    : previous.ContinueWith(_ => job(), TaskContinuationOptions.ExecuteSynchronously);
+
+                pendingWrite = next;
+                return next;
+            }
+        }
+
+        /// <summary>
+        /// 等待最近一次 <see cref="TrainAsync"/> 完成。MainWindow 关窗时调用，
+        /// 避免后台 Train 还没落盘进程就退出。
+        /// </summary>
+        public void FlushPendingWrites()
+        {
+            Task task;
+            lock (pendingWriteLock)
+            {
+                task = pendingWrite;
+            }
+            if (task == null)
+                return;
+
+            try { task.Wait(); }
+            catch { /* 后台异常已被 Train 内部吞掉，这里只是等待 */ }
+        }
+
         public PersonalScorePredictionSnapshot CreateSnapshot(string text, string baseDifficultyText)
         {
             try
             {
-                PersonalTypingProfile profile = store.Load();
+                // 物化一次，给 CollectAllKeys 和 Predict 共用，避免多次 enumerate 引起的潜在副作用
+                string[] fallbackSegments = ToArray(difficultySegmenter(text ?? ""));
+                HashSet<string> candidateKeys = PersonalUnitExtractor.CollectAllKeys(text, fallbackSegments);
+
+                PersonalTypingProfile profile = store.LoadWithUnits(candidateKeys);
                 if (profile.EffectiveStatCharacters <= 0)
                     return new PersonalScorePredictionSnapshot();
 
@@ -60,7 +180,7 @@ namespace TypeSunny.Personalization
                     text,
                     profile,
                     baseScore,
-                    difficultySegmenter(text ?? ""));
+                    fallbackSegments);
                 return PersonalScorePredictionSnapshot.FromPrediction(text, baseScore, prediction);
             }
             catch
@@ -69,16 +189,40 @@ namespace TypeSunny.Personalization
             }
         }
 
-        public void Calibrate(PersonalScorePredictionSnapshot snapshot, PersonalTypingRoundStats actual)
+        /// <summary>
+        /// 冷启动门控：累积有效字符不足该阈值时跳过校准更新——此时 DP 输出基本都是 fallback
+        /// 速度（基线 120），ratio 反映的是"用户速度与默认 120 的差"而非"模型与现实的差"，
+        /// 学进去只会污染 TimeFactor。仍允许使用已有 factor 显示。
+        /// </summary>
+        private const int CalibrationColdStartThreshold = 200;
+
+        /// <summary>
+        /// 校准本轮预测与实际成绩。
+        ///
+        /// 如果 <paramref name="expectedTextHash"/> 非空，必须与 <paramref name="snapshot"/> 的
+        /// <see cref="PersonalScorePredictionSnapshot.TargetTextHash"/> 一致才会执行校准——避免
+        /// snapshot 被中途文本/难度刷新覆盖后，A 文 snapshot 与 B 文 actual 配错。传 null 跳过校验。
+        /// </summary>
+        public void Calibrate(PersonalScorePredictionSnapshot snapshot, PersonalTypingRoundStats actual, string expectedTextHash = null)
         {
             try
             {
                 if (snapshot == null || actual == null || !snapshot.HasPrediction)
                     return;
 
-                PersonalTypingProfile profile = store.Load();
+                if (!string.IsNullOrEmpty(expectedTextHash)
+                    && !string.Equals(expectedTextHash, snapshot.TargetTextHash, StringComparison.Ordinal))
+                {
+                    // snapshot 不匹配本轮真实文本 —— 跳过，避免污染因子
+                    return;
+                }
+
+                // Calibration 不需要任何 unit，按 baseline + 旧 calibration 计算即可
+                PersonalTypingProfile profile = store.LoadWithUnits(new string[0]);
+                if (profile.EffectiveStatCharacters < CalibrationColdStartThreshold)
+                    return;
                 profile.UpdateCalibration(snapshot, actual);
-                store.Save(profile);
+                store.ApplyCalibration(profile.Calibration);
             }
             catch
             {
@@ -149,7 +293,10 @@ namespace TypeSunny.Personalization
 
         public PersonalScorePrediction Predict(string text, string baseDifficultyText)
         {
-            PersonalTypingProfile profile = store.Load();
+            string[] fallbackSegments = ToArray(difficultySegmenter(text ?? ""));
+            HashSet<string> candidateKeys = PersonalUnitExtractor.CollectAllKeys(text, fallbackSegments);
+
+            PersonalTypingProfile profile = store.LoadWithUnits(candidateKeys);
             if (profile.EffectiveStatCharacters <= 0)
                 return new PersonalScorePrediction();
 
@@ -158,7 +305,7 @@ namespace TypeSunny.Personalization
                 text,
                 profile,
                 baseScore,
-                difficultySegmenter(text ?? ""));
+                fallbackSegments);
         }
 
         private double GetBaseDifficultyScore(string text, string baseDifficultyText)
@@ -184,6 +331,17 @@ namespace TypeSunny.Personalization
             if (double.TryParse(raw, out value))
                 return value;
             return 0;
+        }
+
+        private static T[] ToArray<T>(IEnumerable<T> source)
+        {
+            if (source == null)
+                return new T[0];
+            var arr = source as T[];
+            if (arr != null)
+                return arr;
+            var list = new List<T>(source);
+            return list.ToArray();
         }
     }
 }

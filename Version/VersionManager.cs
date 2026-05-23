@@ -48,6 +48,18 @@ namespace TypeSunny
             private set => Config.Set("全量包地址", value);
         }
 
+        public static long UpdatePackageSize
+        {
+            get => long.TryParse(Config.GetString("更新包体积"), out var v) ? v : 0;
+            private set => Config.Set("更新包体积", value.ToString());
+        }
+
+        public static long FullPackageSize
+        {
+            get => long.TryParse(Config.GetString("全量包体积"), out var v) ? v : 0;
+            private set => Config.Set("全量包体积", value.ToString());
+        }
+
         private static DateTime LastCheckTime
         {
             get
@@ -228,10 +240,17 @@ namespace TypeSunny
                         {
                             string name = asset["name"]?.ToString() ?? "";
                             string url = asset["browser_download_url"]?.ToString() ?? "";
+                            long size = asset["size"]?.Value<long>() ?? 0;
                             if (string.IsNullOrEmpty(fullUrl) && name.Contains("full"))
+                            {
                                 fullUrl = url;
+                                FullPackageSize = size;
+                            }
                             else if (string.IsNullOrEmpty(updateUrl) && name.Contains("update"))
+                            {
                                 updateUrl = url;
+                                UpdatePackageSize = size;
+                            }
                         }
                     }
                     UpdatePackageUrl = updateUrl;

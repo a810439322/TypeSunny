@@ -73,6 +73,10 @@
     <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>packages\Newtonsoft.Json.13.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
     </Reference>
+    <Reference Include="System.Data.SQLite">
+      <HintPath>lib\SQLite\System.Data.SQLite.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="VersOne.Epub, Version=3.3.3.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>packages\VersOne.Epub.3.3.3\lib\net46\VersOne.Epub.dll</HintPath>
     </Reference>
@@ -125,6 +129,8 @@
     <Compile Include="Config\TxtConfig.cs" />
     <Compile Include="Difficulty\QingDifficultyScorer.cs" />
     <Compile Include="Difficulty\DifficultyDict.cs" />
+    <Compile Include="Personalization\IPersonalTypingProfileStore.cs" />
+    <Compile Include="Personalization\LegacyJsonProfile.cs" />
     <Compile Include="Personalization\PersonalPredictionCalibration.cs" />
     <Compile Include="Personalization\PersonalScorePredictionFormatter.cs" />
     <Compile Include="Personalization\PersonalScorePredictor.cs" />
@@ -132,7 +138,9 @@
     <Compile Include="Personalization\PersonalTypingProfile.cs" />
     <Compile Include="Personalization\PersonalTypingProfileStore.cs" />
     <Compile Include="Personalization\PersonalTypingSessionBuilder.cs" />
+    <Compile Include="Personalization\PersonalUnitExtractor.cs" />
     <Compile Include="Personalization\QingDifficultyScale.cs" />
+    <Compile Include="Personalization\SqlitePersonalTypingProfileStore.cs" />
     <Compile Include="Diff\DiffNode.cs" />
     <Compile Include="Diff\DiffRes.cs" />
     <Compile Include="Diff\DiffTool.cs" />
@@ -303,6 +311,14 @@
     <Content Include="introimages\5.png" />
     <Content Include="introimages\zitie.png" />
     <Content Include="Resources\Difficulty\valid_and_weight.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="lib\SQLite\x86\SQLite.Interop.dll">
+      <Link>x86\SQLite.Interop.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="lib\SQLite\x64\SQLite.Interop.dll">
+      <Link>x64\SQLite.Interop.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Resources\字提\*.txt">

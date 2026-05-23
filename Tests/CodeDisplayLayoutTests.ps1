@@ -5,6 +5,7 @@ $paginator = Get-Content -Path (Join-Path $root 'Core\Paginator.cs') -Raw
 $mainCode = Get-Content -Path (Join-Path $root 'UI\MainWindow.xaml.cs') -Raw
 $copybook = Get-Content -Path (Join-Path $root 'UI\Modes\CopybookMode.cs') -Raw
 $tracing = Get-Content -Path (Join-Path $root 'UI\Modes\TracingMode.cs') -Raw
+$win32 = Get-Content -Path (Join-Path $root 'Utils\Win32.cs') -Raw
 
 function Assert-Contains($name, $content, $needle) {
     if (-not $content.Contains($needle)) {
@@ -16,6 +17,18 @@ function Assert-NotContains($name, $content, $needle) {
     if ($content.Contains($needle)) {
         throw "${name}: expected not to find [$needle]"
     }
+}
+
+function Get-MethodBody($name, $content, $signature, $nextMarker) {
+    $start = $content.IndexOf($signature, [System.StringComparison]::Ordinal)
+    if ($start -lt 0) {
+        throw "Unable to find ${name}."
+    }
+    $end = $content.IndexOf($nextMarker, $start + $signature.Length, [System.StringComparison]::Ordinal)
+    if ($end -lt 0) {
+        throw "Unable to find end of ${name}."
+    }
+    return $content.Substring($start, $end - $start)
 }
 
 Assert-NotContains 'paginator should not expand line height for code display' $paginator 'lineH *= 1.5'
@@ -30,14 +43,36 @@ Assert-Contains 'main should clear lower code label feedback when input is undon
 Assert-Contains 'main should clear all lower code feedback when code display is turned off' $mainCode 'ClearAllCodeLabelProgress();'
 Assert-Contains 'copybook composition position should follow full code display offset' $copybook 'codeDisplayExtra'
 Assert-Contains 'tracing composition position should follow full code display offset' $tracing 'codeDisplayExtra'
-Assert-Contains 'copybook input capture trim should run before input-priority visual positioning' $copybook 'DispatcherPriority.Normal'
-Assert-Contains 'tracing input capture trim should run before input-priority visual positioning' $tracing 'DispatcherPriority.Normal'
-Assert-NotContains 'copybook input capture trim should not wait for application idle' $copybook 'DispatcherPriority.ApplicationIdle'
-Assert-NotContains 'tracing input capture trim should not wait for application idle' $tracing 'DispatcherPriority.ApplicationIdle'
-Assert-Contains 'copybook should trim committed TextBox residue as soon as TextChanged fires' $copybook '_inputCapture.TextChanged += OnInputCaptureTextChanged'
-Assert-Contains 'tracing should trim committed TextBox residue as soon as TextChanged fires' $tracing '_inputCapture.TextChanged += OnInputCaptureTextChanged'
-Assert-Contains 'copybook immediate trim should reuse composition-aware guard' $copybook 'TrimInputCaptureTextAfterCommit();'
-Assert-Contains 'tracing immediate trim should reuse composition-aware guard' $tracing 'TrimInputCaptureTextAfterCommit();'
+Assert-Contains 'main should expose shared IME offset for full code display' $mainCode 'GetCodeDisplayImeOffset(double fontSize)'
+Assert-Contains 'full code display IME offset should keep candidate window close to the source text' $mainCode 'return fontSize * 0.08;'
+Assert-Contains 'copybook input offset should use shared full-code IME offset' $copybook '_main.GetCodeDisplayImeOffset(fs)'
+Assert-Contains 'tracing input offset should use shared full-code IME offset' $tracing '_main.GetCodeDisplayImeOffset(fs)'
+Assert-NotContains 'copybook input offset should not use the full code label height' $copybook 'fs * 0.55'
+Assert-NotContains 'tracing input offset should not use the full code label height' $tracing 'fs * 0.55'
+Assert-NotContains 'copybook should not synchronously trim the IME host from TextChanged' $copybook '_inputCapture.TextChanged += OnInputCaptureTextChanged'
+Assert-NotContains 'tracing should not synchronously trim the IME host from TextChanged' $tracing '_inputCapture.TextChanged += OnInputCaptureTextChanged'
+Assert-Contains 'copybook should reset stale IME host text after layout reposition' $copybook 'ResetInputCaptureHostIfIdle();'
+Assert-Contains 'tracing should reset stale IME host text after layout reposition' $tracing 'ResetInputCaptureHostIfIdle();'
+Assert-Contains 'copybook stale host reset should guard active composition' $copybook 'if (HasActiveComposition())'
+Assert-Contains 'tracing stale host reset should guard active composition' $tracing 'if (HasActiveComposition())'
+Assert-Contains 'win32 should declare IME candidate form' $win32 'struct CANDIDATEFORM'
+Assert-Contains 'win32 should declare IME composition form' $win32 'struct COMPOSITIONFORM'
+Assert-Contains 'win32 should get IME context before positioning' $win32 'ImmGetContext'
+Assert-Contains 'win32 should release IME context after positioning' $win32 'ImmReleaseContext'
+Assert-Contains 'win32 should set IME candidate window explicitly' $win32 'ImmSetCandidateWindow'
+Assert-Contains 'win32 should set IME composition window explicitly' $win32 'ImmSetCompositionWindow'
+Assert-Contains 'main should expose explicit IME candidate positioning' $mainCode 'UpdateImeCandidateWindowPosition'
+Assert-Contains 'main should expose cached IME position refresh without layout work' $mainCode 'RefreshImeCandidateWindowPosition'
+Assert-Contains 'main should convert screen point back to native client pixels' $mainCode 'ScreenToClient'
+Assert-Contains 'main should skip duplicate IME positioning on unchanged anchors' $mainCode '_lastImeCandidateClientX == clientPoint.x'
+Assert-Contains 'copybook should update IME window position when moving hidden input host' $copybook '_main.UpdateImeCandidateWindowPosition(grid, new Point(x, inputTop));'
+Assert-Contains 'tracing should update IME window position when moving hidden input host' $tracing '_main.UpdateImeCandidateWindowPosition(grid, new Point(x, inputTop));'
+Assert-Contains 'copybook composition start should only refresh cached IME position' $copybook '_main.RefreshImeCandidateWindowPosition();'
+Assert-Contains 'tracing composition start should only refresh cached IME position' $tracing '_main.RefreshImeCandidateWindowPosition();'
+$copybookCompositionUpdate = Get-MethodBody 'CopybookMode.OnCompositionUpdate' $copybook 'private void OnCompositionUpdate' 'private void OnTextInput'
+$tracingCompositionUpdate = Get-MethodBody 'TracingMode.OnCompositionUpdate' $tracing 'private void OnCompositionUpdate' 'private void OnTextInput'
+Assert-NotContains 'copybook composition update should not recalculate anchor position' $copybookCompositionUpdate 'UpdatePosition();'
+Assert-NotContains 'tracing composition update should not recalculate anchor position' $tracingCompositionUpdate 'UpdatePosition();'
 Assert-Contains 'main should focus loaded text only after layout settles' $mainCode 'FocusInputAfterLoadedTextLayout(focus);'
 $prepareStart = $mainCode.IndexOf('public void PrepareLoadedTextForInput(bool focus = true)')
 if ($prepareStart -lt 0) {

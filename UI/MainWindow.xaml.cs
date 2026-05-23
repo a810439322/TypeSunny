@@ -186,13 +186,20 @@ namespace TypeSunny.UI
         internal Stopwatch sw = new Stopwatch();
         DifficultyDict difficultyDict = new DifficultyDict();
         private readonly PersonalScorePredictionService personalScorePredictionService;
-        private PersonalScorePredictionSnapshot currentPersonalPredictionSnapshot = new PersonalScorePredictionSnapshot();
+        // displaySnapshot：随文本/难度/设置刷新，给难度面板和发文附带预测展示用。
+        // calibrationSnapshot：只在"开始跟打一篇新文章 (ready → typing)"的瞬间拍照，跟打期间不刷新。
+        // 拆开是为了避免中途刷新让 snapshot 嵌入了"已经被校准过的 PredictedSeconds"，
+        // 导致下一轮 actual/predicted ratio 永远趋向 1，TimeFactor 收敛位置漂移（自激）。
+        private PersonalScorePredictionSnapshot displayPredictionSnapshot = new PersonalScorePredictionSnapshot();
+        private PersonalScorePredictionSnapshot calibrationPredictionSnapshot = new PersonalScorePredictionSnapshot();
 
         // 保存窗口恢复时的位置和大小
         private Rect _restoreBounds = new Rect();
         private bool _isCustomMaximized = false;
         private string currentDifficultyText = "";
         private bool _lastCodeDisplayEnabled;
+        private int? _lastImeCandidateClientX;
+        private int? _lastImeCandidateClientY;
         private const double StateBackgroundVerticalOffsetRatio = 0.18;
 
         private enum UpdateLevel
@@ -330,6 +337,11 @@ namespace TypeSunny.UI
             }
             if (!codeDisplayEnabled)
                 ClearAllCodeLabelProgress();
+
+            // 编码下显的 codeTb 会挂出字符底部 0.25 个字号；最后一行下方没有下一行接住，
+            // 会被 ScrollViewer 视口裁掉。给 WrapPanel 底部多留 0.5 个字号让滚动多滚一行。
+            double codeDisplayBottomPadding = codeDisplayEnabled ? DisplayFontSize * 0.5 : 0.0;
+            TbDispay.Margin = new Thickness(10, 5, 10, 10 + codeDisplayBottomPadding);
 
             if (updateLevel < UpdateLevel.PageArrange && IsLookingType && StateManager.LastType)
             {
@@ -1367,6 +1379,69 @@ namespace TypeSunny.UI
             return IsFullCodeDisplayEnabled();
         }
 
+        internal double GetCodeDisplayImeOffset(double fontSize)
+        {
+            if (!IsFullCodeDisplayEnabled())
+                return 0.0;
+
+            return fontSize * 0.08;
+        }
+
+        internal void UpdateImeCandidateWindowPosition(Visual relativeTo, Point anchorPoint)
+        {
+            try
+            {
+                if (relativeTo == null)
+                    return;
+
+                IntPtr hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero)
+                    return;
+
+                Point screenPoint = relativeTo.PointToScreen(anchorPoint);
+                var clientPoint = new IMEPOINT
+                {
+                    x = (int)Math.Round(screenPoint.X),
+                    y = (int)Math.Round(screenPoint.Y)
+                };
+
+                if (!Win32.ScreenToClient(hwnd, ref clientPoint))
+                    return;
+
+                if (_lastImeCandidateClientX == clientPoint.x
+                    && _lastImeCandidateClientY == clientPoint.y)
+                    return;
+
+                _lastImeCandidateClientX = clientPoint.x;
+                _lastImeCandidateClientY = clientPoint.y;
+                Win32.SetImeCandidateWindowPosition(hwnd, clientPoint.x, clientPoint.y);
+            }
+            catch
+            {
+            }
+        }
+
+        internal void RefreshImeCandidateWindowPosition()
+        {
+            try
+            {
+                if (!_lastImeCandidateClientX.HasValue || !_lastImeCandidateClientY.HasValue)
+                    return;
+
+                IntPtr hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero)
+                    return;
+
+                Win32.SetImeCandidateWindowPosition(
+                    hwnd,
+                    _lastImeCandidateClientX.Value,
+                    _lastImeCandidateClientY.Value);
+            }
+            catch
+            {
+            }
+        }
+
         private static void DetachFromParent(UIElement element)
         {
             if (element == null)
@@ -1648,13 +1723,13 @@ namespace TypeSunny.UI
 
             if (!showSpeed)
             {
-                if (TbAcc.Visibility == Visibility.Visible)
-                    TbAcc.Visibility = Visibility.Hidden;
+                if (BdAcc.Visibility == Visibility.Visible)
+                    BdAcc.Visibility = Visibility.Hidden;
             }
             else if (nextToType < TextInfo.Blocks.Count)
             {
-                if (TbAcc.Visibility == Visibility.Hidden)
-                    TbAcc.Visibility = Visibility.Visible;
+                if (BdAcc.Visibility == Visibility.Hidden)
+                    BdAcc.Visibility = Visibility.Visible;
 
                 double AccLeft;
                 double blockLeft = TextInfo.Blocks[nextToType].TranslatePoint(new Point(0, 0), TextInfo.Blocks[0]).X;
@@ -1681,8 +1756,8 @@ namespace TypeSunny.UI
                     AccTop = blockTop + blockHeight - ScDisplay.VerticalOffset;
                     AccLeft = blockLeft + TextInfo.Blocks[nextToType].ActualWidth / 3;
                 }
-                Canvas.SetTop(TbAcc, AccTop);
-                Canvas.SetLeft(TbAcc, AccLeft);
+                Canvas.SetTop(BdAcc, AccTop);
+                Canvas.SetLeft(BdAcc, AccLeft);
 
                 TbAcc.Text = Score.GetValidSpeed().ToString("F2");
                 TbAcc.Foreground = Colors.GetSpeedColor(Score.GetValidSpeed());
@@ -2165,7 +2240,9 @@ namespace TypeSunny.UI
             MainBorder.Background = windowBackground;
             MainBorder.BorderBrush = ThemeColorHelper.CreateSubtleBorderBrush(windowBackground);
             this.Foreground = Colors.FromString(Config.GetString("窗体字体色"));
-            BdDisplay.Background = Colors.FromString(Config.GetString("跟打区背景色"));
+            var displayBackground = Colors.FromString(Config.GetString("跟打区背景色"));
+            BdDisplay.Background = displayBackground;
+            BdAcc.Background = ThemeColorHelper.CreateSubtleBorderBrush(displayBackground);
             Colors.DisplayForeground = Colors.FromString(Config.GetString("发文区字体色"));
             Colors.CorrectBackground = Colors.FromString(Config.GetString("打对色"));
             Colors.IncorrectBackground = Colors.FromString(Config.GetString("打错色"));
@@ -2401,7 +2478,9 @@ namespace TypeSunny.UI
             MainBorder.Background = windowBackground;
             MainBorder.BorderBrush = ThemeColorHelper.CreateSubtleBorderBrush(windowBackground);
             this.Foreground = Colors.FromString(Config.GetString("窗体字体色"));
-            BdDisplay.Background = Colors.FromString(Config.GetString("跟打区背景色"));
+            var displayBackground = Colors.FromString(Config.GetString("跟打区背景色"));
+            BdDisplay.Background = displayBackground;
+            BdAcc.Background = ThemeColorHelper.CreateSubtleBorderBrush(displayBackground);
             Colors.DisplayForeground = Colors.FromString(Config.GetString("发文区字体色"));
             Colors.CorrectBackground = Colors.FromString(Config.GetString("打对色"));
             Colors.IncorrectBackground = Colors.FromString(Config.GetString("打错色"));
@@ -2596,7 +2675,7 @@ namespace TypeSunny.UI
                 int totalWords = TextInfo.Words != null ? TextInfo.Words.Count : 0;
                 if (totalWords <= 0)
                 {
-                    currentPersonalPredictionSnapshot = new PersonalScorePredictionSnapshot();
+                    displayPredictionSnapshot = new PersonalScorePredictionSnapshot();
                     currentDifficultyText = "";
                     UpdateWindowTitle(0, 0);
                     return;
@@ -2608,9 +2687,9 @@ namespace TypeSunny.UI
                     difficulty = difficultyDict.CalcText(currentText);
 
                 Score.DifficultyText = difficulty;
-                currentPersonalPredictionSnapshot = CreateCurrentPredictionSnapshot(currentText, difficulty);
+                displayPredictionSnapshot = CreateCurrentPredictionSnapshot(currentText, difficulty);
 
-                string displayDifficulty = AppendPredictionSnapshotToDifficulty(difficulty, currentPersonalPredictionSnapshot);
+                string displayDifficulty = AppendPredictionSnapshotToDifficulty(difficulty, displayPredictionSnapshot);
                 currentDifficultyText = string.IsNullOrEmpty(displayDifficulty) ? "" : "难度：" + displayDifficulty;
                 UpdateWindowTitle(GetCurrentTitleTypedWords(), totalWords);
             }
@@ -4741,14 +4820,14 @@ namespace TypeSunny.UI
                                 Choose = savedChoose
                             };
 
-                            personalScorePredictionService.Calibrate(currentPersonalPredictionSnapshot, roundStats);
-
-                            personalScorePredictionService.Train(
+                            personalScorePredictionService.CalibrateAndTrainAsync(
+                                calibrationPredictionSnapshot,
+                                roundStats,
+                                PersonalScorePredictionSnapshot.ComputeTextHash(string.Concat(TextInfo.Words)),
                                 string.Concat(TextInfo.Words),
                                 Score.CommitText,
                                 Score.CommitTime,
-                                Score.KeyTime,
-                                roundStats);
+                                Score.KeyTime);
 
                             // 根据来源记录到不同的日志（使用保存的 txtSource）
                             if (savedTxtSource == TxtSource.articlesender)
@@ -4908,7 +4987,7 @@ namespace TypeSunny.UI
 
             try
             {
-                PersonalScorePredictionSnapshot snapshot = currentPersonalPredictionSnapshot;
+                PersonalScorePredictionSnapshot snapshot = displayPredictionSnapshot;
                 if (snapshot == null || !snapshot.HasPrediction)
                     return result;
 
@@ -5361,6 +5440,37 @@ public async Task SendArticle()
             HandleTextInputStats(e);
         }
 
+        /// <summary>
+        /// 给 TSF 旁路场景用：当中文标点等字符通过 TSF 直插进入 _inputCapture 而没有触发
+        /// WPF 的 PreviewTextInput 时，由 OnInputCaptureTextChanged 检测到后调用此方法，
+        /// 等效于走一次 HandleTextInputStats(空 e + e.Text=text)。
+        /// </summary>
+        internal void HandleTextInputStatsFromText(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return;
+
+            if (Score.IsComposing)
+                Score.IsComposing = false;
+
+            if (StateManager.typingState == TypingState.pause || StateManager.typingState == TypingState.ready)
+                StartTypingSessionFromInput();
+
+            Score.AddInputStack(text);
+
+            System.Globalization.StringInfo si = new System.Globalization.StringInfo(text);
+            if (si.LengthInTextElements > 0)
+            {
+                string last = si.SubstringByTextElements(si.LengthInTextElements - 1, 1);
+                Score.CommitTime.Add(sw.ElapsedMilliseconds);
+                Score.CommitStr.Add(last);
+                Score.CommitCharCount.Add(si.LengthInTextElements);
+                Score.CommitText.Add(text);
+            }
+
+            StateManager.TextInput = true;
+        }
+
         internal void UpdateTitleProgress(int typedWords)
         {
             int totalWords = TextInfo.Words.Count;
@@ -5581,6 +5691,14 @@ public async Task SendArticle()
 
             if (StateManager.typingState == TypingState.ready && StateManager.retypeType != RetypeType.wrongRetype)
                 RetypeCounter.Add(TextInfo.TextMD5, 1);
+
+            // 仅在 ready → typing（开始打一篇新文章）时拍 calibrationSnapshot；
+            // pause → typing（继续上次跟打）不重拍，避免校准用的"预测"和"实际"不在同一时间轴。
+            // Clone 避免后续 displayPredictionSnapshot 字段被就地修改时污染校准副本。
+            if (StateManager.typingState == TypingState.ready)
+                calibrationPredictionSnapshot = displayPredictionSnapshot != null
+                    ? displayPredictionSnapshot.Clone()
+                    : new PersonalScorePredictionSnapshot();
 
             sw.Start();
             StateManager.typingState = TypingState.typing;
@@ -6107,23 +6225,20 @@ public async Task SendArticle()
 
             if (totalWords == 0)
             {
-                // 没有加载文本时，只显示基本标题
-                TbkTitle.Text = "晴跟打";
+                TbkTitle.Text = "";
                 return;
             }
 
-            // 从 currentDifficultyText 中提取难度部分（去掉"难度："前缀）
             string difficulty = "";
             if (!string.IsNullOrEmpty(currentDifficultyText))
             {
-                // 尝试去掉"难度："或"难度:"前缀
                 if (currentDifficultyText.StartsWith("难度："))
                 {
-                    difficulty = " " + currentDifficultyText.Substring(3); // " 水(0.23)"
+                    difficulty = currentDifficultyText.Substring(3) + " ";
                 }
                 else if (currentDifficultyText.StartsWith("难度:"))
                 {
-                    difficulty = " " + currentDifficultyText.Substring(3); // " 水(0.23)"
+                    difficulty = currentDifficultyText.Substring(3) + " ";
                 }
             }
 
@@ -6131,18 +6246,17 @@ public async Task SendArticle()
             {
                 string progress = articleCache.GetProgress();
                 string title = articleCache.GetCurrentTitle();
-                TbkTitle.Text = $"晴跟打{difficulty} {typedWords}/{totalWords} {title}[{progress}]";
+                TbkTitle.Text = $"{difficulty}{typedWords}/{totalWords} {title}[{progress}]";
             }
             else if (StateManager.txtSource == TxtSource.book && ArticleManager.Title != "")
             {
-                // 文章管理模式，显示书名和段落进度
                 string bookTitle = ArticleManager.Title.Replace(".txt", "").Replace(".Txt", "").Replace(".TXT", "").Replace(".epub", "").Replace(".Epub", "").Replace(".EPUB", "");
                 string progress = $"{ArticleManager.Index}/{ArticleManager.MaxIndex}段";
-                TbkTitle.Text = $"晴跟打{difficulty} {typedWords}/{totalWords} {bookTitle}[{progress}]";
+                TbkTitle.Text = $"{difficulty}{typedWords}/{totalWords} {bookTitle}[{progress}]";
             }
             else
             {
-                TbkTitle.Text = $"晴跟打{difficulty} {typedWords}/{totalWords}";
+                TbkTitle.Text = $"{difficulty}{typedWords}/{totalWords}";
             }
         }
 
@@ -6152,7 +6266,7 @@ public async Task SendArticle()
         }
         public void LoadText(string rawTxt, RetypeType retypeType, TxtSource source, bool switchBack = true, bool isAuto = false) //原文、来源、重打类型
         {
-            TbAcc.Visibility = Visibility.Hidden;
+            BdAcc.Visibility = Visibility.Hidden;
 
             if (Config.GetBool("禁止F3重打") && (retypeType == RetypeType.shuffle || retypeType == RetypeType.retype))
             {
@@ -6368,8 +6482,8 @@ public async Task SendArticle()
                     System.Diagnostics.Trace.WriteLine($"[难度] BeginInvoke进入, source={source}, articleCache.HasArticle={articleCache.HasArticle()}");
                     string currentText = String.Join("", TextInfo.Words);
                     string difficulty = difficultyDict.CalcText(currentText);
-                    currentPersonalPredictionSnapshot = CreateCurrentPredictionSnapshot(currentText, difficulty);
-                    string displayDifficulty = AppendPredictionSnapshotToDifficulty(difficulty, currentPersonalPredictionSnapshot);
+                    displayPredictionSnapshot = CreateCurrentPredictionSnapshot(currentText, difficulty);
+                    string displayDifficulty = AppendPredictionSnapshotToDifficulty(difficulty, displayPredictionSnapshot);
                     currentDifficultyText = string.IsNullOrEmpty(displayDifficulty) ? "" : "难度：" + displayDifficulty;
                     Score.DifficultyText = difficulty;
 
@@ -7414,6 +7528,9 @@ public async Task SendArticle()
             // 确保文章日志队列被清空
             ArticleLog.Shutdown();
 
+            // 等待最后一次异步 Train 落盘
+            try { personalScorePredictionService?.FlushPendingWrites(); } catch { }
+
             // 停止版本检测定时器
             if (_versionCheckTimer != null)
             {
@@ -7480,7 +7597,6 @@ public async Task SendArticle()
             }
 
             winConfig = new WinConfig();
-            winConfig.Owner = this;
             winConfig.ConfigSaved += new WinConfig.DelegateConfigSaved(ReloadCfg);
             winConfig.Show();
         }

@@ -206,7 +206,7 @@
 
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
                 <Image x:Name="TitleBarIcon" Source="/Resources/ico/sunny.ico" Width="20" Height="20" Margin="0,0,8,0"/>
-                <TextBlock x:Name="TbkTitle" Text="晴跟打" VerticalAlignment="Center" FontSize="14" Foreground="{Binding ElementName=MainWin, Path=Foreground}"/>
+                <TextBlock x:Name="TbkTitle" Text="" VerticalAlignment="Center" FontSize="14" Foreground="{Binding ElementName=MainWin, Path=Foreground}"/>
                 <TextBlock x:Name="TbkTitleDifficulty" Text="" Visibility="Collapsed"/>
                 <Button x:Name="BtnUpdateReminder"
                         Content=""
@@ -477,7 +477,9 @@
         <Border Grid.Row="2" Name="BdDisplay" Margin="15,5,15,0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" CornerRadius="6" PreviewMouseWheel="Control_PreviewMouseWheel">
             <Grid>
                 <Canvas Name="CvAcc" Panel.ZIndex="10" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent" Opacity="1" IsHitTestVisible="False">
-                    <TextBlock x:Name="TbAcc" Text="" FontWeight="Bold"/>
+                    <Border x:Name="BdAcc" CornerRadius="3" Padding="4,0" Visibility="Hidden">
+                        <TextBlock x:Name="TbAcc" Text="" FontWeight="Bold"/>
+                    </Border>
                 </Canvas>
                 <ScrollViewer x:Name="ScDisplay" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" IsDeferredScrollingEnabled="True" PreviewMouseWheel="Control_PreviewMouseWheel">
                     <WrapPanel Focusable="False" Margin="10,5,10,10" x:Name="TbDispay" HorizontalAlignment="Stretch" VerticalAlignment="Top" Language="zh-CN" PreviewMouseWheel="Control_PreviewMouseWheel"></WrapPanel>

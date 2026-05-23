@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -29,7 +30,17 @@ namespace TypeSunny.UI
             txtVersion.Text = $"当前版本：{VersionManager.CurrentVersion}　→　最新版本：{VersionManager.LatestVersion}";
             txtChangelog.Text = string.IsNullOrEmpty(VersionManager.Changelog) ? "暂无更新说明" : VersionManager.Changelog;
 
+            btnUpdate.Content = FormatButtonText("立即更新", VersionManager.UpdatePackageSize);
+            btnFullUpdate.Content = FormatButtonText("全量更新", VersionManager.FullPackageSize);
+
             ApplyThemeColors();
+        }
+
+        private static string FormatButtonText(string label, long bytes)
+        {
+            if (bytes <= 0) return label;
+            double mb = bytes / 1024.0 / 1024.0;
+            return $"{label} ({mb:F1}MB)";
         }
 
         private void ApplyThemeColors()
@@ -37,7 +48,7 @@ namespace TypeSunny.UI
             DialogTheming.Apply(
                 mainBorder,
                 new[] { txtTitle, txtVersion, txtChangelog, txtProgress },
-                new[] { btnIgnore, btnDismiss },
+                new[] { btnIgnore, btnDismiss, btnFullUpdate },
                 btnUpdate,
                 progressBar);
         }
@@ -69,12 +80,18 @@ namespace TypeSunny.UI
         }
 
         private async void BtnUpdate_Click(object sender, RoutedEventArgs e)
+            => await RunDownloadAsync(() => VersionManager.UpdatePackageUrl);
+
+        private async void BtnFullUpdate_Click(object sender, RoutedEventArgs e)
+            => await RunDownloadAsync(() => VersionManager.FullPackageUrl);
+
+        private async Task RunDownloadAsync(Func<string> urlGetter)
         {
-            string url = VersionManager.UpdatePackageUrl;
+            string url = urlGetter();
             if (string.IsNullOrEmpty(url))
             {
                 await VersionManager.CheckUpdateAsync(forceRefresh: true);
-                url = VersionManager.UpdatePackageUrl;
+                url = urlGetter();
             }
             if (string.IsNullOrEmpty(url))
             {

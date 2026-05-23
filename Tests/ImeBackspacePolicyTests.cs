@@ -16,6 +16,7 @@ namespace TypeSunny.Tests
             Run("backspace that clears last composition char is protected once", EmptyCompositionByBackspaceProtectsOnce);
             Run("backspace release ends empty composition protection", BackspaceReleaseEndsEmptyCompositionProtection);
             Run("empty composition without backspace does not protect raw backspace", EmptyCompositionWithoutBackspaceDoesNotProtect);
+            Run("commit empties composition while backspace queued does not protect", CommitClearingCompositionDoesNotProtectQueuedBackspace);
             Run("finish gate begins once until reset", FinishGateBeginsOnceUntilReset);
             Run("pending retype starts only on trigger and consumes once", PendingRetypeStartsOnlyOnTriggerAndConsumesOnce);
             Run("finished keydown without pending retype bubbles to window commands", FinishedKeyDownWithoutPendingRetypeBubblesToWindowCommands);
@@ -56,8 +57,9 @@ namespace TypeSunny.Tests
         private static void EmptyCompositionByBackspaceProtectsOnce()
         {
             var policy = new ImeBackspacePolicy();
-            policy.NotifyCompositionText("a", false);
-            policy.NotifyCompositionText("", true);
+            policy.NotifyCompositionText("a");
+            policy.NotifyImeBackspaceStarted();
+            policy.NotifyCompositionText("");
 
             AssertFalse(policy.ShouldDeletePreviousWord(false, false));
             AssertTrue(policy.ShouldDeletePreviousWord(false, false));
@@ -66,8 +68,25 @@ namespace TypeSunny.Tests
         private static void EmptyCompositionWithoutBackspaceDoesNotProtect()
         {
             var policy = new ImeBackspacePolicy();
-            policy.NotifyCompositionText("a", false);
-            policy.NotifyCompositionText("", false);
+            policy.NotifyCompositionText("a");
+            policy.NotifyCompositionText("");
+
+            AssertTrue(policy.ShouldDeletePreviousWord(false, false));
+        }
+
+        // Regression: fast typing where the user presses Backspace right as a Space-commit
+        // empties the composition. The composition transition is caused by the commit, not
+        // by an IME backspace, so the protect flag must NOT be set even though the user is
+        // about to press Backspace.
+        private static void CommitClearingCompositionDoesNotProtectQueuedBackspace()
+        {
+            var policy = new ImeBackspacePolicy();
+            policy.NotifyCompositionText("ni");
+            // Space-commit fires here: composition empties via OnCompositionUpdate("") then
+            // OnTextInput; NotifyImeBackspaceStarted is never invoked because the IME key
+            // being processed was Space, not Back.
+            policy.NotifyCompositionText("");
+            policy.NotifyCompositionEnded();
 
             AssertTrue(policy.ShouldDeletePreviousWord(false, false));
         }
@@ -75,8 +94,9 @@ namespace TypeSunny.Tests
         private static void BackspaceReleaseEndsEmptyCompositionProtection()
         {
             var policy = new ImeBackspacePolicy();
-            policy.NotifyCompositionText("a", false);
-            policy.NotifyCompositionText("", true);
+            policy.NotifyCompositionText("a");
+            policy.NotifyImeBackspaceStarted();
+            policy.NotifyCompositionText("");
             policy.NotifyPhysicalBackspaceReleased();
 
             AssertTrue(policy.ShouldDeletePreviousWord(false, false));

@@ -53,6 +53,30 @@ namespace TypeSunny.Utils
         public int bottom;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IMEPOINT
+    {
+        public int x;
+        public int y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct COMPOSITIONFORM
+    {
+        public int dwStyle;
+        public IMEPOINT ptCurrentPos;
+        public RECT rcArea;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct CANDIDATEFORM
+    {
+        public int dwIndex;
+        public int dwStyle;
+        public IMEPOINT ptCurrentPos;
+        public RECT rcArea;
+    }
+
 
     [StructLayout(LayoutKind.Sequential)]
     public struct KeyboardHookStruct
@@ -163,6 +187,25 @@ namespace TypeSunny.Utils
         public static extern bool SetForegroundWindow(IntPtr hWnd);
 
         [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool ScreenToClient(IntPtr hWnd, ref IMEPOINT lpPoint);
+
+        [DllImport("imm32.dll")]
+        public static extern IntPtr ImmGetContext(IntPtr hWnd);
+
+        [DllImport("imm32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool ImmReleaseContext(IntPtr hWnd, IntPtr hIMC);
+
+        [DllImport("imm32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool ImmSetCandidateWindow(IntPtr hIMC, ref CANDIDATEFORM lpCandidate);
+
+        [DllImport("imm32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool ImmSetCompositionWindow(IntPtr hIMC, ref COMPOSITIONFORM lpCompForm);
+
+        [DllImport("user32.dll")]
         public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr ProcessId);
         [DllImport("user32.dll")]
         public static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
@@ -216,6 +259,59 @@ namespace TypeSunny.Utils
                 return guiThreadInfo;
             }
             return null;
+        }
+
+        private const int CFS_FORCE_POSITION = 0x20;
+        private const int CFS_CANDIDATEPOS = 0x40;
+
+        public static bool SetImeCandidateWindowPosition(IntPtr hwnd, int x, int y)
+        {
+            if (hwnd == IntPtr.Zero)
+                return false;
+
+            IntPtr inputContext = ImmGetContext(hwnd);
+            if (inputContext == IntPtr.Zero)
+                return false;
+
+            try
+            {
+                var point = new IMEPOINT { x = x, y = y };
+                var area = new RECT
+                {
+                    left = x,
+                    top = y,
+                    right = x + 1,
+                    bottom = y + 1
+                };
+
+                var composition = new COMPOSITIONFORM
+                {
+                    dwStyle = CFS_FORCE_POSITION,
+                    ptCurrentPos = point,
+                    rcArea = area
+                };
+
+                bool positioned = ImmSetCompositionWindow(inputContext, ref composition);
+
+                for (int i = 0; i <= 3; i++)
+                {
+                    var candidate = new CANDIDATEFORM
+                    {
+                        dwIndex = i,
+                        dwStyle = CFS_CANDIDATEPOS,
+                        ptCurrentPos = point,
+                        rcArea = area
+                    };
+
+                    positioned = ImmSetCandidateWindow(inputContext, ref candidate) || positioned;
+                }
+
+                return positioned;
+            }
+            finally
+            {
+                ImmReleaseContext(hwnd, inputContext);
+            }
         }
 
         public static string GetWindowTitle(IntPtr hwnd)

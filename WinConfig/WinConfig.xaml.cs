@@ -559,7 +559,7 @@ namespace TypeSunny
                 }
                 if (itemKey == "启用预测")
                 {
-                    tbk.ToolTip = "开启后在标题栏显示个人预测；关闭后不会显示预测，也不会在发文成绩中附带预测。";
+                    tbk.ToolTip = "开启后在标题栏显示个人预测；低置信冷启动阶段可能暂不显示预测。关闭后不会显示预测，也不会在发文成绩中附带预测。";
                 }
                 if (itemKey == "发文附带预测")
                 {
@@ -3093,7 +3093,7 @@ namespace TypeSunny
         {
             var optTitle = new TextBlock
             {
-                Text = "预测显示项（拖拽调整顺序，勾选控制显隐；速度和难度必开）",
+                Text = "预测显示项（拖拽调整顺序，勾选控制显隐；速度必开，其他项目可选）",
                 FontSize = 13,
                 Foreground = new SolidColorBrush(Color.FromRgb(100, 150, 200)),
                 Margin = new Thickness(0, 10, 0, 5)
@@ -3799,8 +3799,23 @@ namespace TypeSunny
             if (checkBox == null)
                 return;
 
-            checkBox.Checked += (s, e) => SaveConfigValue(itemKey, "是");
+            checkBox.Checked += (s, e) =>
+            {
+                bool changed = SaveConfigValue(itemKey, "是");
+                if (changed && itemKey == "启用预测")
+                    ShowPredictionEnableTip();
+            };
             checkBox.Unchecked += (s, e) => SaveConfigValue(itemKey, "否");
+        }
+
+        private void ShowPredictionEnableTip()
+        {
+            MessageBox.Show(
+                this,
+                "预测功能会先学习你的跟打记录。预测置信度低于30%时，标题栏只显示基础难度，不会显示预测速度或个难；继续跟打几篇后，样本足够就会自动显示。",
+                "预测功能说明",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
         }
 
         private void AttachComboBoxAutoSave(ComboBox comboBox, string itemKey)
@@ -3914,7 +3929,7 @@ namespace TypeSunny
                 {
                     _configSavedRefreshTimer.Stop();
                     _hasPendingConfigSavedRefresh = false;
-                    ConfigSaved?.Invoke();
+                    InvokeConfigSavedWithoutSwitchingWindows();
                 };
             }
 
@@ -3931,8 +3946,29 @@ namespace TypeSunny
             if (_hasPendingConfigSavedRefresh)
             {
                 _hasPendingConfigSavedRefresh = false;
-                ConfigSaved?.Invoke();
+                InvokeConfigSavedWithoutSwitchingWindows();
             }
+        }
+
+        private void InvokeConfigSavedWithoutSwitchingWindows()
+        {
+            bool settingsWasActive = IsActive;
+            ConfigSaved?.Invoke();
+            RestoreSettingsActivationAfterConfigSaved(settingsWasActive);
+        }
+
+        private void RestoreSettingsActivationAfterConfigSaved(bool settingsWasActive)
+        {
+            if (!settingsWasActive || !IsVisible)
+                return;
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!IsVisible || IsActive)
+                    return;
+
+                Activate();
+            }), System.Windows.Threading.DispatcherPriority.ContextIdle);
         }
 
         private static void ApplyCodeDisplayMutualExclusion(List<string> key, List<string> value)

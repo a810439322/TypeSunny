@@ -1,9 +1,9 @@
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$xaml = Get-Content -Path (Join-Path $root 'WinConfig\WinConfig.xaml') -Raw
-$code = Get-Content -Path (Join-Path $root 'WinConfig\WinConfig.xaml.cs') -Raw
-$mainCode = Get-Content -Path (Join-Path $root 'UI\MainWindow.xaml.cs') -Raw
+$xaml = Get-Content -Path (Join-Path $root 'WinConfig\WinConfig.xaml') -Raw -Encoding UTF8
+$code = Get-Content -Path (Join-Path $root 'WinConfig\WinConfig.xaml.cs') -Raw -Encoding UTF8
+$mainCode = Get-Content -Path (Join-Path $root 'UI\MainWindow.xaml.cs') -Raw -Encoding UTF8
 
 function Assert-Contains($name, $content, $needle) {
     if (-not $content.Contains($needle)) {
@@ -61,5 +61,15 @@ if (-not $reloadCfgMatch.Success) {
 Assert-Contains 'autosave config refresh recalculates top-right ZiTi hint' $reloadCfgMatch.Value 'UpdateZiTi();'
 Assert-Contains 'autosave config refresh recalculates prediction title display' $reloadCfgMatch.Value 'RefreshCurrentDifficultyPredictionDisplay();'
 Assert-Contains 'prediction display list changes notify main window refresh' $code 'ScheduleConfigSavedRefresh();'
+Assert-Contains 'prediction enable checkbox shows cold-start hint' $code 'ShowPredictionEnableTip();'
+$confidenceNeedle = (-join @([char]0x9884, [char]0x6D4B, [char]0x7F6E, [char]0x4FE1, [char]0x5EA6, [char]0x4F4E, [char]0x4E8E)) + '30%'
+$speedOnlyNeedle = -join @([char]0x901F, [char]0x5EA6, [char]0x5FC5, [char]0x5F00, [char]0xFF0C, [char]0x5176, [char]0x4ED6, [char]0x9879, [char]0x76EE, [char]0x53EF, [char]0x9009)
+$speedAndDifficultyNeedle = -join @([char]0x901F, [char]0x5EA6, [char]0x548C, [char]0x96BE, [char]0x5EA6, [char]0x5FC5, [char]0x5F00)
+Assert-Contains 'prediction enable hint explains confidence threshold' $code $confidenceNeedle
+Assert-Contains 'prediction display list copy says only speed is required' $code $speedOnlyNeedle
+Assert-NotContains 'prediction display list copy no longer says difficulty required' $code $speedAndDifficultyNeedle
+Assert-Contains 'autosave refresh keeps settings window active' $code 'InvokeConfigSavedWithoutSwitchingWindows();'
+Assert-Contains 'autosave focus restore only runs when settings was active' $code 'bool settingsWasActive = IsActive;'
+Assert-Contains 'autosave focus restore does not steal user-selected main focus' $code 'if (!settingsWasActive || !IsVisible)'
 
 Write-Host 'All SettingsAutoSave tests passed.'

@@ -2,12 +2,19 @@ $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 $newtonsoft = Join-Path $root 'packages\Newtonsoft.Json.13.0.3\lib\net45\Newtonsoft.Json.dll'
+$sqlite = Join-Path $root 'lib\SQLite\System.Data.SQLite.dll'
 [System.Reflection.Assembly]::LoadFrom($newtonsoft) | Out-Null
-Add-Type -ReferencedAssemblies @($newtonsoft) -Path @(
+[System.Reflection.Assembly]::LoadFrom($sqlite) | Out-Null
+Add-Type -ReferencedAssemblies @($newtonsoft, $sqlite, 'System.Data.dll') -Path @(
+    (Join-Path $root 'Logs\DebugLog.cs'),
     (Join-Path $root 'Personalization\QingDifficultyScale.cs'),
     (Join-Path $root 'Personalization\PersonalPredictionCalibration.cs'),
     (Join-Path $root 'Personalization\PersonalTypingProfile.cs'),
+    (Join-Path $root 'Personalization\IPersonalTypingProfileStore.cs'),
+    (Join-Path $root 'Personalization\LegacyJsonProfile.cs'),
+    (Join-Path $root 'Personalization\SqlitePersonalTypingProfileStore.cs'),
     (Join-Path $root 'Personalization\PersonalTypingProfileStore.cs'),
+    (Join-Path $root 'Personalization\PersonalUnitExtractor.cs'),
     (Join-Path $root 'Personalization\PersonalTypingSessionBuilder.cs'),
     (Join-Path $root 'Personalization\PersonalScorePredictionFormatter.cs'),
     (Join-Path $root 'Personalization\PersonalScorePredictor.cs'),

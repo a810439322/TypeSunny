@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace TypeSunny.Personalization
 {
@@ -10,6 +12,7 @@ namespace TypeSunny.Personalization
         {
             Units = new List<string>();
             CreatedAt = DateTime.Now;
+            TargetTextHash = "";
         }
 
         public DateTime CreatedAt { get; set; }
@@ -23,6 +26,13 @@ namespace TypeSunny.Personalization
         public double PredictedPersonalDifficultyScore { get; set; }
         public double Confidence { get; set; }
         public List<string> Units { get; set; }
+
+        /// <summary>
+        /// 拍照时目标文本的 SHA1 前 8 字节 hex（16 个字符）。
+        /// 用于在 Calibrate 时校验 snapshot 与 actual 对应文本一致——避免文本/难度面板刷新后
+        /// snapshot 被覆盖，造成 A 文 snapshot 与 B 文 actual 错配污染校准。
+        /// </summary>
+        public string TargetTextHash { get; set; }
 
         public bool HasPrediction
         {
@@ -42,6 +52,7 @@ namespace TypeSunny.Personalization
             var snapshot = new PersonalScorePredictionSnapshot();
             snapshot.TargetCharacters = CountTextElements(text);
             snapshot.BaseDifficultyScore = Math.Max(0, baseDifficultyScore);
+            snapshot.TargetTextHash = ComputeTextHash(text);
 
             if (prediction == null)
                 return snapshot;
@@ -74,6 +85,48 @@ namespace TypeSunny.Personalization
             };
         }
 
+        /// <summary>
+        /// 浅克隆所有数值字段 + 深拷贝 Units 列表。
+        /// 用于把"显示用 snapshot"快照成"校准用 snapshot"，让后续的显示刷新不影响校准副本。
+        /// </summary>
+        public PersonalScorePredictionSnapshot Clone()
+        {
+            return new PersonalScorePredictionSnapshot
+            {
+                CreatedAt = CreatedAt,
+                TargetCharacters = TargetCharacters,
+                BaseDifficultyScore = BaseDifficultyScore,
+                PredictedSeconds = PredictedSeconds,
+                PredictedTotalHits = PredictedTotalHits,
+                PredictedSpeed = PredictedSpeed,
+                PredictedHitRate = PredictedHitRate,
+                PredictedKpw = PredictedKpw,
+                PredictedPersonalDifficultyScore = PredictedPersonalDifficultyScore,
+                Confidence = Confidence,
+                Units = Units == null ? new List<string>() : new List<string>(Units),
+                TargetTextHash = TargetTextHash
+            };
+        }
+
+        /// <summary>
+        /// 计算文本的标识 hash（SHA1 前 8 字节 hex）。
+        /// 用于 snapshot 与 actual 配对校验；冲撞概率 2^-64 远低于错配风险。
+        /// </summary>
+        public static string ComputeTextHash(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return "";
+
+            using (var sha = SHA1.Create())
+            {
+                byte[] bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(text));
+                var sb = new StringBuilder(16);
+                for (int i = 0; i < 8; i++)
+                    sb.Append(bytes[i].ToString("x2"));
+                return sb.ToString();
+            }
+        }
+
         private static int CountTextElements(string text)
         {
             if (string.IsNullOrEmpty(text))
@@ -89,6 +142,11 @@ namespace TypeSunny.Personalization
         private const double RecentSampleDecay = 0.90;
         private const double LongTermPredictionWeight = 0.65;
         private const double RecentPredictionWeight = 0.35;
+
+        // ClampRatio 钳过的样本被认为是"边界外"，只贡献 1/4 权重，让真实分布能逐步逃出钳的天花板/地板
+        private const double ClampedSampleWeightFactor = 0.25;
+        private const double MinRatio = 0.25;
+        private const double MaxRatio = 4.0;
 
         public int Count { get; set; }
         public int ObservedCharacters { get; set; }
@@ -111,7 +169,14 @@ namespace TypeSunny.Personalization
             get { return GetBlendedRatio(LongTermKeyRatio, LongTermKeyWeight, RecentKeyRatio, RecentKeyWeight); }
         }
 
-        public void Add(PersonalScorePredictionSnapshot snapshot, PersonalTypingRoundStats actual)
+        /// <summary>
+        /// 累积一轮校准样本。
+        ///
+        /// 权重按 <paramref name="effectiveChars"/>（本轮实际跟打的有效字符数）线性加权——
+        /// 短局少加权，长局多加权。同时把 ratio 钳过的样本权重再打 1/4 折扣，避免极端样本
+        /// 把因子焊死在 0.25/4.0 上。
+        /// </summary>
+        public void Add(PersonalScorePredictionSnapshot snapshot, PersonalTypingRoundStats actual, int effectiveChars)
         {
             if (snapshot == null || actual == null || !snapshot.HasPrediction)
                 return;
@@ -120,22 +185,29 @@ namespace TypeSunny.Personalization
             double actualHits = actual.TotalHits;
             if (actualSeconds <= 0 || actualHits <= 0)
                 return;
+            if (effectiveChars <= 0)
+                return;
 
-            double timeRatio = ClampRatio(actualSeconds / snapshot.PredictedSeconds);
-            double keyRatio = ClampRatio(actualHits / snapshot.PredictedTotalHits);
+            bool timeClamped;
+            double timeRatio = ClampRatio(actualSeconds / snapshot.PredictedSeconds, out timeClamped);
+            bool keyClamped;
+            double keyRatio = ClampRatio(actualHits / snapshot.PredictedTotalHits, out keyClamped);
 
-            LongTermTimeRatio = LongTermTimeRatio * LongTermSampleDecay + timeRatio;
-            LongTermTimeWeight = LongTermTimeWeight * LongTermSampleDecay + 1;
-            RecentTimeRatio = RecentTimeRatio * RecentSampleDecay + timeRatio;
-            RecentTimeWeight = RecentTimeWeight * RecentSampleDecay + 1;
+            double timeWeight = effectiveChars * (timeClamped ? ClampedSampleWeightFactor : 1.0);
+            double keyWeight = effectiveChars * (keyClamped ? ClampedSampleWeightFactor : 1.0);
 
-            LongTermKeyRatio = LongTermKeyRatio * LongTermSampleDecay + keyRatio;
-            LongTermKeyWeight = LongTermKeyWeight * LongTermSampleDecay + 1;
-            RecentKeyRatio = RecentKeyRatio * RecentSampleDecay + keyRatio;
-            RecentKeyWeight = RecentKeyWeight * RecentSampleDecay + 1;
+            LongTermTimeRatio = LongTermTimeRatio * LongTermSampleDecay + timeRatio * timeWeight;
+            LongTermTimeWeight = LongTermTimeWeight * LongTermSampleDecay + timeWeight;
+            RecentTimeRatio = RecentTimeRatio * RecentSampleDecay + timeRatio * timeWeight;
+            RecentTimeWeight = RecentTimeWeight * RecentSampleDecay + timeWeight;
+
+            LongTermKeyRatio = LongTermKeyRatio * LongTermSampleDecay + keyRatio * keyWeight;
+            LongTermKeyWeight = LongTermKeyWeight * LongTermSampleDecay + keyWeight;
+            RecentKeyRatio = RecentKeyRatio * RecentSampleDecay + keyRatio * keyWeight;
+            RecentKeyWeight = RecentKeyWeight * RecentSampleDecay + keyWeight;
 
             Count++;
-            ObservedCharacters += snapshot.TargetCharacters;
+            ObservedCharacters += effectiveChars;
         }
 
         public double ApplySeconds(double seconds)
@@ -166,11 +238,25 @@ namespace TypeSunny.Personalization
             return 1;
         }
 
-        private static double ClampRatio(double ratio)
+        private static double ClampRatio(double ratio, out bool clamped)
         {
+            clamped = false;
             if (double.IsNaN(ratio) || double.IsInfinity(ratio))
+            {
+                clamped = true;
                 return 1;
-            return Math.Max(0.25, Math.Min(4.0, ratio));
+            }
+            if (ratio < MinRatio)
+            {
+                clamped = true;
+                return MinRatio;
+            }
+            if (ratio > MaxRatio)
+            {
+                clamped = true;
+                return MaxRatio;
+            }
+            return ratio;
         }
     }
 }
