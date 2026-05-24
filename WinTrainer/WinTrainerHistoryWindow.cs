@@ -29,6 +29,8 @@ namespace TypeSunny
         {
             initialTitle = currentTitle;
 
+            this.EnableEscapeToClose();
+
             Title = "练单历史";
             Width = 780;
             Height = 430;
@@ -111,7 +113,7 @@ namespace TypeSunny
 
         private void AddColumns()
         {
-            historyGrid.Columns.Add(CreateColumn("时间", "TimeText", 110));
+            historyGrid.Columns.Add(CreateColumn("时间", "TimeText", 140));
             historyGrid.Columns.Add(CreateColumn("标题", "Title", 160));
             historyGrid.Columns.Add(CreateColumn("均速", "AvgSpeed", 70, "{0:F2}"));
             historyGrid.Columns.Add(CreateColumn("均击", "AvgHitRate", 70, "{0:F2}"));
@@ -294,7 +296,7 @@ namespace TypeSunny
         {
             public TrainerHistoryItem(ArticleLog.ArticleRecord record)
             {
-                TimeText = record.Time.ToString("MM-dd HH:mm");
+                TimeText = record.Time.ToString("yyyy-MM-dd HH:mm");
                 Title = string.IsNullOrWhiteSpace(record.ArticleName) ? "未命名" : record.ArticleName;
                 AvgSpeed = record.Speed;
                 AvgHitRate = record.HitRate;

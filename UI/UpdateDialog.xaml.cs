@@ -27,6 +27,8 @@ namespace TypeSunny.UI
             InitializeComponent();
             Owner = owner;
 
+            this.EnableEscapeToClose();
+
             txtVersion.Text = $"当前版本：{VersionManager.CurrentVersion}　→　最新版本：{VersionManager.LatestVersion}";
             txtChangelog.Text = string.IsNullOrEmpty(VersionManager.Changelog) ? "暂无更新说明" : VersionManager.Changelog;
 

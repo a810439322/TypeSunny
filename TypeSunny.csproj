@@ -149,6 +149,7 @@
     <Compile Include="Utils\IntStringDict.cs" />
     <Compile Include="Utils\PasswordCrypto.cs" />
     <Compile Include="Utils\DialogTheming.cs" />
+    <Compile Include="Utils\WindowEscapeBehavior.cs" />
     <Compile Include="Net\AccountSystemManager.cs" />
     <Compile Include="Net\JBS.cs" />
     <Compile Include="Net\JbsHelper.cs" />

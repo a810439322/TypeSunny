@@ -18,6 +18,8 @@ namespace TypeSunny.UI
             InitializeComponent();
             Owner = owner;
 
+            this.EnableEscapeToClose();
+
             txtVersion.Text = $"当前版本：{VersionManager.CurrentVersion}";
             txtChangelog.Text = "晴双拼资源不在当前安装版本中。需要下载完整包并重启程序替换。是否继续？";
 

@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using TypeSunny;
 using TypeSunny.Net;
 using TypeSunny.Net.Http;
+using TypeSunny.Utils;
 using Newtonsoft.Json.Linq;
 
 namespace TypeSunny.ArticleSender
@@ -627,6 +628,7 @@ namespace TypeSunny.ArticleSender
             grid.Children.Add(btnPanel);
 
             settingsDialog.Content = grid;
+            DialogTheming.ApplyToWindow(settingsDialog);
             settingsDialog.ShowDialog();
         }
 

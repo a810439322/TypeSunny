@@ -23,6 +23,8 @@ namespace TypeSunny.UI
             InitializeComponent();
             this.owner = owner;
 
+            this.EnableEscapeToClose();
+
             // 应用主题颜色
             ApplyThemeColors();
 

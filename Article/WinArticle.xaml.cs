@@ -403,6 +403,11 @@ namespace TypeSunny
 
             switch (e.Key)
             {
+                case Key.Escape:
+                    if (WindowEscapeBehavior.HandleEscape(this))
+                        e.Handled = true;
+                    break;
+
                 case Key.Enter:
                     if (Keyboard.FocusedElement == TbSearch)
                         return;

@@ -1645,6 +1645,8 @@ namespace TypeSunny
 
             InitializeComponent();
 
+            this.EnableEscapeToClose();
+
             // 应用主题颜色
             ApplyThemeColors();
             ApplyCurrentLogo();

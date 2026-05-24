@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using TypeSunny;
+using TypeSunny.Utils;
 
 namespace Net
 {
@@ -226,6 +227,7 @@ namespace Net
             grid.Children.Add(btnPanel);
 
             loginDialog.Content = grid;
+            DialogTheming.ApplyToWindow(loginDialog);
             loginDialog.ShowDialog();
         }
 

@@ -73,6 +73,8 @@ namespace TypeSunny
         {
             InitializeComponent();
 
+            this.EnableEscapeToClose();
+
             // 当窗口激活时刷新文来登录状态
             Activated += async (s, e) =>
             {
@@ -253,12 +255,12 @@ namespace TypeSunny
                 },
                 new ConfigCategory
                 {
-                    Title = "其他",
+                    Title = "关于",
                     Items = new[]
                     {
                         "当前版本",
                         "最新版本",
-                        "修复安装",
+                        "全量安装",
                         "软件更新Q群",
                         "作者邮箱QQ"
                     }
@@ -1358,7 +1360,7 @@ namespace TypeSunny
 
                 valueControl = panel;
             }
-            else if (itemKey == "修复安装")
+            else if (itemKey == "全量安装")
             {
                 var panel = new StackPanel
                 {
@@ -1368,7 +1370,7 @@ namespace TypeSunny
 
                 var repairBtn = new Button
                 {
-                    Content = "下载全量包并修复",
+                    Content = "下载最新全量包并安装",
                     Height = 28,
                     Padding = new Thickness(10, 0, 10, 0),
                     VerticalAlignment = VerticalAlignment.Center
@@ -1378,7 +1380,7 @@ namespace TypeSunny
                 {
                     var result = MessageBox.Show(
                         "将下载全量安装包并覆盖本地文件，完成后软件会自动重启。\n\n确定继续？",
-                        "修复安装",
+                        "全量安装",
                         MessageBoxButton.OKCancel,
                         MessageBoxImage.Question);
 
@@ -1396,15 +1398,15 @@ namespace TypeSunny
                         if (string.IsNullOrWhiteSpace(VersionManager.FullPackageUrl))
                         {
                             MessageBox.Show("未能获取全量包地址，请稍后重试或前往发布页手动下载。",
-                                "修复安装", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                "全量安装", MessageBoxButton.OK, MessageBoxImage.Warning);
                             repairBtn.IsEnabled = true;
-                            repairBtn.Content = "下载全量包并修复";
+                            repairBtn.Content = "下载最新全量包并安装";
                             return;
                         }
 
                         var progressWin = new System.Windows.Window
                         {
-                            Title = "修复安装",
+                            Title = "全量安装",
                             Width = 360,
                             Height = 130,
                             WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -1441,13 +1443,13 @@ namespace TypeSunny
                     catch (OperationCanceledException)
                     {
                         repairBtn.IsEnabled = true;
-                        repairBtn.Content = "下载全量包并修复";
+                        repairBtn.Content = "下载最新全量包并安装";
                     }
                     catch (Exception ex)
                     {
-                        MessageBox.Show($"修复安装失败：{ex.Message}", "修复安装", MessageBoxButton.OK, MessageBoxImage.Error);
+                        MessageBox.Show($"全量安装失败：{ex.Message}", "全量安装", MessageBoxButton.OK, MessageBoxImage.Error);
                         repairBtn.IsEnabled = true;
-                        repairBtn.Content = "下载全量包并修复";
+                        repairBtn.Content = "下载最新全量包并安装";
                     }
                 };
 
@@ -2241,6 +2243,7 @@ namespace TypeSunny
 
             cancelBtn.Click += (s, args) => window.Close();
 
+            DialogTheming.ApplyToWindow(window);
             window.ShowDialog();
         }
 
@@ -3734,7 +3737,7 @@ namespace TypeSunny
             "成绩显示时间",
             "当前版本",
             "最新版本",
-            "修复安装",
+            "全量安装",
             "软件更新Q群",
             "作者邮箱QQ"
         };

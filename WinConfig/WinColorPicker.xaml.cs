@@ -2,6 +2,7 @@ using System;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Media;
+using TypeSunny.Utils;
 
 namespace TypeSunny
 {
@@ -13,6 +14,8 @@ namespace TypeSunny
         public WinColorPicker(string initialColor)
         {
             InitializeComponent();
+
+            this.EnableEscapeToClose();
 
             // 设置初始颜色
             SetColor(initialColor);

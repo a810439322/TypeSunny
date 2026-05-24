@@ -933,11 +933,19 @@ namespace TypeSunny.UI
         }
 
         /// <summary>
+        /// 词提是否生效：开关打开且当前不处于赛文模式（赛文模式下强制关闭词提）
+        /// </summary>
+        internal bool IsCiTiEffective()
+        {
+            return Config.GetBool("启用词提") && !StateManager.IsRaceMode();
+        }
+
+        /// <summary>
         /// 更新字提显示
         /// </summary>
         internal Brush GetCiTiForeground(int globalIndex)
         {
-            if (!Config.GetBool("启用词提") || IsCiTiColorDisabled())
+            if (!IsCiTiEffective() || IsCiTiColorDisabled())
                 return null;
 
             if (TryGetCiTiSegmentIndex(globalIndex, out int segIdx))
@@ -964,7 +972,7 @@ namespace TypeSunny.UI
 
         internal bool IsCiTiBold(int globalIndex)
         {
-            return Config.GetBool("启用词提")
+            return IsCiTiEffective()
                    && TryGetCiTiSegmentIndex(globalIndex, out int segIdx)
                    && CiTiHelper.ShouldBold(segIdx);
         }
@@ -1146,7 +1154,7 @@ namespace TypeSunny.UI
             badgeText = "";
             badgeBrush = null;
 
-            if (Config.GetBool("词提选重数字角标") && Config.GetBool("启用词提")
+            if (Config.GetBool("词提选重数字角标") && IsCiTiEffective()
                 && !string.IsNullOrEmpty(Config.GetString("词提方案")))
             {
                 string rawCode = CiTiHelper.GetCodeForChar(globalIndex);
@@ -1160,6 +1168,7 @@ namespace TypeSunny.UI
 
             if (Config.GetBool("字提选重数字角标") && Config.GetBool("启用字提")
                 && !string.IsNullOrEmpty(Config.GetString("字提方案"))
+                && !StateManager.IsRaceMode()
                 && globalIndex >= 0 && globalIndex < TextInfo.Words.Count)
             {
                 string rawCode = ZiTiHelper.GetZiTi(TextInfo.Words[globalIndex]);
@@ -1267,7 +1276,7 @@ namespace TypeSunny.UI
 
         private bool IsCiTiNoSplitLineEnabled()
         {
-            return Config.GetBool("启用词提")
+            return IsCiTiEffective()
                    && Config.GetBool("词提不拆行")
                    && TextInfo.CiTiSegmentIndices.Count > 0
                    && TextInfo.CiTiSegments.Count > 0;
@@ -1468,7 +1477,7 @@ namespace TypeSunny.UI
 
         internal string GetTypingCodeText(int globalIndex)
         {
-            if (Config.GetBool("启用词提") && !string.IsNullOrEmpty(Config.GetString("词提方案")))
+            if (IsCiTiEffective() && !string.IsNullOrEmpty(Config.GetString("词提方案")))
                 return GetCiTiCodeText(globalIndex);
 
             if (Config.GetBool("启用字提") && !string.IsNullOrEmpty(Config.GetString("字提方案"))
@@ -1621,7 +1630,7 @@ namespace TypeSunny.UI
         private bool IsFullCiTiCodeDisplayEnabled()
         {
             return Config.GetBool("词提编码下显")
-                   && Config.GetBool("启用词提")
+                   && IsCiTiEffective()
                    && !string.IsNullOrEmpty(Config.GetString("词提方案"));
         }
 
@@ -1629,20 +1638,14 @@ namespace TypeSunny.UI
         {
             return Config.GetBool("字提编码下显")
                    && Config.GetBool("启用字提")
-                   && !string.IsNullOrEmpty(Config.GetString("字提方案"));
+                   && !string.IsNullOrEmpty(Config.GetString("字提方案"))
+                   && !StateManager.IsRaceMode();
         }
 
         internal void UpdateZiTi()
         {
             // 检查是否启用字提功能
             if (!Config.GetBool("启用字提"))
-            {
-                TbkZiTi.Text = "";
-                return;
-            }
-
-            // 极速杯模式不显示字提
-            if (StateManager.txtSource == TxtSource.jisucup)
             {
                 TbkZiTi.Text = "";
                 return;
@@ -1655,9 +1658,16 @@ namespace TypeSunny.UI
                 return;
             }
 
-            // 赛文模式：5秒没有字上屏时才显示字提
-            if (StateManager.txtSource == TxtSource.raceApi)
+            // 赛文模式（锦标赛/极速杯/赛文API）：5秒没有字上屏时才显示字提
+            if (StateManager.IsRaceMode())
             {
+                // 还没开始打字（ready）时不显示，避免载文后字提自动出现
+                if (StateManager.typingState == TypingState.ready)
+                {
+                    TbkZiTi.Text = "";
+                    return;
+                }
+
                 var timeSinceLastInput = DateTime.Now - StateManager.LastInputTime;
                 if (timeSinceLastInput.TotalSeconds < 5)
                 {
@@ -5525,19 +5535,18 @@ public async Task SendArticle()
                 _ziTiTimer = null;
             }
 
-            // 只有赛文模式才需要定时器
-            if (StateManager.txtSource == TxtSource.raceApi && Config.GetBool("启用字提"))
+            // 只有赛文模式才需要定时器（锦标赛/极速杯/赛文API）
+            if (StateManager.IsRaceMode() && Config.GetBool("启用字提"))
             {
                 _ziTiTimer = new System.Windows.Threading.DispatcherTimer();
                 _ziTiTimer.Interval = TimeSpan.FromSeconds(1); // 每秒检查一次
                 _ziTiTimer.Tick += (s, e) =>
                 {
-                    // 检查是否超过5秒没有输入
-                    var timeSinceLastInput = DateTime.Now - StateManager.LastInputTime;
-                    if (timeSinceLastInput.TotalSeconds >= 5)
-                    {
-                        UpdateZiTi();
-                    }
+                    // 每秒无条件重新评估字提显示状态：
+                    // - 5 秒未输入时显示；
+                    // - 按键后 LastInputTime 已被更新（< 5s）但此处需要立即清空 UI；
+                    // - ready 等状态变化也由此触发兜底刷新。
+                    UpdateZiTi();
                 };
                 _ziTiTimer.Start();
             }
@@ -5738,6 +5747,22 @@ public async Task SendArticle()
                 return;
             }
 
+            // ESC：始终阻断部分输入法在无编码时把 ESC 当"空码空格"上屏；
+            // 仅在非赛文/变绳模式下等同回车暂停（赛文模式不允许暂停，但仍需吞掉 ESC）
+            if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                if (StateManager.typingState == TypingState.typing
+                    && StateManager.txtSource != TxtSource.changeSheng
+                    && StateManager.txtSource != TxtSource.jbs
+                    && StateManager.txtSource != TxtSource.jisucup
+                    && StateManager.txtSource != TxtSource.raceApi)
+                {
+                    PauseTypingSession();
+                }
+                return;
+            }
+
             // 统计键法
             if (e.Key == Key.ImeProcessed)
                 Score.SetJianFa(e.ImeProcessedKey);
@@ -5751,6 +5776,13 @@ public async Task SendArticle()
             if ((StateManager.typingState == TypingState.pause || StateManager.typingState == TypingState.ready) && IsValidInputKey(e.Key))
             {
                 StartTypingSessionFromInput();
+            }
+
+            // 赛文字提5秒延迟：按键即视为活跃，因为输入法吃掉的字母键不会触发 TextChanged，
+            // 否则用户慢慢敲编码时字提会错误地跳出来、且因 LastInputTime 不再更新而永远挂着
+            if (StateManager.IsRaceMode() && IsValidInputKey(e.Key))
+            {
+                StateManager.LastInputTime = DateTime.Now;
             }
 
             Score.Hit++;
@@ -6735,7 +6767,7 @@ public async Task SendArticle()
             {
                 StateManager.LastInputTime = DateTime.Now;
                 // 立即更新字提（赛文模式下会隐藏字提，因为还没到5秒）
-                if (StateManager.txtSource == TxtSource.raceApi)
+                if (StateManager.IsRaceMode())
                 {
                     UpdateZiTi();
                 }
@@ -9306,6 +9338,7 @@ public async Task SendArticle()
             grid.Children.Add(btnPanel);
 
             dialog.Content = grid;
+            DialogTheming.ApplyToWindow(dialog);
             dialog.ShowDialog();
         }
 
@@ -9387,6 +9420,7 @@ public async Task SendArticle()
             };
             progressDialog.Content = label;
 
+            DialogTheming.ApplyToWindow(progressDialog);
             progressDialog.Show();
 
             try
