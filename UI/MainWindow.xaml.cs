@@ -1728,8 +1728,14 @@ namespace TypeSunny.UI
         /// </summary>
         internal void UpdateSpeedFollowHint(int nextToType)
         {
+            SpeedFollowHint speedHint = default(SpeedFollowHint);
             bool showSpeed = Config.GetBool("速度跟随提示") && !Config.GetBool("盲打模式") &&
-                             !double.IsNaN(Score.GetValidSpeed()) && Score.GetValidSpeed() > 0;
+                             SpeedFollowHintFormatter.TryCreate(
+                                 StateManager.txtSource,
+                                 Config.GetBool("练单下显示击键"),
+                                 Score.GetValidSpeed(),
+                                 Score.HitRate,
+                                 out speedHint);
 
             if (!showSpeed)
             {
@@ -1769,8 +1775,8 @@ namespace TypeSunny.UI
                 Canvas.SetTop(BdAcc, AccTop);
                 Canvas.SetLeft(BdAcc, AccLeft);
 
-                TbAcc.Text = Score.GetValidSpeed().ToString("F2");
-                TbAcc.Foreground = Colors.GetSpeedColor(Score.GetValidSpeed());
+                TbAcc.Text = speedHint.Text;
+                TbAcc.Foreground = Colors.GetSpeedColor(speedHint.ColorMetric);
             }
         }
 
@@ -2692,9 +2698,7 @@ namespace TypeSunny.UI
                 }
 
                 string currentText = string.Concat(TextInfo.Words);
-                string difficulty = Score.DifficultyText;
-                if (string.IsNullOrWhiteSpace(difficulty))
-                    difficulty = difficultyDict.CalcText(currentText);
+                string difficulty = difficultyDict.CalcText(currentText);
 
                 Score.DifficultyText = difficulty;
                 displayPredictionSnapshot = CreateCurrentPredictionSnapshot(currentText, difficulty);
@@ -3774,6 +3778,7 @@ namespace TypeSunny.UI
 
         private List<(long timestamp, List<string> items)> ResultRows = new List<(long, List<string>)>();
         private string trainerStatText = ""; // 练单器统计文本
+        private string trainerSectionText = ""; // 练单器当前段数（如 "第12/50段"）
 
         /// <summary>
         /// 更新练单器统计显示（由WinTrainer调用）
@@ -3785,12 +3790,55 @@ namespace TypeSunny.UI
             UpdateTypingStat();
         }
 
-        private string GetTrainerTitleText()
+        /// <summary>
+        /// 更新练单器段数显示（由WinTrainer调用）
+        /// </summary>
+        public void UpdateTrainerSection(string sectionText)
         {
-            if (string.IsNullOrEmpty(trainerStatText))
+            trainerSectionText = sectionText;
+            ApplyTrainerTitleText();
+        }
+
+        private string GetTitleDifficultyText()
+        {
+            if (string.IsNullOrEmpty(currentDifficultyText))
                 return "";
 
-            return "[练单] " + trainerStatText;
+            if (currentDifficultyText.StartsWith("难度：", StringComparison.Ordinal))
+                return currentDifficultyText.Substring(3);
+
+            if (currentDifficultyText.StartsWith("难度:", StringComparison.Ordinal))
+                return currentDifficultyText.Substring(3);
+
+            return currentDifficultyText;
+        }
+
+        private string GetTrainerTitleText()
+        {
+            bool hasSection = !string.IsNullOrEmpty(trainerSectionText);
+            bool hasStat = !string.IsNullOrEmpty(trainerStatText);
+            string difficulty = GetTitleDifficultyText();
+            bool hasDifficulty = !string.IsNullOrEmpty(difficulty);
+            if (!hasSection && !hasStat)
+                return "";
+
+            StringBuilder sb = new StringBuilder("[练单]");
+            if (hasDifficulty)
+            {
+                sb.Append(' ');
+                sb.Append(difficulty);
+            }
+            if (hasSection)
+            {
+                sb.Append(' ');
+                sb.Append(trainerSectionText);
+            }
+            if (hasStat)
+            {
+                sb.Append(' ');
+                sb.Append(trainerStatText);
+            }
+            return sb.ToString();
         }
 
         private bool ApplyTrainerTitleText()
@@ -5241,12 +5289,12 @@ namespace TypeSunny.UI
         /// <summary>
         /// 格式化文来内容
         /// </summary>
-        private string FormatArticleSenderContent(string title, string content, string mark, string difficulty = "")
+        private string FormatArticleSenderContent(string title, string content, string mark)
         {
             StringBuilder sb = new StringBuilder();
 
-            // 如果没有传入难度，使用全局变量（兼容非文来模式）
-            string diffText = string.IsNullOrEmpty(difficulty) ? currentDifficultyText : difficulty;
+            // 按实际发送正文计算，避免文来接口预存难度和截断后正文不一致。
+            string diffText = difficultyDict.CalcText(content);
 
             // [难度xx]标题xx [字数xx]
             sb.AppendLine($"[{diffText}]{title} [字数{content.Length}]");
@@ -5271,8 +5319,7 @@ namespace TypeSunny.UI
         {
             string title = articleCache.GetCurrentTitle();
             string mark = articleCache.GetCurrentMark();
-            string difficultyText = articleCache.GetCurrentDifficulty();
-            string formattedContent = FormatArticleSenderContent(title, content, mark, difficultyText);
+            string formattedContent = FormatArticleSenderContent(title, content, mark);
             SendContentToClipboardOrQQ(formattedContent);
         }
 
@@ -6261,18 +6308,9 @@ public async Task SendArticle()
                 return;
             }
 
-            string difficulty = "";
-            if (!string.IsNullOrEmpty(currentDifficultyText))
-            {
-                if (currentDifficultyText.StartsWith("难度："))
-                {
-                    difficulty = currentDifficultyText.Substring(3) + " ";
-                }
-                else if (currentDifficultyText.StartsWith("难度:"))
-                {
-                    difficulty = currentDifficultyText.Substring(3) + " ";
-                }
-            }
+            string difficulty = GetTitleDifficultyText();
+            if (!string.IsNullOrEmpty(difficulty))
+                difficulty += " ";
 
             if (StateManager.txtSource == TxtSource.articlesender && articleCache.HasArticle())
             {
@@ -6493,7 +6531,6 @@ public async Task SendArticle()
                     if (source == TxtSource.articlesender && articleCache.HasArticle())
                     {
                         Score.ArticleMark = articleCache.GetCurrentMark();
-                        Score.DifficultyText = articleCache.GetCurrentDifficulty();
                         Score.ParagraphString = "";  // 文来模式使用ArticleMark，清空ParagraphString
                     }
                     else
@@ -6503,6 +6540,13 @@ public async Task SendArticle()
                         // currentDifficultyText 保留给标题显示，异步回调会更新它和 Score.DifficultyText
                     }
                 }
+
+                string loadedTextForDifficulty = String.Join("", TextInfo.Words);
+                string loadedDifficulty = difficultyDict.CalcText(loadedTextForDifficulty);
+                displayPredictionSnapshot = CreateCurrentPredictionSnapshot(loadedTextForDifficulty, loadedDifficulty);
+                string loadedDisplayDifficulty = AppendPredictionSnapshotToDifficulty(loadedDifficulty, displayPredictionSnapshot);
+                currentDifficultyText = string.IsNullOrEmpty(loadedDisplayDifficulty) ? "" : "难度：" + loadedDisplayDifficulty;
+                Score.DifficultyText = loadedDifficulty;
 
 
                 PrepareLoadedTextForInput(focus: switchBack);
@@ -7853,155 +7897,19 @@ public async Task SendArticle()
         /// </summary>
         private Style CreateMenuItemStyle(System.Windows.Media.SolidColorBrush menuBg, System.Windows.Media.SolidColorBrush menuFg)
         {
-            var style = new Style(typeof(MenuItem));
-
-            // 获取背景色
-            var bgColor = menuBg.Color;
-            // 判断是否为暗色主题（亮度低于0.5为暗色）
-            double brightness = (bgColor.R * 0.299 + bgColor.G * 0.587 + bgColor.B * 0.114) / 255.0;
-            bool isDarkTheme = brightness < 0.5;
-
-            // 根据主题计算鼠标悬停颜色 - 只使用边框高亮效果
-            System.Windows.Media.Color hoverBorderColor;
-            System.Windows.Media.Color hoverFgColor;
-
-            if (isDarkTheme)
-            {
-                // 暗色主题：悬停时边框变亮
-                hoverBorderColor = System.Windows.Media.Color.FromRgb(
-                    (byte)Math.Min(255, bgColor.R + 80),
-                    (byte)Math.Min(255, bgColor.G + 80),
-                    (byte)Math.Min(255, bgColor.B + 80)
-                );
-                hoverFgColor = menuFg.Color;
-            }
-            else
-            {
-                // 亮色主题：悬停时边框变深
-                hoverBorderColor = System.Windows.Media.Color.FromRgb(
-                    (byte)Math.Max(0, bgColor.R - 50),
-                    (byte)Math.Max(0, bgColor.G - 50),
-                    (byte)Math.Max(0, bgColor.B - 50)
-                );
-                hoverFgColor = menuFg.Color;
-            }
-
-            var hoverBorderBrush = new System.Windows.Media.SolidColorBrush(hoverBorderColor);
-            var hoverFgBrush = new System.Windows.Media.SolidColorBrush(hoverFgColor);
-            hoverBorderBrush.Freeze();
-            hoverFgBrush.Freeze();
-
-            // 设置默认背景和前景色
-            style.Setters.Add(new Setter(MenuItem.BackgroundProperty, menuBg));
-            style.Setters.Add(new Setter(MenuItem.ForegroundProperty, menuFg));
-            style.Setters.Add(new Setter(MenuItem.BorderThicknessProperty, new System.Windows.Thickness(0)));
-            style.Setters.Add(new Setter(MenuItem.PaddingProperty, new System.Windows.Thickness(8, 6, 8, 6)));
-
-            // 鼠标悬停触发器 - 只添加边框效果，不改变背景色
-            var highlightTrigger = new Trigger
-            {
-                Property = MenuItem.IsHighlightedProperty,
-                Value = true
-            };
-            highlightTrigger.Setters.Add(new Setter(MenuItem.BorderBrushProperty, hoverBorderBrush));
-            highlightTrigger.Setters.Add(new Setter(MenuItem.BorderThicknessProperty, new System.Windows.Thickness(1)));
-            highlightTrigger.Setters.Add(new Setter(Control.ForegroundProperty, hoverFgBrush));
-            style.Triggers.Add(highlightTrigger);
-
-            // 禁用状态触发器
-            var disabledTrigger = new Trigger
-            {
-                Property = UIElement.IsEnabledProperty,
-                Value = false
-            };
-            disabledTrigger.Setters.Add(new Setter(UIElement.OpacityProperty, 0.5));
-            style.Triggers.Add(disabledTrigger);
-
-            return style;
+            return TypeSunny.Utils.ThemeColorHelper.CreateMenuItemStyle(menuBg, menuFg);
         }
 
-        /// <summary>
-        /// 创建带背景色的Separator
-        /// </summary>
         private Separator CreateStyledSeparator(System.Windows.Media.SolidColorBrush menuBg)
         {
-            var separator = new Separator();
-            var style = new Style(typeof(Separator));
-
-            // 根据主题计算分隔线颜色
-            var bgColor = menuBg.Color;
-            double brightness = (bgColor.R * 0.299 + bgColor.G * 0.587 + bgColor.B * 0.114) / 255.0;
-            bool isDarkTheme = brightness < 0.5;
-
-            System.Windows.Media.Color separatorColor;
-            if (isDarkTheme)
-            {
-                // 暗色主题：分隔线变亮
-                separatorColor = System.Windows.Media.Color.FromRgb(
-                    (byte)Math.Min(255, bgColor.R + 50),
-                    (byte)Math.Min(255, bgColor.G + 50),
-                    (byte)Math.Min(255, bgColor.B + 50)
-                );
-            }
-            else
-            {
-                // 亮色主题：分隔线变暗
-                separatorColor = System.Windows.Media.Color.FromRgb(
-                    (byte)Math.Max(0, bgColor.R - 40),
-                    (byte)Math.Max(0, bgColor.G - 40),
-                    (byte)Math.Max(0, bgColor.B - 40)
-                );
-            }
-
-            // 设置分隔线背景色和边距
-            style.Setters.Add(new Setter(Separator.BackgroundProperty, menuBg));
-            style.Setters.Add(new Setter(Separator.ForegroundProperty, new System.Windows.Media.SolidColorBrush(separatorColor)));
-            style.Setters.Add(new Setter(Separator.MarginProperty, new Thickness(0, 2, 0, 2)));
-            separator.Style = style;
-
-            return separator;
+            return TypeSunny.Utils.ThemeColorHelper.CreateStyledSeparator(menuBg);
         }
 
-        /// <summary>
-        /// 根据背景色计算合适的次要文字颜色（用于提示信息等）
-        /// </summary>
-        private System.Windows.Media.Color GetSecondaryTextColor(System.Windows.Media.SolidColorBrush background)
-        {
-            var bgColor = background.Color;
-            double brightness = (bgColor.R * 0.299 + bgColor.G * 0.587 + bgColor.B * 0.114) / 255.0;
-            bool isDarkTheme = brightness < 0.5;
-
-            if (isDarkTheme)
-            {
-                // 暗色主题：使用浅灰色
-                return System.Windows.Media.Color.FromRgb(170, 170, 170);
-            }
-            else
-            {
-                // 亮色主题：使用深灰色
-                return System.Windows.Media.Color.FromRgb(100, 100, 100);
-            }
-        }
-
-        /// <summary>
-        /// 根据背景色计算合适的成功提示颜色
-        /// </summary>
         private System.Windows.Media.Color GetSuccessColor(System.Windows.Media.SolidColorBrush background)
         {
-            var bgColor = background.Color;
-            double brightness = (bgColor.R * 0.299 + bgColor.G * 0.587 + bgColor.B * 0.114) / 255.0;
-            bool isDarkTheme = brightness < 0.5;
-
-            if (isDarkTheme)
-            {
-                // 暗色主题：使用亮绿色
-                return System.Windows.Media.Color.FromRgb(100, 220, 100);
-            }
-            else
-            {
-                // 亮色主题：使用深绿色
-                return System.Windows.Media.Color.FromRgb(34, 139, 34);
-            }
+            return TypeSunny.Utils.ThemeColorHelper.IsDark(background.Color)
+                ? System.Windows.Media.Color.FromRgb(100, 220, 100)
+                : System.Windows.Media.Color.FromRgb(34, 139, 34);
         }
 
         /// <summary>
@@ -9612,6 +9520,17 @@ public async Task SendArticle()
         {
             UpdateMainContextMenuVisibility();
             RebuildRaceContextMenu();
+            ApplyMainContextMenuTheme();
+        }
+
+        private void ApplyMainContextMenuTheme()
+        {
+            if (MainContextMenu == null)
+                return;
+
+            var menuBg = Colors.FromString(Config.GetString("菜单背景色"));
+            var menuFg = Colors.FromString(Config.GetString("菜单字体色"));
+            TypeSunny.Utils.ThemeColorHelper.ApplyContextMenuTheme(MainContextMenu, menuBg, menuFg);
         }
 
         private void MenuItemOpenConfig_Click(object sender, RoutedEventArgs e)
@@ -9913,8 +9832,7 @@ public async Task SendArticle()
                 {
                     string title = articleCache.GetCurrentTitle();
                     string mark = articleCache.GetCurrentMark();  // 使用文来接口返回的mark
-                    string difficultyText = articleCache.GetCurrentDifficulty();  // 使用文来接口返回的难度
-                    string formattedContent = FormatArticleSenderContent(title, segment, mark, difficultyText);
+                    string formattedContent = FormatArticleSenderContent(title, segment, mark);
 
                 // 先发送QQ，再异步渲染（提升响应速度）
                 if (qqGroupName != "")

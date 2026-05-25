@@ -757,11 +757,7 @@ namespace TypeSunny
                         }
                         MainWindow.Current.UpdateTopStatusText("本轮练习完成，请手动发文开始下一轮");
 
-                        // 弹窗放在QQ发送之后（弹窗会阻塞但不影响发送）
-                        if (!string.IsNullOrEmpty(roundRecord))
-                        {
-                            MessageBox.Show(roundRecord, "练习统计", MessageBoxButton.OK, MessageBoxImage.Information);
-                        }
+                        ShowRoundStatisticsDialogLater(roundRecord);
                     }
                     else
                     {
@@ -783,8 +779,11 @@ namespace TypeSunny
                         WriteDebugLog("[GetNextRound] SendQQMessageD 完成");
                     }
 
-                    WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 UpdateRoundStatus");
-                    UpdateRoundStatus();
+                    if (!roundCompleted)
+                    {
+                        WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 UpdateRoundStatus");
+                        UpdateRoundStatus();
+                    }
 
                     if (wasNotStarted)
                     {
@@ -947,30 +946,30 @@ namespace TypeSunny
         /// </summary>
         private void UpdateRoundStatus()
         {
-            string statText = "";
+            ApplyRoundStatusText(BuildRoundStatusText());
+        }
 
-            // 只有开始练习时才显示统计
-            if (hasStartedPractice)
-            {
-                double avgHitRate = 0;
-                double avgSpeed = 0;
-                double avgAccuracy = 0;
+        private string BuildRoundStatusText()
+        {
+            if (!hasStartedPractice)
+                return "";
 
-                if (roundHitRates.Count > 0)
-                    avgHitRate = roundHitRates.Average();
-                if (roundSpeeds.Count > 0)
-                    avgSpeed = roundSpeeds.Average();
+            double avgHitRate = 0;
+            double avgSpeed = 0;
 
-                // 总键准 = 累计Hit/Backs/Correction代入键准公式
-                avgAccuracy = GetRoundAccuracy() * 100;
+            if (roundHitRates.Count > 0)
+                avgHitRate = roundHitRates.Average();
+            if (roundSpeeds.Count > 0)
+                avgSpeed = roundSpeeds.Average();
 
-                // 进度百分比
-                double progress = (double)roundCompletedGroups / TotalGroup * 100;
+            double progress = TotalGroup > 0 ? (double)roundCompletedGroups / TotalGroup * 100 : 0;
 
-                statText = string.Format("{0} 均击{1:F2} 均速{2:F2} 字数{3} 实际{4} 进度{5:F0}%",
-                    TxtFile, avgHitRate, avgSpeed, roundTotalWords, roundActualWords, progress);
-            }
+            return string.Format("{0} 均击{1:F2} 均速{2:F2} 字数{3} 实际{4} 进度{5:F0}%",
+                TxtFile, avgHitRate, avgSpeed, roundTotalWords, roundActualWords, progress);
+        }
 
+        private void ApplyRoundStatusText(string statText)
+        {
             // 更新练单器窗口内的显示
             stattxt2.Text = statText;
 
@@ -1062,6 +1061,19 @@ namespace TypeSunny
             }
         }
 
+        private void PushTrainerSectionToMain()
+        {
+            if (MainWindow.Current == null)
+                return;
+            if (TotalGroup <= 0)
+            {
+                MainWindow.Current.UpdateTrainerSection("");
+                return;
+            }
+            int currentSection = Convert.ToInt32(cfg["上次的段数"]) + 1;
+            MainWindow.Current.UpdateTrainerSection($"第{currentSection}/{TotalGroup}段");
+        }
+
         private void RetypeGroup(bool rand, bool count) //重打本组
         {
             if (count)
@@ -1085,6 +1097,7 @@ namespace TypeSunny
             DisplayHit();
 
             stattxt.Text = "第 " + (Convert.ToInt32(cfg["上次的段数"]) + 1) + "/" + TotalGroup + " 段";
+            PushTrainerSectionToMain();
 
             // 更新本轮统计显示
             UpdateRoundStatus();
@@ -1117,8 +1130,9 @@ namespace TypeSunny
 
 
                 DisplayHit();
-            
+
             stattxt.Text = "第 " + (Convert.ToInt32(cfg["上次的段数"]) + 1) + "/" + TotalGroup + " 段";
+            PushTrainerSectionToMain();
 
             // 更新本轮统计显示（初始化时清空）
             UpdateRoundStatus();
@@ -1151,14 +1165,16 @@ namespace TypeSunny
             if (Convert.ToInt32(cfg["上次的段数"]) == TotalGroup)
             {
                 WriteDebugLog("[AutoNextGroup] 完成一轮，停下来等待用户操作");
+                string completedRoundStatus = BuildRoundStatusText();
+                ApplyRoundStatusText(completedRoundStatus);
+
                 // 完成一轮，获取总成绩（不弹窗、不发QQ，由调用方处理）
                 roundResultRecord = ShowRoundStatistics();
                 RecordRoundLog();
 
                 // 重置段号到第一段，但不自动开始
                 cfg["上次的段数"] = "0";
-                ResetRoundStatistics();
-                UpdateRoundStatus();
+                ResetRoundStatistics(clearVisibleStatus: false);
 
                 SliderInit = false; // 防止触发 Slider_ValueChanged 导致自动加载
                 sld.Value = 1;
@@ -1179,7 +1195,7 @@ namespace TypeSunny
                     TargetHit = 0.01;
                 DisplayHit();
                 stattxt.Text = "第 " + (Convert.ToInt32(cfg["上次的段数"]) + 1) + "/" + TotalGroup + " 段";
-                UpdateRoundStatus();
+                PushTrainerSectionToMain();
                 UpdateUIState();
 
                 WriteDebugLog("[AutoNextGroup] 一轮处理完成，等待用户手动发文");
@@ -1205,7 +1221,7 @@ namespace TypeSunny
         /// <summary>
         /// 重置本轮统计数据
         /// </summary>
-        private void ResetRoundStatistics()
+        private void ResetRoundStatistics(bool clearVisibleStatus = true)
         {
             roundTotalWords = 0;
             roundActualWords = 0;
@@ -1222,13 +1238,9 @@ namespace TypeSunny
             RetypeCount = 0;
             MaxHitRate = 0;
 
-            // 清空练单器窗口内的成绩显示
-            stattxt2.Text = "";
-
-            // 清空主窗口成绩栏的显示
-            if (MainWindow.Current != null)
+            if (clearVisibleStatus)
             {
-                MainWindow.Current.UpdateTrainerStat("");
+                ApplyRoundStatusText("");
             }
 
             // 重置后也要保存
@@ -1506,6 +1518,17 @@ namespace TypeSunny
             }
 
             return resultRecord;
+        }
+
+        private void ShowRoundStatisticsDialogLater(string roundRecord)
+        {
+            if (string.IsNullOrEmpty(roundRecord))
+                return;
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                MessageBox.Show(roundRecord, "练习统计", MessageBoxButton.OK, MessageBoxImage.Information);
+            }), System.Windows.Threading.DispatcherPriority.ContextIdle);
         }
 
         /// <summary>

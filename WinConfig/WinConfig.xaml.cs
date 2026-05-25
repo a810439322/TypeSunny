@@ -170,6 +170,7 @@ namespace TypeSunny
                         "字帖模式",
                         "临摹模式",
                         "速度跟随提示",
+                        "  练单下显示击键",
                         "禁用回改",
                         "禁止F3重打",
                         "显示进度条",
@@ -500,13 +501,15 @@ namespace TypeSunny
             _categoryFallbackSaves.Clear();
 
             // 添加分类标题
+            var windowBgHex = Config.GetString("窗体背景色");
+            var windowBgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + windowBgHex));
             var titleBlock = new TextBlock
             {
                 Text = category.Title,
                 FontSize = 20,
                 FontWeight = FontWeights.Bold,
                 Margin = new Thickness(0, 0, 0, 20),
-                Foreground = new SolidColorBrush(Color.FromRgb(100, 200, 255))
+                Foreground = ThemeColorHelper.GetReadableHighlightBrush(windowBgBrush)
             };
 
             ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto, MinHeight = 40 });
@@ -567,6 +570,10 @@ namespace TypeSunny
                 {
                     tbk.ToolTip = "只有启用预测且当前预测置信度大于80%时，才会把预测信息附加到发文成绩最后。";
                 }
+                if (itemKey == "练单下显示击键")
+                {
+                    tbk.ToolTip = "开启后，练单场景下速度跟随提示变为击键跟随提示，其他场景此开关不生效。";
+                }
 
                 FrameworkElement labelControl = CreateLabelControl(tbk);
                 Grid.SetRow(labelControl, currentRow);
@@ -610,6 +617,9 @@ namespace TypeSunny
             {
                 AppendFilterSettings(currentRow);
             }
+
+            // 对动态生成的主题元素应用当前主题色
+            ApplyConfigSectionThemes();
         }
 
         private void AddCiTiLegend(int row)
@@ -2886,7 +2896,7 @@ namespace TypeSunny
             {
                 Text = "成绩显示项（拖拽调整顺序，勾选控制显隐）",
                 FontSize = 13,
-                Foreground = new SolidColorBrush(Color.FromRgb(100, 150, 200)),
+                Tag = TagSectionTitle,
                 Margin = new Thickness(0, 10, 0, 5)
             };
             ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -2904,7 +2914,8 @@ namespace TypeSunny
                 MaxHeight = 500,
                 AllowDrop = true,
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                Margin = new Thickness(0, 5, 0, 0)
+                Margin = new Thickness(0, 5, 0, 0),
+                Tag = TagThemedList
             };
 
             var checkboxes = new Dictionary<string, CheckBox>();
@@ -2920,14 +2931,16 @@ namespace TypeSunny
                     FontSize = 14,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 8, 0),
-                    Cursor = System.Windows.Input.Cursors.SizeAll
+                    Cursor = System.Windows.Input.Cursors.SizeAll,
+                    Tag = TagDragHandle
                 };
                 var chk = new CheckBox
                 {
                     Content = item == "重打" ? "重打/首打" : item,
                     IsChecked = isForced || Config.GetBool("显示_" + item),
                     IsEnabled = !isForced,  // 强制项不可取消勾选
-                    VerticalAlignment = VerticalAlignment.Center
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Tag = TagThemedCheckBox
                 };
                 checkboxes[item] = chk;
                 sp.Children.Add(dragHandle);
@@ -3098,7 +3111,7 @@ namespace TypeSunny
             {
                 Text = "预测显示项（拖拽调整顺序，勾选控制显隐；速度必开，其他项目可选）",
                 FontSize = 13,
-                Foreground = new SolidColorBrush(Color.FromRgb(100, 150, 200)),
+                Tag = TagSectionTitle,
                 Margin = new Thickness(0, 10, 0, 5)
             };
             ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -3113,7 +3126,8 @@ namespace TypeSunny
                 MaxHeight = 360,
                 AllowDrop = true,
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                Margin = new Thickness(0, 5, 0, 0)
+                Margin = new Thickness(0, 5, 0, 0),
+                Tag = TagThemedList
             };
 
             var checkboxes = new Dictionary<string, CheckBox>();
@@ -3128,14 +3142,16 @@ namespace TypeSunny
                     FontSize = 14,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 8, 0),
-                    Cursor = System.Windows.Input.Cursors.SizeAll
+                    Cursor = System.Windows.Input.Cursors.SizeAll,
+                    Tag = TagDragHandle
                 };
                 var chk = new CheckBox
                 {
                     Content = isForced ? item + "（必开）" : item,
                     IsChecked = isForced || Config.GetBool("预测显示_" + item),
                     IsEnabled = !isForced,
-                    VerticalAlignment = VerticalAlignment.Center
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Tag = TagThemedCheckBox
                 };
                 checkboxes[item] = chk;
                 sp.Children.Add(dragHandle);
@@ -3293,7 +3309,7 @@ namespace TypeSunny
             {
                 Text = "首页按纽显示",
                 FontSize = 13,
-                Foreground = new SolidColorBrush(Color.FromRgb(100, 150, 200)),
+                Tag = TagSectionTitle,
                 Margin = new Thickness(0, 10, 0, 5)
             };
             ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -3313,7 +3329,8 @@ namespace TypeSunny
                 MaxHeight = 260,
                 AllowDrop = true,
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                Margin = new Thickness(0, 5, 0, 0)
+                Margin = new Thickness(0, 5, 0, 0),
+                Tag = TagThemedList
             };
 
             var checkboxes = new Dictionary<string, CheckBox>();
@@ -3327,7 +3344,7 @@ namespace TypeSunny
                     FontSize = 14,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 8, 0),
-                    Foreground = new SolidColorBrush(Color.FromRgb(120, 120, 120))
+                    Tag = TagDragHandle
                 });
 
                 var chk = new CheckBox
@@ -3343,7 +3360,8 @@ namespace TypeSunny
                 {
                     Text = entry.DisplayName,
                     FontSize = 13,
-                    VerticalAlignment = VerticalAlignment.Center
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Tag = TagItemLabel
                 };
                 row.Children.Add(label);
 
@@ -3513,7 +3531,7 @@ namespace TypeSunny
             {
                 Text = "固定模块",
                 FontSize = 13,
-                Foreground = new SolidColorBrush(Color.FromRgb(100, 150, 200)),
+                Tag = TagSectionTitle,
                 Margin = new Thickness(0, 12, 0, 5)
             };
             ContentPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -3542,7 +3560,8 @@ namespace TypeSunny
                 {
                     Text = entry.DisplayName,
                     FontSize = 13,
-                    VerticalAlignment = VerticalAlignment.Center
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Tag = TagItemLabel
                 };
 
                 chk.Checked += (s, e) =>
@@ -4568,10 +4587,108 @@ namespace TypeSunny
 
                 // 更新全局 ComboBox 样式
                 UpdateComboBoxTheme(bgBrush, fgBrush);
+
+                // 重刷设置页内动态生成的主题元素（成绩/预测/首页等模块）
+                ApplyConfigSectionThemes(bgBrush, fgBrush);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"应用主题颜色失败: {ex.Message}");
+            }
+        }
+
+        private const string TagSectionTitle = "ConfigSectionTitle";
+        private const string TagThemedList = "ConfigThemedList";
+        private const string TagDragHandle = "ConfigDragHandle";
+        private const string TagItemLabel = "ConfigItemLabel";
+        private const string TagThemedCheckBox = "ConfigThemedCheckBox";
+
+        private void ApplyConfigSectionThemes()
+        {
+            try
+            {
+                string windowBgColor = Config.GetString("窗体背景色");
+                string windowFgColor = Config.GetString("窗体字体色");
+                var bgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + windowBgColor));
+                var fgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + windowFgColor));
+                ApplyConfigSectionThemes(bgBrush, fgBrush);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"刷新设置页主题失败: {ex.Message}");
+            }
+        }
+
+        private void ApplyConfigSectionThemes(SolidColorBrush bgBrush, SolidColorBrush fgBrush)
+        {
+            if (ContentPanel == null)
+                return;
+
+            var highlight = ThemeColorHelper.GetReadableHighlightBrush(bgBrush);
+            var secondary = ThemeColorHelper.GetSecondaryTextBrush(bgBrush);
+
+            foreach (var child in ContentPanel.Children)
+            {
+                ThemeContentPanelChild(child, bgBrush, fgBrush, highlight, secondary);
+            }
+        }
+
+        private void ThemeContentPanelChild(
+            object child,
+            SolidColorBrush bg,
+            SolidColorBrush fg,
+            SolidColorBrush highlight,
+            SolidColorBrush secondary)
+        {
+            if (child is TextBlock tb)
+            {
+                string tag = tb.Tag as string;
+                if (tag == TagSectionTitle)
+                    tb.Foreground = highlight;
+                else if (tag == TagDragHandle)
+                    tb.Foreground = secondary;
+                else if (tag == TagItemLabel)
+                    tb.Foreground = fg;
+            }
+            else if (child is ListBox lb && (lb.Tag as string) == TagThemedList)
+            {
+                ThemeColorHelper.ApplyConfigListTheme(lb, bg, fg);
+                foreach (var item in lb.Items)
+                {
+                    if (item is ListBoxItem lbi)
+                        ThemeListBoxItem(lbi, bg, fg, secondary);
+                }
+            }
+            else if (child is StackPanel sp)
+            {
+                foreach (var inner in sp.Children)
+                    ThemeContentPanelChild(inner, bg, fg, highlight, secondary);
+            }
+        }
+
+        private void ThemeListBoxItem(
+            ListBoxItem lbi,
+            SolidColorBrush bg,
+            SolidColorBrush fg,
+            SolidColorBrush secondary)
+        {
+            if (lbi.Content is StackPanel sp)
+            {
+                foreach (var inner in sp.Children)
+                {
+                    if (inner is TextBlock tb)
+                    {
+                        string tag = tb.Tag as string;
+                        if (tag == TagDragHandle)
+                            tb.Foreground = secondary;
+                        else if (tag == TagItemLabel)
+                            tb.Foreground = fg;
+                    }
+                    else if (inner is CheckBox cb && (cb.Tag as string) == TagThemedCheckBox)
+                    {
+                        cb.Foreground = fg;
+                    }
+                }
             }
         }
 
@@ -4582,12 +4699,15 @@ namespace TypeSunny
         {
             try
             {
+                string windowBgColor = Config.GetString("窗体背景色");
+                var bgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + windowBgColor));
+                var highlight = ThemeColorHelper.GetReadableHighlightBrush(bgBrush);
                 foreach (var child in ContentPanel.Children)
                 {
                     if (child is TextBlock tb && tb.FontWeight == FontWeights.Bold && tb.FontSize == 20)
                     {
                         // 这是分类标题
-                        tb.Foreground = new SolidColorBrush(Color.FromRgb(100, 200, 255));
+                        tb.Foreground = highlight;
                     }
                 }
             }

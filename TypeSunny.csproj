@@ -124,6 +124,7 @@
     <Compile Include="Config\Config.cs" />
     <Compile Include="Utils\Colors.cs" />
     <Compile Include="Utils\ThemeColorHelper.cs" />
+    <Compile Include="Utils\ThemeColorHelper.Controls.cs" />
     <Compile Include="Utils\CodeDisplayHelper.cs" />
     <Compile Include="Config\ThemeManager.cs" />
     <Compile Include="Config\TxtConfig.cs" />
@@ -177,6 +178,7 @@
     <Compile Include="Diff\Snake.cs" />
     <Compile Include="Diff\SplitedDiffRes.cs" />
     <Compile Include="Core\StateManager.cs" />
+    <Compile Include="Core\SpeedFollowHintFormatter.cs" />
     <Compile Include="Utils\CiTiHelper.cs" />
     <Compile Include="Utils\ZiTiHelper.cs" />
     <Compile Include="Utils\ShuangToolLauncher.cs" />

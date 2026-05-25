@@ -3,11 +3,18 @@ using System.Windows.Media;
 
 namespace TypeSunny.Utils
 {
-    internal static class ThemeColorHelper
+    internal static partial class ThemeColorHelper
     {
         private const int SubtleBorderDelta = 40;
         private const double DarkBrightnessThreshold = 0.5;
         private const double MinimumReadableContrastRatio = 4.5;
+
+        private const int MenuSeparatorLightenDelta = 50;
+        private const int MenuSeparatorDarkenDelta = 40;
+        private const int MenuItemHoverBorderLightenDelta = 80;
+        private const int MenuItemHoverBorderDarkenDelta = 50;
+        private const int DragHandleLightenTarget = 170;
+        private const int DragHandleDarkenTarget = 100;
 
         public static Color GetSubtleBorderColor(Color backgroundColor)
         {
@@ -117,6 +124,40 @@ namespace TypeSunny.Utils
         private static byte ClampToByte(int value)
         {
             return (byte)Math.Max(0, Math.Min(255, value));
+        }
+
+        public static Color GetMenuSeparatorColor(Color menuBackground)
+        {
+            int delta = IsDark(menuBackground) ? MenuSeparatorLightenDelta : -MenuSeparatorDarkenDelta;
+            return Color.FromArgb(
+                menuBackground.A,
+                ClampToByte(menuBackground.R + delta),
+                ClampToByte(menuBackground.G + delta),
+                ClampToByte(menuBackground.B + delta));
+        }
+
+        public static Color GetMenuItemHoverBorderColor(Color menuBackground)
+        {
+            int delta = IsDark(menuBackground) ? MenuItemHoverBorderLightenDelta : -MenuItemHoverBorderDarkenDelta;
+            return Color.FromArgb(
+                menuBackground.A,
+                ClampToByte(menuBackground.R + delta),
+                ClampToByte(menuBackground.G + delta),
+                ClampToByte(menuBackground.B + delta));
+        }
+
+        public static Color GetSecondaryTextColor(Color background)
+        {
+            byte channel = IsDark(background) ? (byte)DragHandleLightenTarget : (byte)DragHandleDarkenTarget;
+            return Color.FromArgb(255, channel, channel, channel);
+        }
+
+        public static Color GetReadableHighlightColor(Color background)
+        {
+            Color baseHighlight = IsDark(background)
+                ? Color.FromRgb(140, 200, 255)
+                : Color.FromRgb(60, 120, 180);
+            return GetReadableForegroundColor(baseHighlight, background);
         }
     }
 }
