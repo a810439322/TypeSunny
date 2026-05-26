@@ -112,7 +112,7 @@ namespace Net
             {
                 Title = "极速登录",
                 Width = 350,
-                Height = 200,
+                Height = 230,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = owner,
                 ResizeMode = ResizeMode.NoResize
@@ -240,7 +240,7 @@ namespace Net
             grid.Children.Add(btnPanel);
 
             loginDialog.Content = grid;
-            DialogTheming.ApplyToWindow(loginDialog);
+            DialogTheming.ApplyChromelessTheme(loginDialog);
             loginDialog.ShowDialog();
         }
 

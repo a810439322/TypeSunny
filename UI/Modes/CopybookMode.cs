@@ -437,6 +437,7 @@ namespace TypeSunny.UI.Modes
             // 全局字数计数（正常模式由 TbxInput_TextChanged 处理）
             var si = new StringInfo(inputText);
             CounterLog.Buffer[0] += si.LengthInTextElements;
+            _main.RecordDetailedTypedWords(si.LengthInTextElements);
 
             // 最后一个字打错后再次输入，退回到最后一个字重新比对
             if (_currentIndex >= TextInfo.Words.Count
@@ -450,6 +451,9 @@ namespace TypeSunny.UI.Modes
             {
                 string ch = si.SubstringByTextElements(i, 1);
                 string expected = TextInfo.Words[_currentIndex];
+
+                // 方向键回到旧位置重打时，先清掉残留的错字提示
+                RemoveWrongCharHint(_currentIndex - TextInfo.PageStartIndex);
 
                 bool isCorrect = (ch == expected) || _main.IsLookingType;
                 if (i == 0 && !string.IsNullOrEmpty(committedComposition))
@@ -580,7 +584,12 @@ namespace TypeSunny.UI.Modes
                     HasActiveComposition());
             }
 
-            // 禁用回改模式：拦截退格、Esc、Ctrl+Z（赛文模式不受限制，IME编码中放行退格）
+            bool isNavKey = inputKey == Key.Left || inputKey == Key.Right
+                            || inputKey == Key.Up || inputKey == Key.Down
+                            || inputKey == Key.Home || inputKey == Key.End;
+
+            // 禁用回改模式：拦截退格、Esc、Ctrl+Z、方向/Home/End 导航键
+            // （赛文模式不受限制，IME编码中放行退格）
             if (Config.GetBool("禁用回改")
                 && StateManager.txtSource != TxtSource.raceApi
                 && StateManager.txtSource != TxtSource.jbs
@@ -595,11 +604,21 @@ namespace TypeSunny.UI.Modes
                     }
                 }
                 else if (inputKey == Key.Escape ||
-                    (inputKey == Key.Z && Keyboard.Modifiers == ModifierKeys.Control))
+                    (inputKey == Key.Z && Keyboard.Modifiers == ModifierKeys.Control) ||
+                    isNavKey)
                 {
                     e.Handled = true;
                     return;
                 }
+            }
+
+            // 导航键：移动当前比对位置，不修改 wordStates。
+            // IME 编码中放行，让候选框消费方向键。
+            if (isNavKey && !HasActiveComposition())
+            {
+                HandleNavigationKey(inputKey, Keyboard.Modifiers);
+                e.Handled = true;
+                return;
             }
 
             // 按键统计（击键、键法、选重、标顶、退格等）
@@ -655,6 +674,223 @@ namespace TypeSunny.UI.Modes
             Key inputKey = e.Key == Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
             if (inputKey == Key.Back)
                 _imeBackspacePolicy.NotifyPhysicalBackspaceReleased();
+        }
+
+        private void HandleNavigationKey(Key key, ModifierKeys mods)
+        {
+            int total = TextInfo.Words.Count;
+            if (total == 0) return;
+
+            bool ctrl = (mods & ModifierKeys.Control) == ModifierKeys.Control;
+            int maxIdx = total - 1;
+            int target = _currentIndex;
+
+            switch (key)
+            {
+                case Key.Left:
+                    target = ctrl ? FindPrevWordIndex(_currentIndex) : _currentIndex - 1;
+                    break;
+                case Key.Right:
+                    target = ctrl ? FindNextWordIndex(_currentIndex) : _currentIndex + 1;
+                    break;
+                case Key.Up:
+                {
+                    int adj = FindAdjacentLineIndex(_currentIndex, upward: true);
+                    if (adj >= 0) target = adj;
+                    break;
+                }
+                case Key.Down:
+                {
+                    int adj = FindAdjacentLineIndex(_currentIndex, upward: false);
+                    if (adj >= 0) target = adj;
+                    break;
+                }
+                case Key.Home:
+                {
+                    if (ctrl) target = 0;
+                    else
+                    {
+                        int lineStart = FindLineEdgeIndex(_currentIndex, toStart: true);
+                        if (lineStart >= 0) target = lineStart;
+                    }
+                    break;
+                }
+                case Key.End:
+                {
+                    if (ctrl) target = maxIdx;
+                    else
+                    {
+                        int lineEnd = FindLineEdgeIndex(_currentIndex, toStart: false);
+                        if (lineEnd >= 0) target = lineEnd;
+                    }
+                    break;
+                }
+            }
+
+            if (target < 0) target = 0;
+            if (target > maxIdx) target = maxIdx;
+            if (target == _currentIndex) return;
+
+            _currentIndex = target;
+            Score.InputWordCount = _currentIndex;
+
+            _main.ClearCodeLabelProgress(_currentIndex);
+            UpdatePosition();
+            if (Config.GetBool("贪吃蛇模式") || StateManager.txtSource == TxtSource.raceApi)
+                _main.SnakeModeUpdateFromCopybook(_currentIndex);
+            else
+                ScrollToCurrentChar();
+            _main.UpdateZiTi();
+            _main.UpdateTitleProgress(_currentIndex);
+        }
+
+        private int FindPrevWordIndex(int curGlobal)
+        {
+            if (curGlobal <= 0) return 0;
+
+            // 优先按词提分段跳：先回到当前段起点，已在起点则跳到上一段起点
+            if (TextInfo.CiTiSegmentIndices != null
+                && curGlobal < TextInfo.CiTiSegmentIndices.Count
+                && TextInfo.CiTiSegmentIndices.Count > 0)
+            {
+                int curSeg = TextInfo.CiTiSegmentIndices[curGlobal];
+                if (curSeg >= 0)
+                {
+                    // 当前段起点
+                    int segStart = curGlobal;
+                    while (segStart > 0 && TextInfo.CiTiSegmentIndices[segStart - 1] == curSeg)
+                        segStart--;
+                    if (segStart < curGlobal) return segStart;
+                    // 已在起点：跳上一段起点
+                    int prev = segStart - 1;
+                    if (prev < 0) return 0;
+                    int prevSeg = TextInfo.CiTiSegmentIndices[prev];
+                    while (prev > 0 && TextInfo.CiTiSegmentIndices[prev - 1] == prevSeg)
+                        prev--;
+                    return prev;
+                }
+            }
+
+            // 无词提：按标点边界跳
+            int idx = curGlobal - 1;
+            while (idx > 0 && !IsPunctuation(TextInfo.Words[idx - 1]))
+                idx--;
+            return idx;
+        }
+
+        private int FindNextWordIndex(int curGlobal)
+        {
+            int maxIdx = TextInfo.Words.Count - 1;
+            if (curGlobal >= maxIdx) return maxIdx;
+
+            if (TextInfo.CiTiSegmentIndices != null
+                && curGlobal < TextInfo.CiTiSegmentIndices.Count
+                && TextInfo.CiTiSegmentIndices.Count > 0)
+            {
+                int curSeg = TextInfo.CiTiSegmentIndices[curGlobal];
+                int idx = curGlobal + 1;
+                while (idx < TextInfo.CiTiSegmentIndices.Count
+                       && TextInfo.CiTiSegmentIndices[idx] == curSeg)
+                    idx++;
+                return Math.Min(idx, maxIdx);
+            }
+
+            int p = curGlobal + 1;
+            while (p < maxIdx && !IsPunctuation(TextInfo.Words[p - 1]))
+                p++;
+            return p;
+        }
+
+        private static bool IsPunctuation(string ch)
+        {
+            if (string.IsNullOrEmpty(ch)) return false;
+            return "，。！？、；：,.!?;: ".IndexOf(ch[0]) >= 0
+                || "　".IndexOf(ch[0]) >= 0;
+        }
+
+        // 在当前页 Blocks 中找到与当前字 Y 不同的相邻行，
+        // 然后在该行里取 X 距离最近的字，返回全局索引。无可移动行返回 -1。
+        private int FindAdjacentLineIndex(int curGlobal, bool upward)
+        {
+            int localCur = curGlobal - TextInfo.PageStartIndex;
+            if (localCur < 0 || localCur >= TextInfo.Blocks.Count) return -1;
+
+            try
+            {
+                var grid = (Grid)_main.BdDisplay.Child;
+                var curBlock = TextInfo.Blocks[localCur];
+                var curPos = curBlock.TranslatePoint(new Point(0, 0), grid);
+                double fs = MainWindow.DisplayFontSize;
+                double yTolerance = fs * 0.4;
+
+                double targetY = double.NaN;
+                for (int i = 0; i < TextInfo.Blocks.Count; i++)
+                {
+                    if (i == localCur) continue;
+                    var pos = TextInfo.Blocks[i].TranslatePoint(new Point(0, 0), grid);
+                    if (upward)
+                    {
+                        if (pos.Y < curPos.Y - yTolerance
+                            && (double.IsNaN(targetY) || pos.Y > targetY))
+                            targetY = pos.Y;
+                    }
+                    else
+                    {
+                        if (pos.Y > curPos.Y + yTolerance
+                            && (double.IsNaN(targetY) || pos.Y < targetY))
+                            targetY = pos.Y;
+                    }
+                }
+                if (double.IsNaN(targetY)) return -1;
+
+                int bestLocal = -1;
+                double bestDist = double.MaxValue;
+                for (int i = 0; i < TextInfo.Blocks.Count; i++)
+                {
+                    var pos = TextInfo.Blocks[i].TranslatePoint(new Point(0, 0), grid);
+                    if (Math.Abs(pos.Y - targetY) > yTolerance) continue;
+                    double dist = Math.Abs(pos.X - curPos.X);
+                    if (dist < bestDist)
+                    {
+                        bestDist = dist;
+                        bestLocal = i;
+                    }
+                }
+
+                return bestLocal >= 0 ? bestLocal + TextInfo.PageStartIndex : -1;
+            }
+            catch { return -1; }
+        }
+
+        // 在当前视觉行内找到最左或最右的字，返回全局索引
+        private int FindLineEdgeIndex(int curGlobal, bool toStart)
+        {
+            int localCur = curGlobal - TextInfo.PageStartIndex;
+            if (localCur < 0 || localCur >= TextInfo.Blocks.Count) return -1;
+
+            try
+            {
+                var grid = (Grid)_main.BdDisplay.Child;
+                var curBlock = TextInfo.Blocks[localCur];
+                var curPos = curBlock.TranslatePoint(new Point(0, 0), grid);
+                double fs = MainWindow.DisplayFontSize;
+                double yTolerance = fs * 0.4;
+
+                int bestLocal = localCur;
+                double bestX = curPos.X;
+                for (int i = 0; i < TextInfo.Blocks.Count; i++)
+                {
+                    var pos = TextInfo.Blocks[i].TranslatePoint(new Point(0, 0), grid);
+                    if (Math.Abs(pos.Y - curPos.Y) > yTolerance) continue;
+                    if (toStart ? pos.X < bestX : pos.X > bestX)
+                    {
+                        bestX = pos.X;
+                        bestLocal = i;
+                    }
+                }
+                return bestLocal + TextInfo.PageStartIndex;
+            }
+            catch { return -1; }
         }
 
         private bool HasActiveComposition()

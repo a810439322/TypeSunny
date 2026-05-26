@@ -47,7 +47,26 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|Any CPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE;EPUB_SUPPORT</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>x86</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE;EPUB_SUPPORT</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|Any CPU' ">
     <PlatformTarget>x86</PlatformTarget>
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
@@ -70,12 +89,33 @@
       <HintPath>packages\Interop.UIAutomationClient.10.19041.0\lib\net45\Interop.UIAutomationClient.dll</HintPath>
       <EmbedInteropTypes>False</EmbedInteropTypes>
     </Reference>
+    <Reference Include="Microsoft.Bcl.AsyncInterfaces">
+      <HintPath>packages\Microsoft.Bcl.AsyncInterfaces.8.0.0\lib\net462\Microsoft.Bcl.AsyncInterfaces.dll</HintPath>
+    </Reference>
     <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>packages\Newtonsoft.Json.13.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="System.Data.SQLite">
       <HintPath>lib\SQLite\System.Data.SQLite.dll</HintPath>
       <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Buffers">
+      <HintPath>packages\System.Buffers.4.5.1\lib\net461\System.Buffers.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>packages\System.Memory.4.5.5\lib\net461\System.Memory.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>packages\System.Runtime.CompilerServices.Unsafe.6.0.0\lib\net461\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Text.Encodings.Web">
+      <HintPath>packages\System.Text.Encodings.Web.8.0.0\lib\net462\System.Text.Encodings.Web.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Text.Json">
+      <HintPath>packages\System.Text.Json.8.0.5\lib\net462\System.Text.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Threading.Tasks.Extensions">
+      <HintPath>packages\System.Threading.Tasks.Extensions.4.5.4\lib\net461\System.Threading.Tasks.Extensions.dll</HintPath>
     </Reference>
     <Reference Include="VersOne.Epub, Version=3.3.3.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>packages\VersOne.Epub.3.3.3\lib\net46\VersOne.Epub.dll</HintPath>
@@ -120,6 +160,7 @@
     <Compile Include="Logs\ArticleLog.cs" />
     <Compile Include="Logs\WenlaiLog.cs" />
     <Compile Include="Logs\CounterLog.cs" />
+    <Compile Include="Logs\DetailedWordCountLog.cs" />
     <Compile Include="Logs\DebugLog.cs" />
     <Compile Include="Config\Config.cs" />
     <Compile Include="Utils\Colors.cs" />
@@ -179,6 +220,7 @@
     <Compile Include="Diff\SplitedDiffRes.cs" />
     <Compile Include="Core\StateManager.cs" />
     <Compile Include="Core\SpeedFollowHintFormatter.cs" />
+    <Compile Include="Logs\DetailedWordCountContextBuilder.cs" />
     <Compile Include="Utils\CiTiHelper.cs" />
     <Compile Include="Utils\ZiTiHelper.cs" />
     <Compile Include="Utils\ShuangToolLauncher.cs" />
@@ -194,6 +236,9 @@
     </Compile>
     <Compile Include="UI\WinStatistics.xaml.cs">
       <DependentUpon>WinStatistics.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="UI\WinDetailedWordCountStatistics.xaml.cs">
+      <DependentUpon>WinDetailedWordCountStatistics.xaml</DependentUpon>
     </Compile>
     <Compile Include="UI\UpdateDialog.xaml.cs">
       <DependentUpon>UpdateDialog.xaml</DependentUpon>
@@ -229,6 +274,8 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="UI\HomeToolbarSettings.cs" />
+    <Compile Include="UI\ScoreLabelDisplayFormatter.cs" />
+    <Compile Include="UI\ScorePanelLayoutPolicy.cs" />
     <Compile Include="UI\StopInputWordCountPolicy.cs" />
     <Compile Include="UI\Modes\ArticleContinuationState.cs" />
     <Compile Include="UI\Modes\CompositionCodeFeedback.cs" />
@@ -248,6 +295,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="UI\WinStatistics.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="UI\WinDetailedWordCountStatistics.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

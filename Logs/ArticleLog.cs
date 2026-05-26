@@ -175,6 +175,7 @@ namespace TypeSunny.Logs
             public int Choose { get; set; }                 // 选重
             public int BiaoDing { get; set; }               // 标顶
             public string DifficultyName { get; set; }      // 难度名称（从文来API接口获取）
+            public double TargetHit { get; set; }           // 目标击键（练单器：当轮换段击键阈值，老记录为 0）
         }
 
         /// <summary>

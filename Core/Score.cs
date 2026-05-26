@@ -554,12 +554,18 @@ static internal class Score
 
         public static string FormatRows(List<List<string>> rows)
         {
+            return FormatRows(rows, rows);
+        }
+
+        public static string FormatRows(List<List<string>> rows, List<List<string>> alignmentRows)
+        {
             if (rows.Count == 0) return "";
             int cols = 0;
             foreach (var row in rows)
                 if (row.Count > cols) cols = row.Count;
             int[] maxWidths = new int[cols];
-            foreach (var row in rows)
+            var rowsForAlignment = alignmentRows ?? rows;
+            foreach (var row in rowsForAlignment)
             {
                 if (ShouldIgnoreForScoreAlignment(row))
                     continue;

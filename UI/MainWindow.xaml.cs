@@ -69,6 +69,8 @@ namespace TypeSunny.UI
         internal TracingMode _tracingMode;
         private readonly PendingRetypeRequest _pendingRetypeRequest = new PendingRetypeRequest();
         private readonly ArticleContinuationState _articleContinuationState = new ArticleContinuationState();
+        private readonly DetailedWordCountContextBuilder _wordCountContextBuilder;
+        private TypingWordCountContext currentWordCountContext;
         private bool _stopTypingPending;
         private readonly Dictionary<string, FrameworkElement> _homeFeatureControls = new Dictionary<string, FrameworkElement>();
         private static readonly Thickness TopButtonGroupMargin = new Thickness(15, 7, 5, 5);
@@ -83,6 +85,7 @@ namespace TypeSunny.UI
         private SuperCompactLayoutSnapshot _superCompactLayoutSnapshot;
         private int _suppressWindowSizeChangeUpdatesDepth;
         private int _resultsLayoutVersion;
+        private DispatcherTimer _resultsRelayoutTimer;
         private DispatcherTimer _mouseCursorRevealTimer;
         private bool _isMouseCursorTemporarilyRevealed;
         private Point? _lastMouseCursorRevealPosition;
@@ -1913,6 +1916,14 @@ namespace TypeSunny.UI
                 new PersonalTypingProfileStore(),
                 text => difficultyDict.Calc(text),
                 text => difficultyDict.SegmentText(text));
+            _wordCountContextBuilder = new DetailedWordCountContextBuilder(
+                difficultyDict,
+                () => articleCache.HasArticle(),
+                () => articleCache.GetCurrentDifficultyName(),
+                () => winTrainer != null ? winTrainer.CurrentExerciseName : WinTrainer.Current?.CurrentExerciseName,
+                () => StateManager.CurrentRaceServerId,
+                () => StateManager.CurrentRaceId,
+                () => raceHelperV2?.GetServerManager());
             InitializeComponent();
 
             // 一键极简模式下：先透明，等 Window_Loaded 里布局套用完再恢复。
@@ -2272,6 +2283,7 @@ namespace TypeSunny.UI
             // 应用字体大小
             TbxInput.FontSize = Config.GetDouble("跟打区字体大小") > 0 ? Config.GetDouble("跟打区字体大小") : 40.0;
             TbxResults.FontSize = Config.GetDouble("成绩区字体大小") > 0 ? Config.GetDouble("成绩区字体大小") : 15.0;
+            RenderResultsDisplayOverlay();
 
             // 应用发文框和跟打框的比例
             ApplyDisplayInputRatio();
@@ -2510,6 +2522,7 @@ namespace TypeSunny.UI
             // 应用字体大小
             TbxInput.FontSize = Config.GetDouble("跟打区字体大小") > 0 ? Config.GetDouble("跟打区字体大小") : 40.0;
             TbxResults.FontSize = Config.GetDouble("成绩区字体大小") > 0 ? Config.GetDouble("成绩区字体大小") : 15.0;
+            RenderResultsDisplayOverlay();
 
             if (winTrainer != null)
             {
@@ -3619,6 +3632,8 @@ namespace TypeSunny.UI
                 // 调整成绩区字体
                 TbxResults.FontSize = newSize;
                 Config.Set("成绩区字体大小", newSize, 1);
+                RefreshTypingStatDisplay();
+                ScheduleResultsRelayout();
                 System.Diagnostics.Debug.WriteLine($"成绩区字体大小调整: {currentSize} -> {newSize}");
                 return;
             }
@@ -3657,6 +3672,11 @@ namespace TypeSunny.UI
             // 检查是否按下Ctrl键，如果没有按下则不处理，让默认行为继续
             if (Keyboard.Modifiers != ModifierKeys.Control)
             {
+                if (sender == TbxResults)
+                {
+                    SyncResultsDisplayScrollLater();
+                    ScheduleResultsRelayout();
+                }
                 e.Handled = false;
                 return;
             }
@@ -3718,7 +3738,11 @@ namespace TypeSunny.UI
                 if (targetControl == TbxInput)
                     Config.Set("跟打区字体大小", newSize, 1);
                 else if (targetControl == TbxResults)
+                {
                     Config.Set("成绩区字体大小", newSize, 1);
+                    RefreshTypingStatDisplay();
+                    ScheduleResultsRelayout();
+                }
 
                 System.Diagnostics.Debug.WriteLine($"字体大小调整: {currentSize} -> {newSize}");
             }
@@ -3750,6 +3774,7 @@ namespace TypeSunny.UI
                 }
                 // UpdateDisplay(UpdateLevel.PageArrange);
                 DelayUpdateDisplay(500, UpdateLevel.PageArrange);
+                RefreshTypingStatDisplay();
             }
         }
 
@@ -3866,12 +3891,44 @@ namespace TypeSunny.UI
 
         public void UpdateTypingStat(List<string> newReportItems = null)
         {
+            UpdateTypingStatCore(newReportItems, true);
+        }
 
-            CounterLog.Add("字数", CounterLog.Buffer[0]);
-            CounterLog.Buffer[0] = 0;
-            CounterLog.Add("击键数", CounterLog.Buffer[1]);
-            CounterLog.Buffer[1] = 0;
-            CounterLog.Write();
+        private void RefreshTypingStatDisplay()
+        {
+            UpdateTypingStatCore(null, false);
+        }
+
+        private void ScheduleResultsRelayout()
+        {
+            if (_resultsRelayoutTimer == null)
+            {
+                _resultsRelayoutTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromSeconds(3)
+                };
+                _resultsRelayoutTimer.Tick += (s, e) =>
+                {
+                    _resultsRelayoutTimer.Stop();
+                    RefreshTypingStatDisplay();
+                };
+            }
+
+            _resultsRelayoutTimer.Stop();
+            _resultsRelayoutTimer.Start();
+        }
+
+        private void UpdateTypingStatCore(List<string> newReportItems, bool commitCounterBuffer)
+        {
+
+            if (commitCounterBuffer)
+            {
+                CounterLog.Add("字数", CounterLog.Buffer[0]);
+                CounterLog.Buffer[0] = 0;
+                CounterLog.Add("击键数", CounterLog.Buffer[1]);
+                CounterLog.Buffer[1] = 0;
+                CounterLog.Write();
+            }
 
             StringBuilder sb = new StringBuilder();
 
@@ -3956,10 +4013,28 @@ namespace TypeSunny.UI
 
             if (ResultRows.Count > 0)
             {
+                int nonResultLineCount = CountResultHeaderLines(todayRecords.Count > 0);
+                int firstVisibleLineIndex = commitCounterBuffer ? 0 : GetFirstVisibleLineIndex();
+                int firstVisibleResultRowIndex = ScorePanelLayoutPolicy.CalculateFirstVisibleResultRowIndex(
+                    firstVisibleLineIndex,
+                    nonResultLineCount,
+                    ResultRows.Count);
+                int visibleNonResultLineCount = ScorePanelLayoutPolicy.CalculateVisibleNonResultLineCount(
+                    firstVisibleLineIndex,
+                    nonResultLineCount);
+                int rowsToRender = GetResultRowsToRender(
+                    visibleNonResultLineCount,
+                    ResultRows.Count - firstVisibleResultRowIndex);
+                var alignmentRows = ResultRows
+                    .Skip(firstVisibleResultRowIndex)
+                    .Take(rowsToRender)
+                    .Select(r => r.items)
+                    .ToList();
+                var displayRows = ResultRows.Take(ScorePanelLayoutPolicy.CalculateRowsToDisplay(ResultRows.Count)).ToList();
                 var itemRows = new List<List<string>>();
-                foreach (var r in ResultRows)
+                foreach (var r in displayRows)
                     itemRows.Add(r.items);
-                string formatted = Score.FormatRows(itemRows);
+                string formatted = Score.FormatRows(itemRows, alignmentRows);
 
                 string timeFormat = Config.GetString("成绩显示时间");
                 if (timeFormat == "是") timeFormat = "MM-dd HH:mm";
@@ -3967,10 +4042,10 @@ namespace TypeSunny.UI
                 {
                     var lines = formatted.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
                     var sbRows = new StringBuilder();
-                    for (int i = 0; i < lines.Length && i < ResultRows.Count; i++)
+                    for (int i = 0; i < lines.Length && i < displayRows.Count; i++)
                     {
                         if (i > 0) sbRows.AppendLine();
-                        var dt = DateTimeOffset.FromUnixTimeSeconds(ResultRows[i].timestamp).LocalDateTime;
+                        var dt = DateTimeOffset.FromUnixTimeSeconds(displayRows[i].timestamp).LocalDateTime;
                         sbRows.Append(dt.ToString(timeFormat));
                         sbRows.Append("  ");
                         sbRows.Append(lines[i]);
@@ -3983,11 +4058,97 @@ namespace TypeSunny.UI
                 }
 
                 int total = CounterLog.GetTotalResultCount();
-                if (total > ResultRows.Count)
-                    sb.AppendLine("\n" + LoadMoreTag + " (" + (total - ResultRows.Count) + " 条)");
+                int fileRowsToLoad = ScorePanelLayoutPolicy.CalculateLoadMoreRemainingCount(total, ResultRows.Count);
+                if (fileRowsToLoad > 0)
+                    sb.AppendLine("\n" + LoadMoreTag + " (" + fileRowsToLoad + " 条)");
             }
 
-            TbxResults.Text = sb.ToString();
+            SetResultsTextPreservingScroll(sb.ToString(), preserveScroll: !commitCounterBuffer);
+            RenderResultsDisplayOverlay();
+        }
+
+        private int CountResultHeaderLines(bool hasTodayStats)
+        {
+            return hasTodayStats ? 2 : 1;
+        }
+
+        private int GetResultRowsToRender(int nonResultLineCount)
+        {
+            return GetResultRowsToRender(nonResultLineCount, ResultRows.Count);
+        }
+
+        private int GetResultRowsToRender(int nonResultLineCount, int availableRowCount)
+        {
+            if (TbxResults == null)
+                return Math.Min(availableRowCount, ScorePanelLayoutPolicy.DefaultResultRowLimit);
+
+            int visibleLineCount = ScorePanelLayoutPolicy.CalculateVisibleTextLineCount(
+                TbxResults.ActualHeight - TbxResults.Padding.Top - TbxResults.Padding.Bottom,
+                TbxResults.FontSize);
+
+            return ScorePanelLayoutPolicy.CalculateRowsToRender(
+                availableRowCount,
+                visibleLineCount,
+                nonResultLineCount);
+        }
+
+        private int GetFirstVisibleLineIndex()
+        {
+            if (TbxResults != null)
+            {
+                try
+                {
+                    return TbxResults.GetFirstVisibleLineIndex();
+                }
+                catch (InvalidOperationException)
+                {
+                    return 0;
+                }
+            }
+
+            return 0;
+        }
+
+        private void SetResultsTextPreservingScroll(string text, bool preserveScroll)
+        {
+            if (!preserveScroll)
+            {
+                TbxResults.Text = text;
+                return;
+            }
+
+            var scrollViewer = GetScrollViewer(TbxResults);
+            var overlayScrollViewer = GetScrollViewer(TbxResultsDisplay);
+            double scrollOffset = scrollViewer?.VerticalOffset ?? 0;
+            TbxResults.Text = text;
+            scrollViewer?.ScrollToVerticalOffset(scrollOffset);
+            RenderResultsDisplayOverlay();
+            overlayScrollViewer?.ScrollToVerticalOffset(scrollOffset);
+
+            if (scrollViewer != null)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    scrollViewer.ScrollToVerticalOffset(scrollOffset);
+                    RenderResultsDisplayOverlay();
+                    overlayScrollViewer?.ScrollToVerticalOffset(scrollOffset);
+                }), DispatcherPriority.Loaded);
+            }
+        }
+
+        private void SyncResultsDisplayScrollLater()
+        {
+            Dispatcher.BeginInvoke(new Action(SyncResultsDisplayScroll), DispatcherPriority.Background);
+        }
+
+        private void SyncResultsDisplayScroll()
+        {
+            var scrollViewer = GetScrollViewer(TbxResults);
+            var overlayScrollViewer = GetScrollViewer(TbxResultsDisplay);
+            if (scrollViewer == null || overlayScrollViewer == null)
+                return;
+
+            overlayScrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset);
         }
 
 
@@ -4000,6 +4161,11 @@ namespace TypeSunny.UI
         public bool IsBlindType
         {
             get { return Config.GetBool("盲打模式") && StateManager.retypeType != RetypeType.wrongRetype; }
+        }
+
+        public void RecordDetailedTypedWords(int words)
+        {
+            DetailedWordCountLog.AddTypedWords(words, currentWordCountContext);
         }
 
         private bool IsManualRetypeJumpMode()
@@ -6438,6 +6604,9 @@ public async Task SendArticle()
 
             }
 
+            string loadedTextForWordCount = string.Join("", TextInfo.Words);
+            currentWordCountContext = _wordCountContextBuilder.Build(StateManager.txtSource, loadedTextForWordCount);
+
             TextInfo.wordStates.Clear();
             TextInfo.WrongRec.Clear();
             TextInfo.SlowRec.Clear();
@@ -6823,7 +6992,11 @@ public async Task SendArticle()
 
 
                 if (e.Changes.Count > 0)// && Recorder.State != Recorder.RecorderState.Playing)
-                    CounterLog.Buffer[0] += e.Changes.First().AddedLength;
+                {
+                    int addedLength = e.Changes.First().AddedLength;
+                    CounterLog.Buffer[0] += addedLength;
+                    RecordDetailedTypedWords(addedLength);
+                }
 
 
 
@@ -6888,6 +7061,7 @@ public async Task SendArticle()
 
             // 加载当日成绩记录
             CounterLog.LoadDailyResults();
+            DetailedWordCountLog.EnsureMigrated(CounterLog.GetSum("字数"), DateTime.Now);
             ResultRows.Clear();
             foreach (var r in CounterLog.GetDailyResultsWithTimestamp())
                 ResultRows.Add((r.timestamp, Score.ParseReportLine(r.content)));
@@ -7416,6 +7590,11 @@ public async Task SendArticle()
             BtnArticle_Click(null, null);
         }
 
+        private void InternalHotkeyCtrlD(object sender, ExecutedRoutedEventArgs e)
+        {
+            ShowWinTrainer();
+        }
+
         private void InternalHotkeyCtrlL(object sender, ExecutedRoutedEventArgs e)
         {
 
@@ -7621,6 +7800,7 @@ public async Task SendArticle()
             CounterLog.Add("击键数", CounterLog.Buffer[1]);
             CounterLog.Buffer[1] = 0;
             CounterLog.Write();
+            DetailedWordCountLog.Flush();
 
             // 保存当日成绩记录
             CounterLog.SaveDailyResults();
@@ -8780,6 +8960,20 @@ public async Task SendArticle()
             {
                 System.Diagnostics.Debug.WriteLine($"打开成绩统计窗口失败: {ex.Message}\n堆栈: {ex.StackTrace}");
                 MessageBox.Show($"打开成绩统计窗口失败: {ex.Message}\n\n堆栈: {ex.StackTrace}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void MenuItemDetailedWordCountStatistics_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var window = new WinDetailedWordCountStatistics(this);
+                window.Show();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"打开详细字数统计窗口失败: {ex.Message}\n堆栈: {ex.StackTrace}");
+                MessageBox.Show("打开详细字数统计失败，请全量更新后重试。\n\n" + ex.Message, "详细字数统计", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -10273,7 +10467,36 @@ public async Task SendArticle()
                 CopyLineAtCharIndex(caretIdx);
             };
             menu.Items.Add(copyItem);
+            menu.Items.Add(new Separator());
+            var detailedWordCountItem = new System.Windows.Controls.MenuItem { Header = "详细字数统计" };
+            detailedWordCountItem.Click += MenuItemDetailedWordCountStatistics_Click;
+            menu.Items.Add(detailedWordCountItem);
+            menu.Opened += ResultsContextMenu_Opened;
+            ApplyResultsContextMenuTheme(menu);
             TbxResults.ContextMenu = menu;
+        }
+
+        private void ResultsContextMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            ApplyResultsContextMenuTheme(sender as System.Windows.Controls.ContextMenu);
+        }
+
+        private void ApplyResultsContextMenuTheme(System.Windows.Controls.ContextMenu menu)
+        {
+            if (menu == null)
+                return;
+
+            try
+            {
+                ThemeColorHelper.ApplyContextMenuTheme(
+                    menu,
+                    Colors.FromString(Config.GetString("菜单背景色")),
+                    Colors.FromString(Config.GetString("菜单字体色")));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"应用成绩栏右键菜单主题失败: {ex.Message}");
+            }
         }
 
         private static System.Windows.Controls.ScrollViewer GetScrollViewer(System.Windows.DependencyObject o)
@@ -10290,6 +10513,8 @@ public async Task SendArticle()
         private System.Windows.Threading.DispatcherTimer _longPressTimer;
         private int _longPressCharIndex = -1;
         private System.Windows.Point _mouseDownPos;
+        private int _resultHoverLineIndex = -1;
+        private bool _isResultsMouseOver;
         private const string LoadMoreTag = "▼ 点击加载更多";
 
         private void TbxResults_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -10326,6 +10551,8 @@ public async Task SendArticle()
 
         private void TbxResults_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
         {
+            ShowResultHoverHintAtPoint(e.GetPosition(TbxResults));
+
             if (_longPressTimer != null && e.LeftButton == System.Windows.Input.MouseButtonState.Pressed)
             {
                 var pos = e.GetPosition(TbxResults);
@@ -10334,6 +10561,119 @@ public async Task SendArticle()
                 if (dx * dx + dy * dy > 25)
                     _longPressTimer.Stop();
             }
+        }
+
+        private void TbxResults_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            _isResultsMouseOver = true;
+            RenderResultsDisplayOverlay();
+        }
+
+        private void TbxResults_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (_longPressTimer != null)
+                _longPressTimer.Stop();
+
+            var point = e.GetPosition(TbxResults);
+            int lineIndex = GetResultLineIndexAtPoint(point);
+            if (lineIndex < 0)
+                return;
+
+            int charIndex = TbxResults.GetCharacterIndexFromLineIndex(lineIndex);
+            if (charIndex < 0 || charIndex >= TbxResults.Text.Length)
+                return;
+
+            CopyLineAtCharIndex(charIndex);
+        }
+
+        private void TbxResults_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            _isResultsMouseOver = false;
+            HideResultHoverHint();
+            RenderResultsDisplayOverlay();
+        }
+
+        private void TbxResults_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            RenderResultsDisplayOverlay();
+        }
+
+        private void TbxResults_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            RenderResultsDisplayOverlay();
+        }
+
+        private void TbxResults_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            RenderResultsDisplayOverlay();
+        }
+
+        private void TbxResultsDisplay_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            DisableResultsDisplayWrapping();
+        }
+
+        private bool ShouldShowResultLabels()
+        {
+            if (!Config.GetBool("失焦后自动隐藏成绩区文字"))
+                return true;
+
+            return _isResultsMouseOver || TbxResults.IsKeyboardFocusWithin;
+        }
+
+        private void RenderResultsDisplayOverlay()
+        {
+            if (TbxResultsDisplay == null || TbxResults == null)
+                return;
+
+            bool showLabels = ShouldShowResultLabels();
+            var document = new FlowDocument
+            {
+                PagePadding = new Thickness(0),
+                FontFamily = TbxResults.FontFamily,
+                FontSize = TbxResults.FontSize,
+                LineHeight = TbxResults.FontSize * 1.35
+            };
+
+            var paragraph = new Paragraph
+            {
+                Margin = new Thickness(0),
+                LineHeight = TbxResults.FontSize * 1.35
+            };
+
+            Brush visibleBrush = Foreground ?? Brushes.Black;
+            Brush hiddenBrush = Brushes.Transparent;
+            string text = TbxResults.Text ?? "";
+            string[] lines = text.Replace("\r\n", "\n").Split('\n');
+
+            for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+            {
+                if (lineIndex > 0)
+                    paragraph.Inlines.Add(new LineBreak());
+
+                foreach (var segment in ScoreLabelDisplayFormatter.SplitLine(lines[lineIndex]))
+                {
+                    var run = new Run(segment.Text)
+                    {
+                        Foreground = segment.IsLabel && !showLabels ? hiddenBrush : visibleBrush
+                    };
+                    paragraph.Inlines.Add(run);
+                }
+            }
+
+            document.Blocks.Add(paragraph);
+            TbxResultsDisplay.Document = document;
+            DisableResultsDisplayWrapping();
+            TbxResultsDisplay.Background = TbxResults.Background;
+            TbxResultsDisplay.Foreground = visibleBrush;
+        }
+
+        private void DisableResultsDisplayWrapping()
+        {
+            if (TbxResultsDisplay?.Document == null)
+                return;
+
+            TbxResultsDisplay.Document.PageWidth = 100000;
         }
 
         private void LoadMoreResults()
@@ -10356,6 +10696,8 @@ public async Task SendArticle()
             if (charIndex < 0 || charIndex >= TbxResults.Text.Length)
                 return;
 
+            HideResultHoverHint();
+
             int lineIndex = TbxResults.GetLineIndexFromCharacterIndex(charIndex);
             if (lineIndex < 0)
                 return;
@@ -10372,6 +10714,114 @@ public async Task SendArticle()
                 ShowCopyTip(lineIndex);
             }
             catch (Exception) { }
+        }
+
+        private void ShowResultHoverHintAtPoint(System.Windows.Point point)
+        {
+            if (ResultHoverCopyHint == null || TbxResults == null || string.IsNullOrEmpty(TbxResults.Text))
+                return;
+
+            int lineIndex = GetResultLineIndexAtPoint(point);
+            if (lineIndex < 0)
+            {
+                HideResultHoverHint();
+                return;
+            }
+
+            if (TbxResults.GetCharacterIndexFromLineIndex(lineIndex) < 0)
+            {
+                HideResultHoverHint();
+                return;
+            }
+
+            string lineText = TbxResults.GetLineText(lineIndex)?.TrimEnd('\r', '\n');
+            if (string.IsNullOrWhiteSpace(lineText) || lineText.StartsWith(LoadMoreTag))
+            {
+                HideResultHoverHint();
+                return;
+            }
+
+            if (_resultHoverLineIndex == lineIndex && ResultHoverCopyHint.Visibility == Visibility.Visible)
+                return;
+
+            _resultHoverLineIndex = lineIndex;
+            PositionResultHoverHint(lineIndex);
+            AnimateResultHoverHint(true);
+        }
+
+        private void PositionResultHoverHint(int lineIndex)
+        {
+            double y = 0;
+            int lineStart = TbxResults.GetCharacterIndexFromLineIndex(lineIndex);
+            if (lineStart >= 0)
+            {
+                Rect lineRect = TbxResults.GetRectFromCharacterIndex(lineStart);
+                if (!lineRect.IsEmpty)
+                    y = Math.Max(0, lineRect.Top - 1);
+            }
+
+            ResultHoverCopyHint.Height = Math.Max(22, TbxResults.FontSize + 9);
+            if (ResultHoverCopyHint.RenderTransform is TranslateTransform transform)
+                transform.Y = y;
+        }
+
+        private void HideResultHoverHint()
+        {
+            _resultHoverLineIndex = -1;
+            AnimateResultHoverHint(false);
+        }
+
+        private void AnimateResultHoverHint(bool show)
+        {
+            if (ResultHoverCopyHint == null)
+                return;
+
+            if (show)
+                ResultHoverCopyHint.Visibility = Visibility.Visible;
+
+            var animation = new DoubleAnimation(show ? 1 : 0, TimeSpan.FromMilliseconds(110))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+            if (!show)
+            {
+                animation.Completed += (s, e) =>
+                {
+                    if (_resultHoverLineIndex < 0)
+                        ResultHoverCopyHint.Visibility = Visibility.Collapsed;
+                };
+            }
+            ResultHoverCopyHint.BeginAnimation(UIElement.OpacityProperty, animation);
+        }
+
+        private int GetResultLineIndexAtPoint(System.Windows.Point point)
+        {
+            if (point.Y < 0 || point.Y > TbxResults.ActualHeight)
+                return -1;
+
+            int lineCount = TbxResults.LineCount;
+            for (int lineIndex = 0; lineIndex < lineCount; lineIndex++)
+            {
+                if (IsPointInsideResultLine(point, lineIndex))
+                    return lineIndex;
+            }
+
+            return -1;
+        }
+
+        private bool IsPointInsideResultLine(System.Windows.Point point, int lineIndex)
+        {
+            int lineStart = TbxResults.GetCharacterIndexFromLineIndex(lineIndex);
+            if (lineStart < 0)
+                return false;
+
+            Rect lineRect = TbxResults.GetRectFromCharacterIndex(lineStart);
+            if (lineRect.IsEmpty)
+                return false;
+
+            double top = Math.Max(0, lineRect.Top - 2);
+            double bottom = lineRect.Bottom + 2;
+            return point.Y >= top && point.Y <= bottom;
         }
 
         private string CleanScoreLine(string lineText)
@@ -10503,6 +10953,7 @@ public async Task SendArticle()
                 this.Dispatcher.BeginInvoke(new Action(() =>
                 {
                     SaveDisplayInputRatio();
+                    RefreshTypingStatDisplay();
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
         }
@@ -10770,6 +11221,8 @@ public async Task SendArticle()
                 this.Dispatcher.BeginInvoke(new Action(() =>
                 {
                     SaveDisplayInputRatio();
+                    RefreshTypingStatDisplay();
+                    ScheduleResultsRelayout();
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
         }
@@ -10845,6 +11298,8 @@ public async Task SendArticle()
                 this.Dispatcher.BeginInvoke(new Action(() =>
                 {
                     SaveDisplayInputRatio();
+                    RefreshTypingStatDisplay();
+                    ScheduleResultsRelayout();
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
         }

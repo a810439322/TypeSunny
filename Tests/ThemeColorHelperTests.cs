@@ -49,6 +49,8 @@ namespace TypeSunny.Tests
             Run("dark background lightens unreadable foreground", DarkBackgroundLightensUnreadableForeground);
             Run("readable foreground stays unchanged", ReadableForegroundStaysUnchanged);
             Run("light background darkens unreadable foreground", LightBackgroundDarkensUnreadableForeground);
+            Run("light menu hover background is subtle", LightMenuHoverBackgroundIsSubtle);
+            Run("dark menu hover background is subtle", DarkMenuHoverBackgroundIsSubtle);
 
             if (_failures == 0)
             {
@@ -115,6 +117,22 @@ namespace TypeSunny.Tests
             AssertContrastAtLeast(4.5, adjusted, Color.FromRgb(237, 237, 237));
         }
 
+        private static void LightMenuHoverBackgroundIsSubtle()
+        {
+            Color hover = ThemeColorHelper.GetMenuItemHoverBackgroundColor(Color.FromRgb(247, 247, 247));
+
+            AssertColorChannelDistanceAtMost(18, Color.FromRgb(247, 247, 247), hover);
+            AssertTrue(hover.R < 247, "Expected a light menu hover background to darken slightly.");
+        }
+
+        private static void DarkMenuHoverBackgroundIsSubtle()
+        {
+            Color hover = ThemeColorHelper.GetMenuItemHoverBackgroundColor(Color.FromRgb(45, 45, 45));
+
+            AssertColorChannelDistanceAtMost(18, Color.FromRgb(45, 45, 45), hover);
+            AssertTrue(hover.R > 45, "Expected a dark menu hover background to lighten slightly.");
+        }
+
         private static void Run(string name, Action test)
         {
             try
@@ -152,6 +170,24 @@ namespace TypeSunny.Tests
             double ratio = GetContrastRatio(foreground, background);
             if (ratio < minimum)
                 throw new Exception(string.Format("Expected contrast >= {0}, got {1:0.00}.", minimum, ratio));
+        }
+
+        private static void AssertColorChannelDistanceAtMost(byte maximum, Color expectedBase, Color actual)
+        {
+            int distance = Math.Max(
+                Math.Abs(actual.R - expectedBase.R),
+                Math.Max(Math.Abs(actual.G - expectedBase.G), Math.Abs(actual.B - expectedBase.B)));
+
+            if (distance > maximum)
+                throw new Exception(string.Format(
+                    "Expected hover background to stay within {0} channel steps of #{1:X2}{2:X2}{3:X2}, got #{4:X2}{5:X2}{6:X2}.",
+                    maximum,
+                    expectedBase.R,
+                    expectedBase.G,
+                    expectedBase.B,
+                    actual.R,
+                    actual.G,
+                    actual.B));
         }
 
         private static double GetContrastRatio(Color first, Color second)

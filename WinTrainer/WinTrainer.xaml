@@ -18,6 +18,7 @@
 
     <Window.Resources>
         <RoutedUICommand x:Key="Chongda" Text="Retype"/>
+        <RoutedUICommand x:Key="SendArticle" Text="SendArticle"/>
 
         <!-- 主题颜色资源 -->
         <SolidColorBrush x:Key="WindowBackground" Color="#FF2D2D2D"/>
@@ -180,6 +181,16 @@
         </Style>
     </Window.Resources>
 
+    <Window.InputBindings>
+        <KeyBinding Gesture="Ctrl+L" Command="{StaticResource Chongda}"/>
+        <KeyBinding Key="Return" Command="{StaticResource SendArticle}"/>
+    </Window.InputBindings>
+
+    <Window.CommandBindings>
+        <CommandBinding Command="{StaticResource Chongda}" Executed="InternalHotkeyCtrlL"/>
+        <CommandBinding Command="{StaticResource SendArticle}" Executed="InternalHotkeyEnterSend"/>
+    </Window.CommandBindings>
+
     <Window.Effect>
         <DropShadowEffect BlurRadius="20" ShadowDepth="2" Color="Black" Opacity="0.3"/>
     </Window.Effect>
@@ -212,6 +223,7 @@
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
                             <Image x:Name="TitleBarIcon" Source="/Resources/ico/sunny.ico" Width="14" Height="14" Margin="0,0,6,0"/>
                             <TextBlock Text="晴练单" FontSize="11" Foreground="{DynamicResource TextForeground}"/>
+                            <TextBlock x:Name="TitleBarStats" FontSize="11" Foreground="{DynamicResource TextForeground}" Margin="12,0,0,0" Opacity="0.85"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
                             <Button x:Name="BtnMinimize" Content="━" Click="BtnMinimize_Click" Style="{StaticResource TitleBarButtonStyle}"/>

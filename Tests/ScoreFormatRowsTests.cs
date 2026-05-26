@@ -12,6 +12,7 @@ namespace TypeSunny.Tests
             {
                 TrainerRoundSummaryDoesNotSetFirstColumnWidth();
                 TrainerRoundSummaryPrefixIsShared();
+                FormatsAllRowsButAlignsWithVisibleRowsOnly();
 
                 Console.WriteLine("All ScoreFormatRows tests passed.");
                 return 0;
@@ -49,6 +50,30 @@ namespace TypeSunny.Tests
             AssertTrue(
                 "trainer summary prefix",
                 Score.TrainerSummaryPrefix == "[晴练单]");
+        }
+
+        private static void FormatsAllRowsButAlignsWithVisibleRowsOnly()
+        {
+            var visibleRows = new List<List<string>>
+            {
+                Score.ParseReportLine("速度60.00  击键5.00  键准98.00%  字数100"),
+                Score.ParseReportLine("速度7.00  击键4.00  键准97.00%  字数50")
+            };
+            var allRows = new List<List<string>>(visibleRows)
+            {
+                Score.ParseReportLine("速度123456789.00  击键4.00  键准97.00%  字数50")
+            };
+
+            string formatted = Score.FormatRows(allRows, visibleRows);
+            string[] lines = formatted.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+
+            AssertTrue("all rows rendered", lines.Length == 3);
+            AssertTrue(
+                "visible row should not be padded to hidden long speed width",
+                lines[0].StartsWith("速度60.00  击键5.00", StringComparison.Ordinal));
+            AssertTrue(
+                "hidden row is still rendered",
+                lines[2].StartsWith("速度123456789.00  击键4.00", StringComparison.Ordinal));
         }
 
         private static void AssertTrue(string name, bool condition)

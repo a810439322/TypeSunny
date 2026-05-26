@@ -20,6 +20,7 @@
         <RoutedUICommand x:Key="CtrlP" Text="CtrlP"/>
         <RoutedUICommand x:Key="CtrlO" Text="CtrlO"/>
         <RoutedUICommand x:Key="CtrlB" Text="CtrlB"/>
+        <RoutedUICommand x:Key="CtrlD" Text="CtrlD"/>
 
         <!-- Button样式，确保Background和Foreground能够正常应用 -->
         <Style TargetType="Button">
@@ -136,6 +137,7 @@
         <KeyBinding Gesture="Ctrl+P"  Command="{StaticResource CtrlP}" />
         <KeyBinding Gesture="Ctrl+O"  Command="{StaticResource CtrlO}" />
         <KeyBinding Gesture="Ctrl+B"  Command="{StaticResource CtrlB}" />
+        <KeyBinding Gesture="Ctrl+D"  Command="{StaticResource CtrlD}" />
 
     </Window.InputBindings>
 
@@ -150,6 +152,7 @@
         <CommandBinding Command="{StaticResource CtrlP}" Executed="InternalHotkeyCtrlP"/>
         <CommandBinding Command="{StaticResource CtrlO}" Executed="InternalHotkeyCtrlO"/>
         <CommandBinding Command="{StaticResource CtrlB}" Executed="InternalHotkeyCtrlB"/>
+        <CommandBinding Command="{StaticResource CtrlD}" Executed="InternalHotkeyCtrlD"/>
     </Window.CommandBindings>
 
 
@@ -554,7 +557,7 @@
                     </Button.ContextMenu>
                 </Button>
 
-                <Button x:Name="BtnTrainer" DockPanel.Dock="Left" Content="晴练单" HorizontalAlignment="Left" Click="BtnTrainer_Click" VerticalAlignment="Center" Padding="6,3,6,3" Style="{StaticResource HomeFeatureButtonStyle}"/>
+                <Button x:Name="BtnTrainer" DockPanel.Dock="Left" Content="晴练单" ToolTip="Ctrl+D" HorizontalAlignment="Left" Click="BtnTrainer_Click" VerticalAlignment="Center" Padding="6,3,6,3" Style="{StaticResource HomeFeatureButtonStyle}"/>
 
                 <Button x:Name="BtnShuang" DockPanel.Dock="Left" Content="晴双拼" HorizontalAlignment="Left" Click="BtnShuang_Click" VerticalAlignment="Center" Margin="5,0,0,0" Padding="6,3,6,3" Style="{StaticResource HomeFeatureButtonStyle}"/>
 
@@ -714,13 +717,24 @@
 
         <!-- 成绩区（成绩显示） -->
         <Border Grid.Row="6" x:Name="resultsTextBoxGrid" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="15,5,15,10">
-            <TextBox Name="TbxResults" IsReadOnly="True" IsReadOnlyCaretVisible="True" Loaded="TbxResults_Loaded" Background="{Binding ElementName=MainWin,Path=Background}" Foreground="{Binding ElementName=MainWin,Path=Foreground}" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" FontSize="15" FontFamily="Consolas" PreviewMouseWheel="Control_PreviewMouseWheel" PreviewMouseLeftButtonDown="TbxResults_PreviewMouseLeftButtonDown" PreviewMouseLeftButtonUp="TbxResults_PreviewMouseLeftButtonUp" PreviewMouseMove="TbxResults_PreviewMouseMove">
-                <TextBox.Resources>
-                    <Style TargetType="{x:Type Border}">
-                        <Setter Property="CornerRadius" Value="4"/>
-                    </Style>
-                </TextBox.Resources>
-            </TextBox>
+            <Grid ClipToBounds="True">
+                <RichTextBox Name="TbxResultsDisplay" IsReadOnly="True" IsDocumentEnabled="False" IsHitTestVisible="False" BorderThickness="0" Background="{Binding ElementName=MainWin,Path=Background}" Foreground="{Binding ElementName=MainWin,Path=Foreground}" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" FontSize="{Binding ElementName=TbxResults,Path=FontSize}" FontFamily="{Binding ElementName=TbxResults,Path=FontFamily}" Padding="{Binding ElementName=TbxResults,Path=Padding}" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" Focusable="False" SizeChanged="TbxResultsDisplay_SizeChanged"/>
+                <TextBox Name="TbxResults" IsReadOnly="True" IsReadOnlyCaretVisible="True" Loaded="TbxResults_Loaded" Background="Transparent" Foreground="Transparent" CaretBrush="{Binding ElementName=MainWin,Path=Foreground}" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="NoWrap" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" FontSize="15" FontFamily="Consolas" PreviewMouseWheel="Control_PreviewMouseWheel" PreviewMouseLeftButtonDown="TbxResults_PreviewMouseLeftButtonDown" PreviewMouseLeftButtonUp="TbxResults_PreviewMouseLeftButtonUp" PreviewMouseMove="TbxResults_PreviewMouseMove" MouseDoubleClick="TbxResults_MouseDoubleClick" MouseLeave="TbxResults_MouseLeave" MouseEnter="TbxResults_MouseEnter" GotKeyboardFocus="TbxResults_GotKeyboardFocus" LostKeyboardFocus="TbxResults_LostKeyboardFocus" TextChanged="TbxResults_TextChanged">
+                    <TextBox.Resources>
+                        <Style TargetType="{x:Type Border}">
+                            <Setter Property="CornerRadius" Value="4"/>
+                        </Style>
+                    </TextBox.Resources>
+                </TextBox>
+                <Border x:Name="ResultHoverCopyHint" Height="24" HorizontalAlignment="Stretch" VerticalAlignment="Top" CornerRadius="4" Background="#2A4FA3FF" BorderBrush="#704FA3FF" BorderThickness="1" Visibility="Collapsed" Opacity="0" IsHitTestVisible="False">
+                    <Border.RenderTransform>
+                        <TranslateTransform/>
+                    </Border.RenderTransform>
+                    <Border HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,8,0" Padding="8,1" CornerRadius="3" Background="#D94FA3FF">
+                        <TextBlock Text="双击复制" FontSize="12" Foreground="White"/>
+                    </Border>
+                </Border>
+            </Grid>
         </Border>
 
         <!-- 底部边框 -->

@@ -737,6 +737,7 @@ namespace TypeSunny.UI.Modes
         {
             var si = new StringInfo(inputText);
             CounterLog.Buffer[0] += si.LengthInTextElements;
+            _main.RecordDetailedTypedWords(si.LengthInTextElements);
 
             // 最后一个字打错后再次输入，退回到最后一个字重新比对
             if (_currentIndex >= TextInfo.Words.Count

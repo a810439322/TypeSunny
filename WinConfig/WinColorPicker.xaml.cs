@@ -17,6 +17,21 @@ namespace TypeSunny
 
             this.EnableEscapeToClose();
 
+            // 适配公共主题：替换 Windows 默认标题栏为主题色 chrome
+            DialogTheming.ApplyChromelessTheme(this);
+
+            // 预览色框边框跟随主题（避免深色主题下硬编码 Gray 不协调）
+            try
+            {
+                string bgHex = Config.GetString("窗体背景色");
+                var bgColor = (Color)ColorConverter.ConvertFromString("#" + bgHex);
+                ColorPreview.BorderBrush = ThemeColorHelper.CreateSubtleBorderBrush(bgColor);
+            }
+            catch
+            {
+                // 主题色读取失败保留默认边框
+            }
+
             // 设置初始颜色
             SetColor(initialColor);
         }

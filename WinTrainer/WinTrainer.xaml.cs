@@ -136,6 +136,17 @@ namespace TypeSunny
 
 
         string TxtFile;
+        public string CurrentExerciseName
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(TxtFile))
+                    return TxtFile;
+                if (FileSelector != null && FileSelector.SelectedItem != null)
+                    return GetActualFileName(FileSelector.SelectedItem.ToString());
+                return "";
+            }
+        }
 
         // 显示名 → 实际文件名（不含.txt）的映射
         Dictionary<string, string> displayToFileName = new Dictionary<string, string>();
@@ -916,6 +927,26 @@ namespace TypeSunny
             MainWindow.Current.UpdateTopStatusText("乱序");
         }
 
+        private void InternalHotkeyCtrlL(object sender, ExecutedRoutedEventArgs e)
+        {
+            if (DisplayRoot == null || DisplayRoot.Count == 0)
+                return;
+
+            int section = Convert.ToInt32(cfg["上次的段数"]);
+            if (section >= DisplayRoot.Count || DisplayRoot[section].Count == 0)
+                return;
+
+            InGroupRand();
+            ShowWords();
+            e.Handled = true;
+        }
+
+        private void InternalHotkeyEnterSend(object sender, ExecutedRoutedEventArgs e)
+        {
+            BtnSend_Click(null, null);
+            e.Handled = true;
+        }
+
         private void DisplayHit()
         {
 
@@ -1573,10 +1604,12 @@ namespace TypeSunny
                 CiRatio = 0,  // 打单器不跟踪打词率
                 Choose = 0,  // 打单器不跟踪选重
                 BiaoDing = 0,  // 打单器不跟踪标顶
-                DifficultyName = ""  // 打单器没有难度名称
+                DifficultyName = "",  // 打单器没有难度名称
+                TargetHit = TargetHit  // 当轮换段击键阈值
             };
 
             TrainerLog.WriteRecord(record);
+            OnRecordWritten(record.TotalWords);
         }
         
         string GetMatchText()
@@ -2147,17 +2180,75 @@ namespace TypeSunny
             MainWindow.Current.SendContentToClipboardOrQQ(matchText, true, 150);
         }
 
+        private WinTrainerHistoryWindow _historyWindow;
+
         private void BtnHistory_Click(object sender, RoutedEventArgs e)
         {
+            // 已打开则激活，避免多开
+            if (_historyWindow != null && _historyWindow.IsLoaded)
+            {
+                if (_historyWindow.WindowState == WindowState.Minimized)
+                    _historyWindow.WindowState = WindowState.Normal;
+                _historyWindow.Activate();
+                return;
+            }
+
             string currentTitle = TxtFile;
             if (string.IsNullOrWhiteSpace(currentTitle) && FileSelector.SelectedItem != null)
                 currentTitle = GetActualFileName(FileSelector.SelectedItem.ToString());
 
-            var window = new WinTrainerHistoryWindow(currentTitle)
+            _historyWindow = new WinTrainerHistoryWindow(currentTitle)
             {
                 Owner = this
             };
-            window.ShowDialog();
+            _historyWindow.Closed += (_, _) => _historyWindow = null;
+            _historyWindow.Show();
+        }
+
+        // ===== 标题栏字数统计 =====
+        private int _displayedTodayWords;
+        private int _displayedTotalWords;
+        private string _displayedDate = "";
+
+        private void InitializeTitleStats()
+        {
+            try
+            {
+                _displayedDate = DateTime.Now.ToString("yyyy-MM-dd");
+                var todayStats = TrainerLog.ReadStatisticsInRange(DateTime.Today, DateTime.Today);
+                _displayedTodayWords = todayStats.Sum(s => s.TotalWords);
+                var allStats = TrainerLog.ReadStatistics();
+                _displayedTotalWords = allStats.Sum(s => s.TotalWords);
+                UpdateTitleBarStats();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[InitializeTitleStats] 失败: {ex.Message}");
+            }
+        }
+
+        private void OnRecordWritten(int totalWords)
+        {
+            // 跟 TrainerLog.MinWordCount 保持一致
+            if (totalWords < 5) return;
+
+            // 日期换天时整体重算（含其他可能的练单数据）
+            var today = DateTime.Now.ToString("yyyy-MM-dd");
+            if (today != _displayedDate)
+            {
+                InitializeTitleStats();
+                return;
+            }
+
+            _displayedTodayWords += totalWords;
+            _displayedTotalWords += totalWords;
+            UpdateTitleBarStats();
+        }
+
+        private void UpdateTitleBarStats()
+        {
+            if (TitleBarStats == null) return;
+            TitleBarStats.Text = $"今日练单 {_displayedTodayWords:N0} 字，累计 {_displayedTotalWords:N0} 字";
         }
 
         /// <summary>
@@ -2211,6 +2302,7 @@ namespace TypeSunny
             if (this.IsVisible && CfgInit)
             {
                 LoadArticleStatistics(TxtFile);
+                InitializeTitleStats();
             }
         }
 

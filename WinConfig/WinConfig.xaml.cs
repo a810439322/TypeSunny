@@ -241,6 +241,7 @@ namespace TypeSunny
                     Title = "成绩",
                     Items = new[]
                     {
+                        "失焦后自动隐藏成绩区文字",
                         "成绩显示时间",
                         "成绩签名"
                     }
@@ -2085,6 +2086,13 @@ namespace TypeSunny
                             articleWindow.RefreshTheme();
                         }), System.Windows.Threading.DispatcherPriority.Normal);
                     }
+                    else if (window is WinDetailedWordCountStatistics detailedWordCountWindow)
+                    {
+                        detailedWordCountWindow.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            detailedWordCountWindow.RefreshTheme();
+                        }), System.Windows.Threading.DispatcherPriority.Normal);
+                    }
                 }
 
                 System.Diagnostics.Debug.WriteLine($"[WinConfig] 找到 {statsCount} 个成绩统计窗口, {trainerCount} 个练单器窗口");
@@ -2253,7 +2261,7 @@ namespace TypeSunny
 
             cancelBtn.Click += (s, args) => window.Close();
 
-            DialogTheming.ApplyToWindow(window);
+            DialogTheming.ApplyChromelessTheme(window);
             window.ShowDialog();
         }
 

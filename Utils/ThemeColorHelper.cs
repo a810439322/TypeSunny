@@ -11,8 +11,8 @@ namespace TypeSunny.Utils
 
         private const int MenuSeparatorLightenDelta = 50;
         private const int MenuSeparatorDarkenDelta = 40;
-        private const int MenuItemHoverBorderLightenDelta = 80;
-        private const int MenuItemHoverBorderDarkenDelta = 50;
+        private const int MenuItemHoverLightenDelta = 12;
+        private const int MenuItemHoverDarkenDelta = 12;
         private const int DragHandleLightenTarget = 170;
         private const int DragHandleDarkenTarget = 100;
 
@@ -136,9 +136,9 @@ namespace TypeSunny.Utils
                 ClampToByte(menuBackground.B + delta));
         }
 
-        public static Color GetMenuItemHoverBorderColor(Color menuBackground)
+        public static Color GetMenuItemHoverBackgroundColor(Color menuBackground)
         {
-            int delta = IsDark(menuBackground) ? MenuItemHoverBorderLightenDelta : -MenuItemHoverBorderDarkenDelta;
+            int delta = IsDark(menuBackground) ? MenuItemHoverLightenDelta : -MenuItemHoverDarkenDelta;
             return Color.FromArgb(
                 menuBackground.A,
                 ClampToByte(menuBackground.R + delta),

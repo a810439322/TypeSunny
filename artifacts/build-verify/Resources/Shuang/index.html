@@ -1,0 +1,159 @@
+<!-- last changed: 2025.1.9 -->
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>双拼练习 @ BlueSky</title>
+  <meta http-equiv="X-UA-Compatible" content="ie=edge, chrome=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="src/style.css">
+  <meta name="keywords" content="双拼,双拼输入,双拼练习,双拼入门,双拼教程,自然码,小鹤双拼" />
+  <meta name="description" content="帮助你快速上手双拼输入法。" />
+</head>
+
+<body>
+  <div class="header">
+    <div class="menu">
+      <label for="scheme-select" class="title">双拼方案：</label>
+      <select id="scheme-select"></select>
+    </div>
+    <div class="menu">
+      <label for="mode-select" class="title">练习范围：</label>
+      <select id="mode-select"></select>
+    </div>
+    <div class="menu">
+      <label for="without-pinyin-switcher" class="title">无拼音：</label>
+      <input type="checkbox" id="without-pinyin-switcher">
+    </div>
+    <div class="menu">
+      <label for="pic-switcher" class="title">键位图：</label>
+      <input type="checkbox" id="pic-switcher">
+    </div>
+    <div class="menu">
+      <label for="show-keys" class="title">按键提示：</label>
+      <input type="checkbox" id="show-keys">
+    </div>
+    <div class="menu">
+      <label for="dark-mode-switcher" class="title">夜间模式：</label>
+      <input type="checkbox" id="dark-mode-switcher">
+    </div>
+    <div id="more-settings-switcher">展开更多</div>
+  </div>
+  <div class="score-panel" id="practice-stats">
+    <div class="score-group">
+      <div class="score-row">
+        <span class="title">练习进度</span>
+        <strong id="practice-progress">0/0 组</strong>
+      </div>
+      <div class="score-row">
+        <span class="title">完成率</span>
+        <strong id="practice-progress-percent">0%</strong>
+      </div>
+    </div>
+    <div class="score-group">
+      <div class="score-row">
+        <span class="title">分数</span>
+        <strong id="practice-score">0 分</strong>
+      </div>
+      <div class="score-row">
+        <span class="title">连击</span>
+        <strong id="practice-combo">0 连击</strong>
+      </div>
+      <div class="score-row">
+        <span class="title">最高连击</span>
+        <strong id="practice-max-combo">0 连击</strong>
+      </div>
+    </div>
+    <button type="button" id="reset-practice-progress">重置进度</button>
+    <span id="practice-score-delta"></span>
+  </div>
+  <div id="mode-toast"></div>
+
+  <div id="more-settings" class="header" style="display: none;">
+    <div class="menu">
+      <label for="disable-mobile-keyboard" class="title">禁用手机键盘：</label>
+      <input type="checkbox" id="disable-mobile-keyboard">
+    </div>
+    <div class="menu">
+      <label for="keyboard-layout-select" class="title">键盘布局：</label>
+      <select id="keyboard-layout-select"></select>
+    </div>
+    <div class="menu">
+      <label for="bopomofo-switcher" class="title">注音符号：</label>
+      <input type="checkbox" id="bopomofo-switcher">
+    </div>
+  </div>
+  <div class="workspace">
+    <div class="col">
+      <span class="dict" id="dict"></span>
+    </div>
+    <div class="col">
+      <div class="row">
+        <span class="q" id="q"></span>
+      </div>
+      <div class="row">
+        <input id="a" maxlength="2" autofocus="autofocus" autocomplete="off">
+        <div class="btn" id="btn"></div>
+      </div>
+    </div>
+  </div>
+  <div class="keyboard" id="keyboard">
+    <div class="keys" id="keys">
+      <div class="row-1">
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+      </div>
+      <div class="row-2">
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+      </div>
+      <div class="row-3">
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+        <div class="key"></div>
+      </div>
+    </div>
+    <img class="pic" id="pic" src="">
+    <div class="tips" id="tips"></div>
+  </div>
+  <script src="src/entry.js"></script>
+  <script src="src/dict.js"></script>
+  <script src="src/dict-hant.js"></script>
+  <script src="src/bopomofo.js"></script>
+  <script src="src/scheme-list.js"></script>
+  <script src="src/mode-list.js"></script>
+  <script src="src/keyboard-layout-list.js"></script>
+  <script src="src/keyboard-layout.js"></script>
+  <script src="src/core.js"></script>
+  <script src="src/next-word-engine.js"></script>
+  <script src="src/practice-queue.js"></script>
+  <script src="src/setting.js"></script>
+  <script src="src/action.js"></script>
+  <script src="src/bootstrap.js"></script>
+</body>
+
+</html>

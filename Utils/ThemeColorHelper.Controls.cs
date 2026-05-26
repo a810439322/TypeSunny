@@ -76,7 +76,7 @@ namespace TypeSunny.Utils
         {
             var style = new Style(typeof(MenuItem));
 
-            var hoverBgBrush = new SolidColorBrush(GetMenuItemHoverBorderColor(menuBg.Color));
+            var hoverBgBrush = new SolidColorBrush(GetMenuItemHoverBackgroundColor(menuBg.Color));
             hoverBgBrush.Freeze();
             var borderBrush = CreateSubtleBorderBrush(menuBg);
             borderBrush.Freeze();

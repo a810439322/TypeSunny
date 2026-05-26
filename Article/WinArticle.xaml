@@ -23,6 +23,7 @@
         <SolidColorBrush x:Key="TextForeground" Color="#FF606060"/>
         <SolidColorBrush x:Key="ToolbarBackground" Color="#FFE8E8E8"/>
         <SolidColorBrush x:Key="ContentBackground" Color="#FFEDEDED"/>
+        <SolidColorBrush x:Key="ContentForeground" Color="#FF000000"/>
         <SolidColorBrush x:Key="BorderBrush" Color="#FFC7C7C7"/>
         <SolidColorBrush x:Key="ButtonBackground" Color="#FFEBEBEB"/>
         <SolidColorBrush x:Key="ButtonHoverBackground" Color="#FFDDDDDD"/>
@@ -238,7 +239,7 @@
 
                 <!-- 文章内容区 -->
                 <Grid Grid.Row="2" Margin="10,8,10,8" Background="{DynamicResource ContentBackground}">
-                    <TextBox x:Name="TbTest" Padding="12" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="Wrap" Foreground="{DynamicResource TextForeground}" VerticalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent" FontSize="15"/>
+                    <TextBox x:Name="TbTest" Padding="12" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" TextWrapping="Wrap" Foreground="{DynamicResource ContentForeground}" VerticalScrollBarVisibility="Auto" BorderThickness="0" Background="Transparent" FontSize="15"/>
                 </Grid>
 
                 <!-- 导航栏 -->

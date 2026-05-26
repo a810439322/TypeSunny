@@ -110,11 +110,13 @@ namespace TypeSunny
                 string windowBgColor = Config.GetString("窗体背景色");
                 string windowFgColor = Config.GetString("窗体字体色");
                 string displayBgColor = Config.GetString("跟打区背景色");
+                string displayFgColor = Config.GetString("跟打区字体色");
                 string accentColor = Config.GetString("标题栏进度条颜色");
 
                 var bgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + windowBgColor));
                 var fgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + windowFgColor));
                 var displayBgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + displayBgColor));
+                var displayFgBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + displayFgColor));
                 var accentColorBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#" + accentColor));
 
                 var borderBrush = ThemeColorHelper.CreateSubtleBorderBrush(bgBrush);
@@ -142,6 +144,7 @@ namespace TypeSunny
                 this.Resources["TextForeground"] = fgBrush;
                 this.Resources["ToolbarBackground"] = toolbarBgBrush;
                 this.Resources["ContentBackground"] = displayBgBrush;
+                this.Resources["ContentForeground"] = displayFgBrush;
                 this.Resources["BorderBrush"] = borderBrush;
                 this.Resources["ButtonBackground"] = buttonBgBrush;
                 this.Resources["ButtonHoverBackground"] = buttonHoverBrush;

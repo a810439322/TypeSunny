@@ -187,12 +187,10 @@ namespace TypeSunny.ArticleSender
             {
                 Title = "文来注册",
                 Width = 350,
-                Height = 350,
+                Height = 380,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = owner,
-                ResizeMode = ResizeMode.NoResize,
-                Background = Utils.Colors.FromString(Config.GetString("窗体背景色")),
-                Foreground = Utils.Colors.FromString(Config.GetString("窗体字体色"))
+                ResizeMode = ResizeMode.NoResize
             };
 
             var grid = new Grid();
@@ -485,6 +483,7 @@ namespace TypeSunny.ArticleSender
             grid.Children.Add(btnPanel);
 
             registerDialog.Content = grid;
+            DialogTheming.ApplyChromelessTheme(registerDialog);
             registerDialog.ShowDialog();
         }
 
@@ -517,7 +516,7 @@ namespace TypeSunny.ArticleSender
             {
                 Title = "文来服务器设置",
                 Width = 400,
-                Height = 150,
+                Height = 180,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = owner,
                 ResizeMode = ResizeMode.NoResize
@@ -628,7 +627,7 @@ namespace TypeSunny.ArticleSender
             grid.Children.Add(btnPanel);
 
             settingsDialog.Content = grid;
-            DialogTheming.ApplyToWindow(settingsDialog);
+            DialogTheming.ApplyChromelessTheme(settingsDialog);
             settingsDialog.ShowDialog();
         }
 
@@ -643,12 +642,10 @@ namespace TypeSunny.ArticleSender
             {
                 Title = "文来登录",
                 Width = 350,
-                Height = 230,
+                Height = 260,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = owner,
-                ResizeMode = ResizeMode.NoResize,
-                Background = Utils.Colors.FromString(Config.GetString("窗体背景色")),
-                Foreground = Utils.Colors.FromString(Config.GetString("窗体字体色"))
+                ResizeMode = ResizeMode.NoResize
             };
 
             var grid = new Grid();
@@ -852,6 +849,7 @@ namespace TypeSunny.ArticleSender
             grid.Children.Add(btnRegisterLink);
 
             loginDialog.Content = grid;
+            DialogTheming.ApplyChromelessTheme(loginDialog);
 
             // 窗口加载后设置焦点：有已保存的账号密码则聚焦登录按钮，否则聚焦用户名输入框
             loginDialog.Loaded += (s, args) =>

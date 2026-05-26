@@ -3,6 +3,8 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Markup;
 using System.Windows.Media;
 
 namespace TypeSunny.Utils
@@ -78,6 +80,158 @@ namespace TypeSunny.Utils
             {
                 Debug.WriteLine($"[DialogTheming] 窗口主题应用失败: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 给窗口套上自定义无边框主题 chrome：菜单色标题栏 + 圆角 + 关闭按钮 + 可拖拽，
+        /// 并对内部内容递归上色。必须在窗口 Show/ShowDialog 之前调用。
+        /// </summary>
+        internal static void ApplyChromelessTheme(Window window)
+        {
+            if (window == null) return;
+            try
+            {
+                var p = LoadPalette();
+                var menuBg = LoadMenuBg();
+                var menuFg = LoadMenuFg();
+
+                // 取出并暂时脱离原内容，避免重新挂载时报 "已有父节点"
+                var originalContent = window.Content as UIElement;
+                window.Content = null;
+
+                // 切到无边框 + 透明背景模式（必须在 Show 前调用）
+                window.WindowStyle = WindowStyle.None;
+                window.AllowsTransparency = true;
+                window.Background = Brushes.Transparent;
+                window.Foreground = p.WindowFg;
+
+                // 外层圆角主边框
+                var mainBorder = new Border
+                {
+                    Background = p.WindowBg,
+                    BorderBrush = new SolidColorBrush(p.BorderColor),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(7),
+                    ClipToBounds = true,
+                    Margin = new Thickness(5)
+                };
+
+                var rootGrid = new Grid();
+                rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(30) });
+                rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+                // 标题栏
+                var titleBarBorder = new Border
+                {
+                    Background = menuBg,
+                    CornerRadius = new CornerRadius(6, 6, 0, 0),
+                    ClipToBounds = true
+                };
+                Grid.SetRow(titleBarBorder, 0);
+
+                var titleBarGrid = new Grid { Background = Brushes.Transparent };
+                titleBarGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                titleBarGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                titleBarGrid.MouseLeftButtonDown += (s, e) =>
+                {
+                    if (e.ChangedButton == MouseButton.Left && e.ClickCount == 1)
+                    {
+                        try { window.DragMove(); }
+                        catch { /* 窗口状态不允许拖动时忽略 */ }
+                    }
+                };
+
+                var titleTextBlock = new TextBlock
+                {
+                    Text = window.Title ?? string.Empty,
+                    Foreground = menuFg,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    FontSize = 14,
+                    Margin = new Thickness(12, 0, 0, 0)
+                };
+                Grid.SetColumn(titleTextBlock, 0);
+                titleBarGrid.Children.Add(titleTextBlock);
+
+                var closeButton = BuildCloseButton(menuFg, window);
+                Grid.SetColumn(closeButton, 1);
+                titleBarGrid.Children.Add(closeButton);
+
+                titleBarBorder.Child = titleBarGrid;
+                rootGrid.Children.Add(titleBarBorder);
+
+                // 原内容塞入 Row 1，再递归上色
+                if (originalContent != null)
+                {
+                    Grid.SetRow(originalContent, 1);
+                    rootGrid.Children.Add(originalContent);
+                    ApplyToVisualTree(originalContent, p);
+                }
+
+                mainBorder.Child = rootGrid;
+                window.Content = mainBorder;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[DialogTheming] 无边框主题应用失败: {ex.Message}");
+            }
+        }
+
+        private static Button BuildCloseButton(SolidColorBrush fg, Window window)
+        {
+            var btn = new Button
+            {
+                Content = "✕",
+                Width = 36,
+                Height = 30,
+                Background = Brushes.Transparent,
+                Foreground = fg,
+                BorderThickness = new Thickness(0),
+                FontSize = 13,
+                Cursor = Cursors.Hand,
+                Focusable = false,
+                Template = GetCloseButtonTemplate()
+            };
+            btn.Click += (s, e) => window.Close();
+            return btn;
+        }
+
+        private static ControlTemplate _cachedCloseButtonTemplate;
+
+        private static ControlTemplate GetCloseButtonTemplate()
+        {
+            if (_cachedCloseButtonTemplate != null)
+                return _cachedCloseButtonTemplate;
+
+            const string xaml = @"<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='Button'>
+    <Border x:Name='border' Background='{TemplateBinding Background}' CornerRadius='0,6,0,0'>
+        <ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center' TextBlock.Foreground='{TemplateBinding Foreground}'/>
+    </Border>
+    <ControlTemplate.Triggers>
+        <Trigger Property='IsMouseOver' Value='True'>
+            <Setter TargetName='border' Property='Background' Value='#E81123'/>
+            <Setter Property='Foreground' Value='White'/>
+        </Trigger>
+    </ControlTemplate.Triggers>
+</ControlTemplate>";
+
+            _cachedCloseButtonTemplate = (ControlTemplate)XamlReader.Parse(xaml);
+            _cachedCloseButtonTemplate.Seal();
+            return _cachedCloseButtonTemplate;
+        }
+
+        private static SolidColorBrush LoadMenuBg()
+        {
+            var s = Config.GetString("菜单背景色");
+            var c = (Color)ColorConverter.ConvertFromString("#" + s);
+            return new SolidColorBrush(c);
+        }
+
+        private static SolidColorBrush LoadMenuFg()
+        {
+            var s = Config.GetString("菜单字体色");
+            var c = (Color)ColorConverter.ConvertFromString("#" + s);
+            return new SolidColorBrush(c);
         }
 
         private static void ApplyToVisualTree(DependencyObject node, Palette p)
