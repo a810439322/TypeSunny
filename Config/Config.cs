@@ -42,6 +42,13 @@ namespace TypeSunny
             "标题栏进度条颜色", "007ACC",
             "显示进度条", "是",
             "禁止F3重打", "否",
+            "平滑光标", "是",
+            "平滑光标模式", "动态",
+            "平滑光标固定时长", "200",
+            "平滑光标快", "140",
+            "平滑光标中", "200",
+            "平滑光标慢", "280",
+            "平滑换行", "是",
             "速度跟随提示", "是",
             "练单下显示击键", "是",
             "盲打模式", "否",
@@ -342,6 +349,7 @@ namespace TypeSunny
                 }
 
 
+                MigrateSmoothCaretLegacyValue();
                 EnforceSelectionNumberBadgeMutualExclusion();
                 WriteConfig();
             }
@@ -349,6 +357,7 @@ namespace TypeSunny
             {
                 // 配置文件读取失败，使用默认配置
                 System.Diagnostics.Debug.WriteLine($"配置文件读取失败: {ex.Message}");
+                MigrateSmoothCaretLegacyValue();
                 EnforceSelectionNumberBadgeMutualExclusion();
                 WriteConfig(); // 写入默认配置
             }
@@ -365,7 +374,45 @@ namespace TypeSunny
                 return "字提选重数字角标";
             if (key == "练单场景显示击键")
                 return "练单下显示击键";
+            if (key == "平滑滚动")
+                return "平滑换行";
             return key;
+        }
+
+        private static void MigrateSmoothCaretLegacyValue()
+        {
+            string value = GetString("平滑光标");
+            if (value == "是" || value == "否")
+                return;
+
+            if (value == "关闭")
+            {
+                dicts["平滑光标"] = "否";
+                return;
+            }
+
+            dicts["平滑光标"] = "是";
+
+            if (value == "快")
+            {
+                dicts["平滑光标模式"] = "固定";
+                dicts["平滑光标固定时长"] = GetString("平滑光标快");
+                return;
+            }
+            if (value == "中")
+            {
+                dicts["平滑光标模式"] = "固定";
+                dicts["平滑光标固定时长"] = GetString("平滑光标中");
+                return;
+            }
+            if (value == "慢")
+            {
+                dicts["平滑光标模式"] = "固定";
+                dicts["平滑光标固定时长"] = GetString("平滑光标慢");
+                return;
+            }
+
+            dicts["平滑光标模式"] = "动态";
         }
 
         private static void EnforceSelectionNumberBadgeMutualExclusion()

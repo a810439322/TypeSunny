@@ -71,6 +71,8 @@ namespace TypeSunny.UI
         private readonly ArticleContinuationState _articleContinuationState = new ArticleContinuationState();
         private readonly DetailedWordCountContextBuilder _wordCountContextBuilder;
         private TypingWordCountContext currentWordCountContext;
+        private readonly TrainerTypedWordCounter trainerTypedWordCounter = new TrainerTypedWordCounter();
+        private int pendingTrainerTitleWords;
         private bool _stopTypingPending;
         private readonly Dictionary<string, FrameworkElement> _homeFeatureControls = new Dictionary<string, FrameworkElement>();
         private static readonly Thickness TopButtonGroupMargin = new Thickness(15, 7, 5, 5);
@@ -923,7 +925,7 @@ namespace TypeSunny.UI
         /// </summary>
         /// <param name="targetOffset">目标滚动偏移量</param>
         /// <param name="forceScroll">是否强制滚动（例如：换行、起始位置）</param>
-        internal void SmoothScrollTo(double targetOffset, bool forceScroll = false)
+        internal bool SmoothScrollTo(double targetOffset, bool forceScroll = false, Action started = null, Action completed = null)
         {
             double fs = DisplayFontSize;
             double fh = fs * (1.0 + Config.GetDouble("行距"));
@@ -931,8 +933,16 @@ namespace TypeSunny.UI
             // 只有当偏移量变化较大时才滚动，避免频繁滚动
             if (forceScroll || Math.Abs(ScDisplay.VerticalOffset - targetOffset) > fh * 0.8)
             {
-                ScDisplay.ScrollToVerticalOffset(targetOffset);
+                return SmoothScrollHelper.AnimateScrollTo(
+                    ScDisplay,
+                    targetOffset,
+                    150,
+                    new QuadraticEase { EasingMode = EasingMode.EaseOut },
+                    started,
+                    completed);
             }
+
+            return false;
         }
 
         /// <summary>
@@ -1017,13 +1027,13 @@ namespace TypeSunny.UI
 
             if (IsCodeDisplayEnabled())
             {
-                block.Background = null;
+                SmoothBackground.Apply(block, null, 0);
                 SetStateBackgroundOverlay(localIndex, background);
             }
             else
             {
                 SetStateBackgroundOverlay(localIndex, null);
-                block.Background = background;
+                SmoothBackground.Apply(block, background, GetStateBackgroundAnimationDurationMilliseconds());
             }
         }
 
@@ -1037,7 +1047,18 @@ namespace TypeSunny.UI
             return (textBlock?.Padding.Top ?? 0) + DisplayFontSize * StateBackgroundVerticalOffsetRatio;
         }
 
-        private static void SetStateBackgroundOverlay(int localIndex, Brush background)
+        private int GetStateBackgroundAnimationDurationMilliseconds()
+        {
+            if (_copybookMode != null && _copybookMode.IsActive)
+                return _copybookMode.GetBackgroundAnimationDurationMilliseconds();
+
+            if (_tracingMode != null && _tracingMode.IsActive)
+                return _tracingMode.GetBackgroundAnimationDurationMilliseconds();
+
+            return 150;
+        }
+
+        private void SetStateBackgroundOverlay(int localIndex, Brush background)
         {
             if (localIndex < 0 || localIndex >= TextInfo.StateBackgrounds.Count)
                 return;
@@ -1046,7 +1067,7 @@ namespace TypeSunny.UI
             if (stateBackground == null)
                 return;
 
-            stateBackground.Background = background;
+            SmoothBackground.Apply(stateBackground, background, GetStateBackgroundAnimationDurationMilliseconds());
         }
 
         internal FrameworkElement CreateDisplayElement(TextBlock textBlock, int globalIndex)
@@ -1870,39 +1891,11 @@ namespace TypeSunny.UI
 
         private void HotkeyF3()
         {
-            if (StateManager.txtSource == TxtSource.trainer && winTrainer != null)
+            var trainer = GetCurrentTrainerWindow();
+            if (StateManager.txtSource == TxtSource.trainer && trainer != null)
             {
-                // 如果正在打字，先记录当前进度
-                if (StateManager.typingState == TypingState.typing && sw.IsRunning)
-                {
-                    // 计算当前输入的字数
-                    int inputWordCountSnapshot = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
-                    int inputWordCount = StopInputWordCountPolicy.Resolve(
-                        StateManager.txtSource,
-                        Score.InputWordCount,
-                        inputWordCountSnapshot);
-
-                    // 计算已用时间（秒）
-                    double timeSeconds = sw.Elapsed.TotalSeconds;
-
-                    // 计算准确率（简单比对已输入的部分）
-                    double accuracy = 1.0;
-                    if (inputWordCount > 0)
-                    {
-                        int correctCount = 0;
-                        for (int i = 0; i < Math.Min(inputWordCount, TextInfo.wordStates.Count); i++)
-                        {
-                            if (TextInfo.wordStates[i] == WordStates.RIGHT)
-                                correctCount++;
-                        }
-
-                        accuracy = (double)correctCount / inputWordCount;
-                    }
-
-                    winTrainer.RecordPartialProgress(inputWordCount, timeSeconds, accuracy);
-                }
-
-                winTrainer.F3();
+                RecordTrainerPartialProgressIfNeeded();
+                trainer.F3();
             }
             else
                 RetypeThisGroup();
@@ -2288,10 +2281,11 @@ namespace TypeSunny.UI
             // 应用发文框和跟打框的比例
             ApplyDisplayInputRatio();
 
-            if (winTrainer != null)
+            var trainer = GetCurrentTrainerWindow();
+            if (trainer != null)
             {
-                WinTrainer.Current.RefreshTheme();
-                winTrainer.Background = this.Background;
+                trainer.RefreshTheme();
+                trainer.Background = this.Background;
             }
 
             ReadBlindType();
@@ -2524,10 +2518,11 @@ namespace TypeSunny.UI
             TbxResults.FontSize = Config.GetDouble("成绩区字体大小") > 0 ? Config.GetDouble("成绩区字体大小") : 15.0;
             RenderResultsDisplayOverlay();
 
-            if (winTrainer != null)
+            var trainer = GetCurrentTrainerWindow();
+            if (trainer != null)
             {
-                WinTrainer.Current.RefreshTheme();
-                winTrainer.Background = this.Background;
+                trainer.RefreshTheme();
+                trainer.Background = this.Background;
             }
 
             // 加载成绩面板展开状态
@@ -3920,6 +3915,7 @@ namespace TypeSunny.UI
 
         private void UpdateTypingStatCore(List<string> newReportItems, bool commitCounterBuffer)
         {
+            FlushTrainerTitleTypedWords();
 
             if (commitCounterBuffer)
             {
@@ -4163,9 +4159,113 @@ namespace TypeSunny.UI
             get { return Config.GetBool("盲打模式") && StateManager.retypeType != RetypeType.wrongRetype; }
         }
 
+        public void RecordTypedWords(int words)
+        {
+            if (words <= 0)
+                return;
+
+            CounterLog.Buffer[0] += words;
+            RecordDetailedTypedWords(words);
+            QueueTrainerTitleTypedWords(words);
+        }
+
+        private void QueueTrainerTitleTypedWords(int words)
+        {
+            if (words <= 0 || StateManager.txtSource != TxtSource.trainer)
+                return;
+
+            pendingTrainerTitleWords += words;
+        }
+
+        private void FlushTrainerTitleTypedWords()
+        {
+            if (pendingTrainerTitleWords <= 0)
+            {
+                SyncTrainerTitleTotalFromDetailedStats();
+                return;
+            }
+
+            int wordsToFlush = pendingTrainerTitleWords;
+            pendingTrainerTitleWords = 0;
+
+            var trainerTitleSnapshot = TrainerTitleWordStats.AddWords(wordsToFlush);
+            trainerTitleSnapshot = SyncTrainerTitleTotalFromDetailedStats(trainerTitleSnapshot);
+            RefreshTrainerTitleWordStats(trainerTitleSnapshot);
+        }
+
+        private TrainerTitleWordStatsSnapshot SyncTrainerTitleTotalFromDetailedStats(TrainerTitleWordStatsSnapshot currentSnapshot = null)
+        {
+            try
+            {
+                int totalWords = CounterLog.GetSum("字数") + CounterLog.Buffer[0];
+                var snapshot = DetailedWordCountLog.LoadSnapshot(totalWords, DateTime.Now);
+                if (snapshot.TrainerWords <= 0 || (currentSnapshot != null && currentSnapshot.TotalWords >= snapshot.TrainerWords))
+                    return currentSnapshot;
+
+                return TrainerTitleWordStats.EnsureTotalAtLeast(snapshot.TrainerWords);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"同步晴练单标题累计字数失败: {ex.Message}");
+                return currentSnapshot;
+            }
+        }
+
+        private void RefreshTrainerTitleWordStats(TrainerTitleWordStatsSnapshot trainerTitleSnapshot)
+        {
+            if (trainerTitleSnapshot == null)
+                return;
+
+            var trainer = GetCurrentTrainerWindow();
+            if (trainer != null)
+                trainer.RefreshTitleWordStats(trainerTitleSnapshot);
+        }
+
         public void RecordDetailedTypedWords(int words)
         {
             DetailedWordCountLog.AddTypedWords(words, currentWordCountContext);
+        }
+
+        private void RecordTrainerPartialProgressIfNeeded()
+        {
+            var trainer = GetCurrentTrainerWindow();
+            if (trainer == null || !ShouldRecordTrainerPartialProgress())
+                return;
+
+            int inputWordCountSnapshot = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
+            int inputWordCount = StopInputWordCountPolicy.Resolve(
+                StateManager.txtSource,
+                Score.InputWordCount,
+                inputWordCountSnapshot);
+
+            double accuracy = ResolveCurrentInputAccuracy(inputWordCount);
+            trainer.RecordPartialProgress(inputWordCount, sw.Elapsed.TotalSeconds, accuracy);
+        }
+
+        private bool ShouldRecordTrainerPartialProgress()
+        {
+            if (StateManager.txtSource != TxtSource.trainer)
+                return false;
+
+            if (StateManager.typingState != TypingState.typing && StateManager.typingState != TypingState.pause)
+                return false;
+
+            return Score.InputWordCount > 0 || !string.IsNullOrEmpty(TbxInput.Text);
+        }
+
+        private double ResolveCurrentInputAccuracy(int inputWordCount)
+        {
+            if (inputWordCount <= 0)
+                return 1.0;
+
+            int correctCount = 0;
+            for (int i = 0; i < Math.Min(inputWordCount, TextInfo.wordStates.Count); i++)
+            {
+                if (TextInfo.wordStates[i] == WordStates.RIGHT)
+                    correctCount++;
+            }
+
+            return (double)correctCount / inputWordCount;
         }
 
         private bool IsManualRetypeJumpMode()
@@ -4781,11 +4881,12 @@ namespace TypeSunny.UI
 
                     WriteDebugLog($"[练单器] 进入分支，accuracy={Score.GetAccuracy():F4}, hitRate={Score.HitRate:F2}, wrong={Score.Wrong}");
 
-                    WriteDebugLog($"[练单器] winTrainer 是否为null: {winTrainer == null}");
-                    if (winTrainer != null)
+                    var trainer = GetCurrentTrainerWindow();
+                    WriteDebugLog($"[练单器] trainer 是否为null: {trainer == null}");
+                    if (trainer != null)
                     {
                         WriteDebugLog($"[练单器] 准备调用 GetNextRound");
-                        winTrainer.GetNextRound(Score.GetAccuracy(), Score.HitRate, Score.Wrong, result);
+                        trainer.GetNextRound(Score.GetAccuracy(), Score.HitRate, Score.Wrong, result);
                         WriteDebugLog($"[练单器] GetNextRound 返回");
                     }
 
@@ -6606,6 +6707,8 @@ public async Task SendArticle()
 
             string loadedTextForWordCount = string.Join("", TextInfo.Words);
             currentWordCountContext = _wordCountContextBuilder.Build(StateManager.txtSource, loadedTextForWordCount);
+            if (StateManager.txtSource == TxtSource.trainer)
+                trainerTypedWordCounter.Reset();
 
             TextInfo.wordStates.Clear();
             TextInfo.WrongRec.Clear();
@@ -6994,8 +7097,8 @@ public async Task SendArticle()
                 if (e.Changes.Count > 0)// && Recorder.State != Recorder.RecorderState.Playing)
                 {
                     int addedLength = e.Changes.First().AddedLength;
-                    CounterLog.Buffer[0] += addedLength;
-                    RecordDetailedTypedWords(addedLength);
+                    int wordsToRecord = ResolveTypedWordCountDelta(addedLength);
+                    RecordTypedWords(wordsToRecord);
                 }
 
 
@@ -7004,6 +7107,31 @@ public async Task SendArticle()
                 ProcInput();
             }
 
+        }
+
+        private int ResolveTypedWordCountDelta(int addedLength)
+        {
+            if (StateManager.txtSource != TxtSource.trainer)
+                return addedLength;
+
+            string inputText = TbxInput.Text ?? "";
+            return trainerTypedWordCounter.AddFrom(
+                Score.CommitText,
+                TextInfo.Words,
+                inputText,
+                new System.Globalization.StringInfo(inputText).LengthInTextElements);
+        }
+
+        public int ResolveTypedWordCountDelta(string inputText, int fallbackInputTextElements, int targetStartIndex)
+        {
+            if (StateManager.txtSource != TxtSource.trainer)
+                return fallbackInputTextElements;
+
+            return trainerTypedWordCounter.AddFrom(
+                Score.CommitText,
+                TextInfo.Words,
+                inputText,
+                targetStartIndex + fallbackInputTextElements);
         }
 
         //     AutomationElement aeInput;
@@ -7598,38 +7726,11 @@ public async Task SendArticle()
         private void InternalHotkeyCtrlL(object sender, ExecutedRoutedEventArgs e)
         {
 
-            if (StateManager.txtSource == TxtSource.trainer && winTrainer != null)
+            var trainer = GetCurrentTrainerWindow();
+            if (StateManager.txtSource == TxtSource.trainer && trainer != null)
             {
-                // 如果正在打字，先记录当前进度
-                if (StateManager.typingState == TypingState.typing && sw.IsRunning)
-                {
-                    // 计算当前输入的字数
-                    int inputWordCountSnapshot = new System.Globalization.StringInfo(TbxInput.Text).LengthInTextElements;
-                    int inputWordCount = StopInputWordCountPolicy.Resolve(
-                        StateManager.txtSource,
-                        Score.InputWordCount,
-                        inputWordCountSnapshot);
-
-                    // 计算已用时间（秒）
-                    double timeSeconds = sw.Elapsed.TotalSeconds;
-
-                    // 计算准确率（简单比对已输入的部分）
-                    double accuracy = 1.0;
-                    if (inputWordCount > 0)
-                    {
-                        int correctCount = 0;
-                        for (int i = 0; i < Math.Min(inputWordCount, TextInfo.wordStates.Count); i++)
-                        {
-                            if (TextInfo.wordStates[i] == WordStates.RIGHT)
-                                correctCount++;
-                        }
-                        accuracy = (double)correctCount / inputWordCount;
-                    }
-
-                    winTrainer.RecordPartialProgress(inputWordCount, timeSeconds, accuracy);
-                }
-
-                winTrainer.CtrlL();
+                RecordTrainerPartialProgressIfNeeded();
+                trainer.CtrlL();
             }
             else
                 HotKeyCtrlL();
@@ -7799,6 +7900,7 @@ public async Task SendArticle()
             CounterLog.Buffer[0] = 0;
             CounterLog.Add("击键数", CounterLog.Buffer[1]);
             CounterLog.Buffer[1] = 0;
+            FlushTrainerTitleTypedWords();
             CounterLog.Write();
             DetailedWordCountLog.Flush();
 
@@ -11031,15 +11133,28 @@ public async Task SendArticle()
         }
 
         WinTrainer winTrainer;
+        private WinTrainer GetCurrentTrainerWindow()
+        {
+            if (winTrainer != null)
+                return winTrainer;
+
+            var current = WinTrainer.Current;
+            if (current != null)
+                winTrainer = current;
+
+            return current;
+        }
+
         private void ShowWinTrainer()
         {
 
             if (WinTrainer.Current != null)
             {
-                WinTrainer.Current.Show();
-                WinTrainer.Current.Focus();
-                WinTrainer.Current.Activate();
-                WinTrainer.Current.RefreshFileList();
+                winTrainer = WinTrainer.Current;
+                winTrainer.Show();
+                winTrainer.Focus();
+                winTrainer.Activate();
+                winTrainer.RefreshFileList();
             }
             else
             {

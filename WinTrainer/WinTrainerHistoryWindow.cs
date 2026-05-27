@@ -610,11 +610,8 @@ namespace TypeSunny
         {
             try
             {
-                var todayStats = TrainerLog.ReadStatisticsInRange(DateTime.Today, DateTime.Today);
-                int today = todayStats.Sum(s => s.TotalWords);
-                var allStats = TrainerLog.ReadStatistics();
-                int total = allStats.Sum(s => s.TotalWords);
-                titleBarStats.Text = $"今日练单 {today:N0} 字，累计 {total:N0} 字";
+                var snapshot = TrainerTitleWordStats.Read();
+                titleBarStats.Text = $"今日练单 {snapshot.TodayWords:N0} 字，累计 {snapshot.TotalWords:N0} 字";
             }
             catch
             {

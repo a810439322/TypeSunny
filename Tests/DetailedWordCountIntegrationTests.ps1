@@ -48,17 +48,25 @@ if ($mainCode -like '*category:wenlai:*' -or $mainCode -like '*category:book:*' 
 Assert-Regex `
     'normal input records detailed words near counter buffer' `
     $mainCode `
-    'CounterLog\.Buffer\[0\]\s*\+=\s*addedLength;[\s\S]{0,240}RecordDetailedTypedWords\(addedLength\);'
+    'int\s+wordsToRecord\s*=\s*ResolveTypedWordCountDelta\(addedLength\);[\s\S]{0,240}RecordTypedWords\(wordsToRecord\);'
+
+Assert-Contains 'normal non-trainer input keeps raw added length' $mainCode 'if (StateManager.txtSource != TxtSource.trainer)'
+Assert-Contains 'trainer input resolves typed target-word delta' $mainCode 'trainerTypedWordCounter.AddFrom'
+Assert-Regex `
+    'main shared typed word recorder updates global word count' `
+    $mainCode `
+    'CounterLog\.Buffer\[0\]\s*\+=\s*words;'
+Assert-Contains 'main shared typed word recorder updates detailed word count' $mainCode 'RecordDetailedTypedWords(words);'
 
 Assert-Regex `
     'copybook records detailed words near counter buffer' `
     $copybookCode `
-    'CounterLog\.Buffer\[0\]\s*\+=\s*si\.LengthInTextElements;[\s\S]{0,240}_main\.RecordDetailedTypedWords\(si\.LengthInTextElements\);'
+    'int\s+wordsToRecord\s*=\s*_main\.ResolveTypedWordCountDelta\(inputText,\s*si\.LengthInTextElements,\s*_currentIndex\);[\s\S]{0,240}_main\.RecordTypedWords\(wordsToRecord\);'
 
 Assert-Regex `
     'tracing records detailed words near counter buffer' `
     $tracingCode `
-    'CounterLog\.Buffer\[0\]\s*\+=\s*si\.LengthInTextElements;[\s\S]{0,240}_main\.RecordDetailedTypedWords\(si\.LengthInTextElements\);'
+    'int\s+wordsToRecord\s*=\s*_main\.ResolveTypedWordCountDelta\(inputText,\s*si\.LengthInTextElements,\s*_currentIndex\);[\s\S]{0,240}_main\.RecordTypedWords\(wordsToRecord\);'
 
 Assert-Regex `
     'results textbox runtime context menu has detailed statistics item' `

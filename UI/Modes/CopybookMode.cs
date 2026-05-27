@@ -7,8 +7,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Controls.Primitives;
 using TypeSunny.Core;
+using TypeSunny.UI;
 using TypeSunny.Logs;
-using System.Windows.Media.Animation;
 using TextInfo = TypeSunny.Core.TextInfo;
 using Colors = TypeSunny.Utils.Colors;
 
@@ -23,7 +23,7 @@ namespace TypeSunny.UI.Modes
         private Canvas _overlay;
         private TextBox _inputCapture;
         private TextBlock _compositionText;
-        private Border _cursor;
+        private SmoothCaret _cursor;
         private readonly List<FrameworkElement> _wrongCharHints = new List<FrameworkElement>();
         private readonly ImeBackspacePolicy _imeBackspacePolicy = new ImeBackspacePolicy();
         private readonly FinishOnceGate _finishGate = new FinishOnceGate();
@@ -37,13 +37,26 @@ namespace TypeSunny.UI.Modes
         private GridLength _savedSplitterRowHeight;
         private double _savedArticleRowHeight;
         private double _savedTypingRowHeightValue;
+        private bool _isScrollAnimating;
+        private readonly List<PendingBackgroundChange> _pendingBackgroundChanges = new List<PendingBackgroundChange>();
 
         public bool IsActive => _isActive;
         public int CurrentIndex => _currentIndex;
 
+        internal int GetBackgroundAnimationDurationMilliseconds()
+        {
+            return _cursor != null ? _cursor.GetBackgroundDurationMilliseconds() : SmoothMotionTiming.MediumDurationMilliseconds;
+        }
+
         public CopybookMode(MainWindow main)
         {
             _main = main;
+        }
+
+        private struct PendingBackgroundChange
+        {
+            public int GlobalIndex;
+            public Brush Background;
         }
 
         /// <summary>
@@ -122,14 +135,7 @@ namespace TypeSunny.UI.Modes
             _inputCapture.Padding = new Thickness(0);
 
             // 创建自定义光标（竖线，跟字一样高，带闪烁）
-            _cursor = new Border();
-            _cursor.Width = 2;
-            _cursor.Height = fs;
-            _cursor.Background = Colors.DisplayForeground;
-            var blink = new DoubleAnimation(1, 0, new Duration(TimeSpan.FromMilliseconds(500)));
-            blink.AutoReverse = true;
-            blink.RepeatBehavior = RepeatBehavior.Forever;
-            _cursor.BeginAnimation(UIElement.OpacityProperty, blink);
+            _cursor = new SmoothCaret(fs, Colors.DisplayForeground);
 
             // 创建未上屏编码显示
             _compositionText = new TextBlock();
@@ -144,7 +150,7 @@ namespace TypeSunny.UI.Modes
 
             _overlay.Children.Add(_inputCapture);
             _overlay.Children.Add(_compositionText);
-            _overlay.Children.Add(_cursor);
+            _overlay.Children.Add(_cursor.Element);
 
             // 添加到 BdDisplay 内的 Grid
             var grid = (Grid)_main.BdDisplay.Child;
@@ -189,6 +195,7 @@ namespace TypeSunny.UI.Modes
             _main.Activated -= OnWindowActivated;
             _main.Deactivated -= OnWindowDeactivated;
             _main.ScDisplay.ScrollChanged -= OnDisplayScrollChanged;
+            StopScrollSync();
 
             if (_overlay != null)
             {
@@ -200,6 +207,7 @@ namespace TypeSunny.UI.Modes
             _inputCapture = null;
             _compositionText = null;
             _cursor = null;
+            _pendingBackgroundChanges.Clear();
             _wrongCharHints.Clear();
 
             // 清除已打字的背景色
@@ -277,7 +285,7 @@ namespace TypeSunny.UI.Modes
             _main.Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (!_isActive || _currentIndex >= TextInfo.Blocks.Count) return;
-                UpdatePosition();
+                UpdatePosition(false);
                 ResetInputCaptureHostIfIdle();
                 _inputCapture.Focus();
             }), System.Windows.Threading.DispatcherPriority.Loaded);
@@ -309,23 +317,23 @@ namespace TypeSunny.UI.Modes
             // briefly move focus during pre-edit. Focus is restored only on
             // explicit entry points such as clicking the article area or
             // re-activating the main window.
-            if (_cursor != null) _cursor.Visibility = Visibility.Collapsed;
+            _cursor?.Hide();
         }
 
         private void OnGotFocus(object sender, RoutedEventArgs e)
         {
-            if (_cursor != null) _cursor.Visibility = Visibility.Visible;
+            _cursor?.Show();
         }
 
         private void OnWindowDeactivated(object sender, EventArgs e)
         {
-            if (_cursor != null) _cursor.Visibility = Visibility.Collapsed;
+            _cursor?.Hide();
         }
 
         private void OnWindowActivated(object sender, EventArgs e)
         {
             if (!_isActive || _inputCapture == null) return;
-            if (_cursor != null) _cursor.Visibility = Visibility.Visible;
+            _cursor?.Show();
             _inputCapture.Focus();
         }
 
@@ -335,7 +343,7 @@ namespace TypeSunny.UI.Modes
                 return;
 
             RefreshWrongCharHints();
-            UpdatePosition();
+            UpdatePosition(false);
         }
 
         private void OnOverlayPreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -436,8 +444,9 @@ namespace TypeSunny.UI.Modes
 
             // 全局字数计数（正常模式由 TbxInput_TextChanged 处理）
             var si = new StringInfo(inputText);
-            CounterLog.Buffer[0] += si.LengthInTextElements;
-            _main.RecordDetailedTypedWords(si.LengthInTextElements);
+            int wordsToRecord = _main.ResolveTypedWordCountDelta(inputText, si.LengthInTextElements, _currentIndex);
+            _main.RecordTypedWords(wordsToRecord);
+            _cursor?.RecordInput();
 
             // 最后一个字打错后再次输入，退回到最后一个字重新比对
             if (_currentIndex >= TextInfo.Words.Count
@@ -463,14 +472,14 @@ namespace TypeSunny.UI.Modes
                 {
                     TextInfo.wordStates[_currentIndex] = WordStates.RIGHT;
                     if (!_main.IsBlindType)
-                        _main.SetDisplayBlockStateBackgroundByGlobalIndex(_currentIndex, Colors.CorrectBackground);
+                        QueueDisplayBlockStateBackground(_currentIndex, Colors.CorrectBackground);
                 }
                 else
                 {
                     TextInfo.wordStates[_currentIndex] = WordStates.WRONG;
                     if (!_main.IsBlindType)
                     {
-                        _main.SetDisplayBlockStateBackgroundByGlobalIndex(_currentIndex, Colors.IncorrectBackground);
+                        QueueDisplayBlockStateBackground(_currentIndex, Colors.IncorrectBackground);
                         ShowWrongCharHint(ch, _currentIndex - TextInfo.PageStartIndex);
                     }
                 }
@@ -549,7 +558,8 @@ namespace TypeSunny.UI.Modes
                 else
                     ScrollToCurrentChar();
 
-                UpdatePosition();
+                FlushPendingBackgroundChanges();
+                UpdatePosition(true);
                 _main.UpdateZiTi();
             }), System.Windows.Threading.DispatcherPriority.Input);
         }
@@ -649,14 +659,17 @@ namespace TypeSunny.UI.Modes
                     // 清除上一个字的状态
                     TextInfo.wordStates[_currentIndex] = WordStates.NO_TYPE;
                     if (!_main.IsBlindType)
+                    {
+                        RemovePendingBackgroundChange(_currentIndex);
                         _main.SetDisplayBlockStateBackgroundByGlobalIndex(_currentIndex, null);
+                    }
 
                     // 移除该位置的错字提示
                     RemoveWrongCharHint(_currentIndex - TextInfo.PageStartIndex);
                     _main.ClearCodeLabelProgress(_currentIndex);
                     Score.InputWordCount = _currentIndex;
 
-                    UpdatePosition();
+                    UpdatePosition(true);
                     if (Config.GetBool("贪吃蛇模式") || StateManager.txtSource == TxtSource.raceApi)
                         _main.SnakeModeUpdateFromCopybook(_currentIndex);
                     else
@@ -735,7 +748,7 @@ namespace TypeSunny.UI.Modes
             Score.InputWordCount = _currentIndex;
 
             _main.ClearCodeLabelProgress(_currentIndex);
-            UpdatePosition();
+            UpdatePosition(true);
             if (Config.GetBool("贪吃蛇模式") || StateManager.txtSource == TxtSource.raceApi)
                 _main.SnakeModeUpdateFromCopybook(_currentIndex);
             else
@@ -1064,8 +1077,8 @@ namespace TypeSunny.UI.Modes
             if (!_isActive) return;
 
             // 更新光标颜色
-            if (_cursor != null)
-                _cursor.Background = Colors.DisplayForeground;
+            _cursor?.ApplyForeground(Colors.DisplayForeground);
+            _cursor?.UpdateBlinkingAnimation();
 
             // 更新已有错字提示的颜色
             foreach (var fe in _wrongCharHints)
@@ -1113,6 +1126,7 @@ namespace TypeSunny.UI.Modes
             {
                 if (!_isActive) return;
 
+                FlushPendingBackgroundChanges();
                 int lastIdx = TextInfo.Blocks.Count - 1;
 
                 // 1. 更新光标到最后一个字右侧
@@ -1132,9 +1146,7 @@ namespace TypeSunny.UI.Modes
                         double padTop = (availablePad / 2 + Math.Min((height - fs) / 2, availablePad)) / 2;
 
                         double lineHeight = fs * fm.LineSpacing;
-                        _cursor.Height = lineHeight;
-                        Canvas.SetLeft(_cursor, pos.X + block.ActualWidth - 2);
-                        Canvas.SetTop(_cursor, pos.Y + padTop);
+                        _cursor.SetPosition(pos.X + block.ActualWidth - 2, pos.Y + padTop, lineHeight);
                     }
                     catch { }
                 }
@@ -1144,7 +1156,7 @@ namespace TypeSunny.UI.Modes
             }), System.Windows.Threading.DispatcherPriority.Input);
         }
 
-        private void UpdatePosition()
+        private void UpdatePosition(bool animated = false)
         {
             if (_inputCapture == null || _currentIndex >= TextInfo.Blocks.Count || TextInfo.Blocks.Count == 0)
                 return;
@@ -1177,9 +1189,12 @@ namespace TypeSunny.UI.Modes
                 if (_cursor != null)
                 {
                     double lineHeight = fs * fm.LineSpacing;
-                    _cursor.Height = lineHeight;
-                    Canvas.SetLeft(_cursor, x - 2);
-                    Canvas.SetTop(_cursor, y + padTop);
+                    if (animated)
+                        _cursor.AnimatePosition(x - 2, y + padTop, lineHeight);
+                    else if (_isScrollAnimating)
+                        _cursor.TrackPosition(x - 2, y + padTop, lineHeight);
+                    else
+                        _cursor.SetPosition(x - 2, y + padTop, lineHeight);
                 }
 
                 PositionCodeTextElement(_compositionText, _currentIndex);
@@ -1224,9 +1239,67 @@ namespace TypeSunny.UI.Modes
                     + TextInfo.Blocks[_currentIndex].ActualHeight / 2;
 
                 double targetOffset = _main.CalculateScrollOffset(currentPosY);
-                _main.SmoothScrollTo(targetOffset);
+                _main.SmoothScrollTo(targetOffset, started: StartScrollSync, completed: StopScrollSync);
             }
             catch { }
+        }
+
+        private void StartScrollSync()
+        {
+            if (!_isActive || _isScrollAnimating)
+                return;
+
+            _isScrollAnimating = true;
+            CompositionTarget.Rendering += OnRenderingDuringScroll;
+        }
+
+        private void StopScrollSync()
+        {
+            if (_isScrollAnimating)
+                CompositionTarget.Rendering -= OnRenderingDuringScroll;
+
+            if (_isActive)
+                UpdatePosition(false);
+
+            _isScrollAnimating = false;
+        }
+
+        private void QueueDisplayBlockStateBackground(int globalIndex, Brush background)
+        {
+            RemovePendingBackgroundChange(globalIndex);
+            _pendingBackgroundChanges.Add(new PendingBackgroundChange
+            {
+                GlobalIndex = globalIndex,
+                Background = background
+            });
+        }
+
+        private void RemovePendingBackgroundChange(int globalIndex)
+        {
+            for (int i = _pendingBackgroundChanges.Count - 1; i >= 0; i--)
+            {
+                if (_pendingBackgroundChanges[i].GlobalIndex == globalIndex)
+                    _pendingBackgroundChanges.RemoveAt(i);
+            }
+        }
+
+        private void FlushPendingBackgroundChanges()
+        {
+            if (_pendingBackgroundChanges.Count == 0)
+                return;
+
+            foreach (var change in _pendingBackgroundChanges)
+                _main.SetDisplayBlockStateBackgroundByGlobalIndex(change.GlobalIndex, change.Background);
+
+            _pendingBackgroundChanges.Clear();
+        }
+
+        private void OnRenderingDuringScroll(object sender, EventArgs e)
+        {
+            if (!_isActive || !_isScrollAnimating)
+                return;
+
+            UpdatePosition(false);
         }
     }
 }

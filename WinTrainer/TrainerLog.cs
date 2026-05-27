@@ -499,6 +499,34 @@ namespace TypeSunny
             return result;
         }
 
+        public static Dictionary<string, int> ReadDailyInputWordTotals()
+        {
+            var result = new Dictionary<string, int>(StringComparer.Ordinal);
+
+            var allStatistics = LoadAllStatistics();
+            foreach (var dailyData in allStatistics.DailySummaries)
+            {
+                if (dailyData == null || string.IsNullOrWhiteSpace(dailyData.Date))
+                    continue;
+
+                int total = 0;
+                if (dailyData.Summaries != null)
+                {
+                    foreach (var summary in dailyData.Summaries)
+                    {
+                        if (summary == null)
+                            continue;
+                        total += summary.TotalInputWords > 0 ? summary.TotalInputWords : summary.TotalWords;
+                    }
+                }
+
+                if (total > 0)
+                    result[dailyData.Date] = total;
+            }
+
+            return result;
+        }
+
         /// <summary>
         /// 获取有统计数据的日期列表（从单文件中获取）
         /// </summary>

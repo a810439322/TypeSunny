@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -63,6 +64,25 @@ namespace TypeSunny
                 SldProgress.Value = ArticleManager.Index;
 
             TbTest.Text = ArticleManager.GetPreviewCurrentSection();
+            UpdateTitleBarText();
+        }
+
+        private void UpdateTitleBarText()
+        {
+            string configuredTitle = ArticleManager.Title;
+            string articleTitle = !string.IsNullOrEmpty(configuredTitle) && ArticleManager.Articles.ContainsKey(configuredTitle) ? configuredTitle : "";
+            string currentSection = ArticleManager.GetCurrentSection();
+            int currentWords = currentSection == null ? 0 : new StringInfo(currentSection).LengthInTextElements;
+            string title = ArticleTitleFormatter.Format(
+                articleTitle,
+                ArticleManager.Index,
+                ArticleManager.MaxIndex,
+                ArticleManager.Progress,
+                currentWords,
+                ArticleManager.TotalSize);
+
+            Title = title;
+            TitleBarText.Text = title;
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)

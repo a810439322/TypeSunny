@@ -148,6 +148,7 @@
     <Compile Include="Version\VersionManager.cs" />
     <Compile Include="Article\ArticleConfig.cs" />
     <Compile Include="Article\ArticleManager.cs" />
+    <Compile Include="Article\ArticleTitleFormatter.cs" />
     <Compile Include="Article\Filter.cs" />
     <Compile Include="Article\RegexFilter.cs" />
     <Compile Include="Article\TxtFileEncoder.cs" />
@@ -248,7 +249,10 @@
     </Compile>
     <Compile Include="WinTrainer\TrainerConfig.cs" />
     <Compile Include="WinTrainer\TrainerAutoSendPolicy.cs" />
+    <Compile Include="WinTrainer\TrainerActualWordCounter.cs" />
+    <Compile Include="WinTrainer\TrainerTypedWordCounter.cs" />
     <Compile Include="WinTrainer\TrainerLog.cs" />
+    <Compile Include="WinTrainer\TrainerTitleWordStats.cs" />
     <Compile Include="WinTrainer\WinTrainerHistoryWindow.cs" />
     <Compile Include="WinTrainer\WinTrainer.xaml.cs">
       <DependentUpon>WinTrainer.xaml</DependentUpon>
@@ -276,6 +280,9 @@
     <Compile Include="UI\HomeToolbarSettings.cs" />
     <Compile Include="UI\ScoreLabelDisplayFormatter.cs" />
     <Compile Include="UI\ScorePanelLayoutPolicy.cs" />
+    <Compile Include="UI\SmoothBackground.cs" />
+    <Compile Include="UI\SmoothCaret.cs" />
+    <Compile Include="UI\SmoothMotionTiming.cs" />
     <Compile Include="UI\StopInputWordCountPolicy.cs" />
     <Compile Include="UI\Modes\ArticleContinuationState.cs" />
     <Compile Include="UI\Modes\CompositionCodeFeedback.cs" />
@@ -286,6 +293,7 @@
     <Compile Include="UI\Modes\SnakeMode.cs" />
     <Compile Include="UI\Modes\CopybookMode.cs" />
     <Compile Include="UI\Modes\TracingMode.cs" />
+    <Compile Include="Utils\SmoothScrollHelper.cs" />
     <Page Include="WinConfig\WinColorPicker.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>

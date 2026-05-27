@@ -110,6 +110,7 @@ namespace TypeSunny
 
         bool CfgInit;
         bool SliderInit;
+        private bool _isRefreshingFileList;
         private readonly TrainerAutoSendPolicy autoSendPolicy = new TrainerAutoSendPolicy();
 
    //     List<string> InputWords = new List<string>();
@@ -648,11 +649,9 @@ namespace TypeSunny
         {
             WriteDebugLog("[GetNextRound] 方法开始");
 
-            // 累加用时和字数（无论通过与否都记录）
-            // 实际字数 = 输入的字 + 退格删掉的字 = 所有实际敲入的字符总数
-            int scoreInputWords = Score.InputWordCount;
-            int scoreBacks = (int)Score.GetBacks();
-            int actualWordsDelta = scoreInputWords + scoreBacks;
+            // 累加用时和字数（无论通过与否都记录）。
+            // 晴练单实际字数按目标字位计，避免把误上屏的字母串算成多个字。
+            int actualWordsDelta = GetCurrentGroupWordCount();
             roundTotalTime += Score.Time.TotalSeconds;
             roundActualWords += actualWordsDelta;
 
@@ -898,15 +897,58 @@ namespace TypeSunny
             {
                 roundTotalTime += timeSeconds;
             }
-            if (inputWordCount > 0)
+            int actualWords = GetCurrentPartialActualWordCount(inputWordCount);
+            if (actualWords > 0)
             {
-                roundActualWords += inputWordCount;
+                roundActualWords += actualWords;
             }
             // 累加键准相关数据
             roundTotalHit += Score.Hit;
             roundTotalBacks += Score.Backs;
             roundTotalCorrection += Score.Correction;
             roundAccWordCount += inputWordCount;
+        }
+
+        internal void RefreshTitleWordStats(TrainerTitleWordStatsSnapshot snapshot)
+        {
+            if (snapshot == null)
+                return;
+
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(new Action(() => RefreshTitleWordStats(snapshot)));
+                return;
+            }
+
+            _displayedDate = DateTime.Now.ToString("yyyy-MM-dd");
+            _displayedTodayWords = snapshot.TodayWords;
+            _displayedTotalWords = snapshot.TotalWords;
+            UpdateTitleBarStats();
+        }
+
+        private int GetCurrentPartialActualWordCount(int fallbackInputTextElements)
+        {
+            int section = Convert.ToInt32(cfg["上次的段数"]);
+            if (section < 0 || section >= DisplayRoot.Count)
+                return 0;
+
+            return TrainerActualWordCounter.CountPartialWords(
+                Score.CommitText,
+                DisplayRoot[section],
+                fallbackInputTextElements);
+        }
+
+        private int GetCurrentGroupWordCount()
+        {
+            int section = Convert.ToInt32(cfg["上次的段数"]);
+            if (section < 0 || section >= DisplayRoot.Count)
+                return 0;
+
+            string text = string.Join("", DisplayRoot[section]);
+            if (string.IsNullOrEmpty(text))
+                return 0;
+
+            return new StringInfo(text).LengthInTextElements;
         }
 
         public void F3()
@@ -1068,12 +1110,14 @@ namespace TypeSunny
         public void RefreshFileList()
         {
             autoSendPolicy.BeginProgrammaticRefresh();
+            _isRefreshingFileList = true;
             try
             {
                 UpdateFileList();
             }
             finally
             {
+                _isRefreshingFileList = false;
                 autoSendPolicy.EndProgrammaticRefresh();
             }
         }
@@ -1234,7 +1278,9 @@ namespace TypeSunny
             }
 
             WriteDebugLog("[AutoNextGroup] 设置 sld.Value 前");
+            SliderInit = false;
             sld.Value = Convert.ToInt32(cfg["上次的段数"]) + 1;
+            SliderInit = true;
             WriteDebugLog("[AutoNextGroup] sld.Value 设置完成");
 
             // 新段重置重打次数和最高击键率
@@ -1609,7 +1655,6 @@ namespace TypeSunny
             };
 
             TrainerLog.WriteRecord(record);
-            OnRecordWritten(record.TotalWords);
         }
         
         string GetMatchText()
@@ -1725,7 +1770,7 @@ namespace TypeSunny
         private void FileSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (CfgInit && FileSelector.SelectedItem != null)
-                ReadTxt();
+                ReadTxt(skipInGroupRand: _isRefreshingFileList);
 
         }
 
@@ -2215,34 +2260,15 @@ namespace TypeSunny
             try
             {
                 _displayedDate = DateTime.Now.ToString("yyyy-MM-dd");
-                var todayStats = TrainerLog.ReadStatisticsInRange(DateTime.Today, DateTime.Today);
-                _displayedTodayWords = todayStats.Sum(s => s.TotalWords);
-                var allStats = TrainerLog.ReadStatistics();
-                _displayedTotalWords = allStats.Sum(s => s.TotalWords);
+                var snapshot = TrainerTitleWordStats.Read();
+                _displayedTodayWords = snapshot.TodayWords;
+                _displayedTotalWords = snapshot.TotalWords;
                 UpdateTitleBarStats();
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[InitializeTitleStats] 失败: {ex.Message}");
             }
-        }
-
-        private void OnRecordWritten(int totalWords)
-        {
-            // 跟 TrainerLog.MinWordCount 保持一致
-            if (totalWords < 5) return;
-
-            // 日期换天时整体重算（含其他可能的练单数据）
-            var today = DateTime.Now.ToString("yyyy-MM-dd");
-            if (today != _displayedDate)
-            {
-                InitializeTitleStats();
-                return;
-            }
-
-            _displayedTodayWords += totalWords;
-            _displayedTotalWords += totalWords;
-            UpdateTitleBarStats();
         }
 
         private void UpdateTitleBarStats()
@@ -2302,6 +2328,8 @@ namespace TypeSunny
             if (this.IsVisible && CfgInit)
             {
                 LoadArticleStatistics(TxtFile);
+                ShowWords();
+                PushTrainerSectionToMain();
                 InitializeTitleStats();
             }
         }
