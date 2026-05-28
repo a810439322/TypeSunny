@@ -244,9 +244,15 @@
                             <Button x:Name="BtnRandAll" Content="全体乱序" Margin="8,0,0,0" Click="RandAllClick" Style="{StaticResource ModernButtonStyle}"/>
                             <Button Content="恢复顺序" Margin="5,0,0,0" Click="norm_Click" Style="{StaticResource ModernButtonStyle}"/>
                             <Button Content="发文" Margin="5,0,0,0" Click="BtnSend_Click" Style="{StaticResource ModernButtonStyle}"/>
-                            <CheckBox x:Name="CbCloseAfterSend" Margin="10,0,0,0" VerticalAlignment="Center" Checked="CbCloseAfterSend_Checked" Unchecked="CbCloseAfterSend_Unchecked" Foreground="{DynamicResource TextForeground}">
-                                <TextBlock Text="发文后关闭窗口" Foreground="{DynamicResource TextForeground}" FontSize="12"/>
-                            </CheckBox>
+                            <StackPanel x:Name="TrainerSendOptionsPanel" Orientation="Vertical" Margin="10,0,0,0" VerticalAlignment="Center">
+                                <CheckBox x:Name="CbCloseAfterSend" Margin="0,0,0,2" Checked="CbCloseAfterSend_Checked" Unchecked="CbCloseAfterSend_Unchecked" Foreground="{DynamicResource TextForeground}">
+                                    <TextBlock Text="发文后关闭窗口" Foreground="{DynamicResource TextForeground}" FontSize="12"/>
+                                </CheckBox>
+                                <CheckBox x:Name="CbTrainerMainWindowMemory" Margin="0" Checked="CbTrainerMainWindowMemory_Checked" Unchecked="CbTrainerMainWindowMemory_Unchecked" Foreground="{DynamicResource TextForeground}">
+                                    <TextBlock Text="主窗口单独记忆" Foreground="{DynamicResource TextForeground}" FontSize="12"/>
+                                </CheckBox>
+                            </StackPanel>
+                            <Button x:Name="BtnResetTrainerMainWindowMemory" Content="重置主窗口记忆" Margin="8,0,0,0" Click="BtnResetTrainerMainWindowMemory_Click" Style="{StaticResource ModernButtonStyle}"/>
                         </StackPanel>
                         <TextBlock x:Name="TBHitrate" Grid.Column="1" Text="击键 0.00" Foreground="{DynamicResource TextForeground}" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="12"/>
                     </Grid>

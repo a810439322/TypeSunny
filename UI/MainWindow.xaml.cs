@@ -94,6 +94,154 @@ namespace TypeSunny.UI
         private bool _isWindowResizeDragInProgress;
         private bool _hasPendingWindowResizeDragWork;
 
+        private static string ScopedConfigString(string key)
+        {
+            return TrainerMainWindowConfigScope.GetString(key);
+        }
+
+        private static bool ScopedConfigBool(string key)
+        {
+            return TrainerMainWindowConfigScope.GetBool(key);
+        }
+
+        private static double ScopedConfigDouble(string key)
+        {
+            return TrainerMainWindowConfigScope.GetDouble(key);
+        }
+
+        private static void SetScopedConfig(string key, bool value)
+        {
+            TrainerMainWindowConfigScope.Set(key, value);
+        }
+
+        private static void SetScopedConfig(string key, double value, int fraction = -1)
+        {
+            TrainerMainWindowConfigScope.Set(key, value, fraction);
+        }
+
+        private static void SetScopedConfigRaw(string key, string value)
+        {
+            TrainerMainWindowConfigScope.SetRaw(key, value);
+        }
+
+        private void SyncTrainerMainWindowConfigScope(TxtSource source)
+        {
+            if (source == TxtSource.unchange)
+                return;
+
+            bool shouldUseTrainerScope = source == TxtSource.trainer && TrainerMainWindowConfigScope.IsEnabled;
+            if (shouldUseTrainerScope == TrainerMainWindowConfigScope.IsTrainerScopeActive)
+                return;
+
+            SaveCurrentMainWindowScopedState();
+            BeginSuppressWindowSizeChangeUpdates();
+            try
+            {
+                if (shouldUseTrainerScope)
+                    TrainerMainWindowConfigScope.EnterTrainerScope();
+                else
+                    TrainerMainWindowConfigScope.ExitTrainerScope();
+
+                ApplyScopedMainWindowState();
+            }
+            finally
+            {
+                EndSuppressWindowSizeChangeUpdatesLater();
+            }
+        }
+
+        public void RefreshTrainerMainWindowMemoryMode()
+        {
+            SyncTrainerMainWindowConfigScope(StateManager.txtSource);
+        }
+
+        public void ResetTrainerMainWindowMemory()
+        {
+            TrainerMainWindowConfigScope.ResetTrainerScopedValues();
+            if (TrainerMainWindowConfigScope.IsTrainerScopeActive)
+                ApplyScopedMainWindowState();
+        }
+
+        private void SaveCurrentMainWindowScopedState()
+        {
+            if (!StateManager.ConfigLoaded)
+                return;
+
+            TrainerMainWindowConfigScope.SetActiveScope("窗口宽度", this.Width, 0);
+            TrainerMainWindowConfigScope.SetActiveScope("窗口坐标X", this.Left, 0);
+            TrainerMainWindowConfigScope.SetActiveScope("窗口坐标Y", this.Top, 0);
+
+            if (_isSuperCompactLayoutApplied || TrainerMainWindowConfigScope.GetBool(SuperCompactModeConfigKey))
+                TrainerMainWindowConfigScope.SetActiveScope("一键极简后窗口高度", this.Height, 0);
+            else
+                TrainerMainWindowConfigScope.SetActiveScope("窗口高度", this.Height, 0);
+
+            SaveDisplayInputRatio(activeScope: true);
+        }
+
+        private void ApplyScopedMainWindowState()
+        {
+            ResetSuperCompactLayoutForScopedStateChange();
+
+            double width = ScopedConfigDouble("窗口宽度");
+            if (width > 100 && width < 4000)
+                this.Width = width;
+
+            double normalHeight = ScopedConfigDouble("窗口高度");
+            if (normalHeight > 100 && normalHeight < 4000)
+                this.Height = normalHeight;
+
+            double left = ScopedConfigDouble("窗口坐标X");
+            double top = ScopedConfigDouble("窗口坐标Y");
+            if (left > -10000 && top > -10000)
+            {
+                this.Left = left;
+                this.Top = top;
+            }
+
+            ApplyDisplayInputRatio();
+            ApplyHomeToolbarSettings(false);
+
+            if (ScopedConfigBool("成绩面板展开"))
+            {
+                _isResultsExpanded = true;
+                ExpandResultsPanelLayout(false);
+            }
+            else
+            {
+                _isResultsExpanded = false;
+                CollapseResultsPanelLayout(false, false, NormalCollapsedBottomBorderHeight);
+            }
+
+            if (ScopedConfigBool(SuperCompactModeConfigKey))
+            {
+                ApplySuperCompactModeLayout(true, true, normalHeight);
+
+                double compactHeight = ScopedConfigDouble("一键极简后窗口高度");
+                if (compactHeight > 100 && compactHeight < 4000)
+                    this.Height = compactHeight;
+            }
+
+            UpdateMainContextMenuVisibility();
+            ScheduleModeLayoutRefresh();
+        }
+
+        private void ResetSuperCompactLayoutForScopedStateChange()
+        {
+            if (!_isSuperCompactLayoutApplied)
+                return;
+
+            RestoreSuperCompactBottomButtonRow();
+            if (typingAreaAndButtonsGrid != null)
+                typingAreaAndButtonsGrid.Margin = new Thickness(0);
+
+            buttonArea1.Height = GridLength.Auto;
+            buttonArea1.ClearValue(RowDefinition.MinHeightProperty);
+            _isSuperCompactLayoutApplied = false;
+            _superCompactLayoutSnapshot = null;
+            ApplyTopBarLayout();
+        }
+
         private sealed class SuperCompactLayoutSnapshot
         {
             public bool ResultsExpanded { get; set; }
@@ -1925,7 +2073,7 @@ namespace TypeSunny.UI
 
             // 一键极简模式下：先透明，等 Window_Loaded 里布局套用完再恢复。
             // 必须放在 ctor 同步早期（InitializeComponent 之后，任何 Show 发生之前）。
-            if (Config.GetBool(SuperCompactModeConfigKey))
+            if (ScopedConfigBool(SuperCompactModeConfigKey))
             {
                 this.Opacity = 0;
             }
@@ -2297,13 +2445,13 @@ namespace TypeSunny.UI
 
 
 
-            this.Height = Config.GetDouble("窗口高度");
-            this.Width = Config.GetDouble("窗口宽度");
+            this.Height = ScopedConfigDouble("窗口高度");
+            this.Width = ScopedConfigDouble("窗口宽度");
 
             // 一键极简模式下使用独立记忆的"一键极简后窗口高度"，避免压缩/拖动值污染普通模式的窗口高度
-            if (Config.GetBool(SuperCompactModeConfigKey))
+            if (ScopedConfigBool(SuperCompactModeConfigKey))
             {
-                double scH = Config.GetDouble("一键极简后窗口高度");
+                double scH = ScopedConfigDouble("一键极简后窗口高度");
                 if (scH > 100 && scH < 4000)
                 {
                     this.Height = scH;
@@ -2314,7 +2462,7 @@ namespace TypeSunny.UI
             var grid_a = this.FindName("grid_a") as Grid;
             if (grid_a != null)
             {
-                if (Config.GetBool("成绩面板展开"))
+                if (ScopedConfigBool("成绩面板展开"))
                 {
                     _isResultsExpanded = true;
                     // 成绩区高度已在ApplyDisplayInputRatio中设置
@@ -2351,14 +2499,14 @@ namespace TypeSunny.UI
                         bottomBorder.Visibility = Visibility.Visible;
                     }
 
-                    double expandedH = Config.GetDouble("展开窗口高度");
+                    double expandedH = ScopedConfigDouble("展开窗口高度");
                     if (expandedH > 300)
                         _expandedWindowHeight = expandedH;
                     else
-                        _expandedWindowHeight = Config.GetDouble("窗口高度") + 150;
+                        _expandedWindowHeight = ScopedConfigDouble("窗口高度") + 150;
 
                     // 初始化 _collapsedResultsHeight，展开时用
-                    double rRatio = Config.GetDouble("成绩区高度比例");
+                    double rRatio = ScopedConfigDouble("成绩区高度比例");
                     if (rRatio <= 0 || rRatio >= 1) rRatio = 0.2;
                     if (_expandedWindowHeight > 300)
                         _collapsedResultsHeight = _expandedWindowHeight * rRatio;
@@ -2533,7 +2681,7 @@ namespace TypeSunny.UI
             var grid_a = this.FindName("grid_a") as Grid;
             if (grid_a != null)
             {
-                if (Config.GetBool("成绩面板展开"))
+                if (ScopedConfigBool("成绩面板展开"))
                 {
                     _isResultsExpanded = true;
                     // 成绩区高度已在ApplyDisplayInputRatio中设置
@@ -2599,13 +2747,13 @@ namespace TypeSunny.UI
                         }), System.Windows.Threading.DispatcherPriority.Loaded);
 
                         // 保存展开时的窗口高度
-                        double ewh = Config.GetDouble("展开窗口高度");
+                        double ewh = ScopedConfigDouble("展开窗口高度");
                         if (ewh > 300)
                             _expandedWindowHeight = ewh;
                         else
-                            _expandedWindowHeight = Config.GetDouble("窗口高度") + 150;
+                            _expandedWindowHeight = ScopedConfigDouble("窗口高度") + 150;
 
-                        double rr2 = Config.GetDouble("成绩区高度比例");
+                        double rr2 = ScopedConfigDouble("成绩区高度比例");
                         if (rr2 <= 0 || rr2 >= 1) rr2 = 0.2;
                         if (_expandedWindowHeight > 300)
                             _collapsedResultsHeight = _expandedWindowHeight * rr2;
@@ -2974,14 +3122,14 @@ namespace TypeSunny.UI
             _homeFeatureControls["race"] = MenuRace;
         }
 
-        public void ApplyHomeToolbarSettings()
+        public void ApplyHomeToolbarSettings(bool applySuperCompactMode = true)
         {
             if (stack1 == null || resultsButtonPanel == null)
                 return;
 
-            var isSuperCompact = Config.GetBool(SuperCompactModeConfigKey);
+            var isSuperCompact = TrainerMainWindowConfigScope.GetBool(SuperCompactModeConfigKey);
 
-            if (!isSuperCompact && _isSuperCompactLayoutApplied)
+            if (applySuperCompactMode && !isSuperCompact && _isSuperCompactLayoutApplied)
                 ApplySuperCompactModeLayout(false);
 
             BtnShuang.Content = "晴双拼";
@@ -2989,12 +3137,12 @@ namespace TypeSunny.UI
             BtnCtrlE.Content = "剪贴板Ctrl+E";
             BtnCtrlE.ToolTip = "Ctrl+E";
 
-            BtnConfig.Visibility = Config.GetBool(HomeToolbarSettings.ShowSettingsConfigKey) ? Visibility.Visible : Visibility.Collapsed;
-            BtnF3.Visibility = Config.GetBool(HomeToolbarSettings.ShowRetryConfigKey) ? Visibility.Visible : Visibility.Collapsed;
-            BtnCtrlE.Visibility = Config.GetBool(HomeToolbarSettings.ShowClipboardConfigKey) ? Visibility.Visible : Visibility.Collapsed;
-            BtnF4.Visibility = Config.GetBool(HomeToolbarSettings.ShowGroupArticleConfigKey) ? Visibility.Visible : Visibility.Collapsed;
-            BtnF5.Visibility = Config.GetBool(HomeToolbarSettings.ShowGroupPickerConfigKey) ? Visibility.Visible : Visibility.Collapsed;
-            var localArticleVisibility = Config.GetBool(HomeToolbarSettings.ShowLocalArticleConfigKey)
+            BtnConfig.Visibility = TrainerMainWindowConfigScope.GetBool(HomeToolbarSettings.ShowSettingsConfigKey) ? Visibility.Visible : Visibility.Collapsed;
+            BtnF3.Visibility = TrainerMainWindowConfigScope.GetBool(HomeToolbarSettings.ShowRetryConfigKey) ? Visibility.Visible : Visibility.Collapsed;
+            BtnCtrlE.Visibility = TrainerMainWindowConfigScope.GetBool(HomeToolbarSettings.ShowClipboardConfigKey) ? Visibility.Visible : Visibility.Collapsed;
+            BtnF4.Visibility = TrainerMainWindowConfigScope.GetBool(HomeToolbarSettings.ShowGroupArticleConfigKey) ? Visibility.Visible : Visibility.Collapsed;
+            BtnF5.Visibility = TrainerMainWindowConfigScope.GetBool(HomeToolbarSettings.ShowGroupPickerConfigKey) ? Visibility.Visible : Visibility.Collapsed;
+            var localArticleVisibility = TrainerMainWindowConfigScope.GetBool(HomeToolbarSettings.ShowLocalArticleConfigKey)
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             BtnArticleManager.Visibility = localArticleVisibility;
@@ -3010,9 +3158,9 @@ namespace TypeSunny.UI
 
             var visibility = HomeToolbarSettings.FeatureEntries.ToDictionary(
                 entry => entry.VisibilityConfigKey,
-                entry => Config.GetBool(entry.VisibilityConfigKey));
+                entry => TrainerMainWindowConfigScope.GetBool(entry.VisibilityConfigKey));
             var orderedEntries = HomeToolbarSettings.GetVisibleFeatureEntries(
-                Config.GetString(HomeToolbarSettings.FeatureOrderConfigKey),
+                TrainerMainWindowConfigScope.GetString(HomeToolbarSettings.FeatureOrderConfigKey),
                 visibility);
 
             int insertIndex = 0;
@@ -3038,11 +3186,20 @@ namespace TypeSunny.UI
                     control.Visibility = Visibility.Collapsed;
             }
 
-            Config.dicts[HomeToolbarSettings.FeatureOrderConfigKey] =
-                HomeToolbarSettings.NormalizeFeatureOrder(Config.GetString(HomeToolbarSettings.FeatureOrderConfigKey));
+            if (TrainerMainWindowConfigScope.HasCurrentScopeValue(HomeToolbarSettings.FeatureOrderConfigKey))
+            {
+                string currentFeatureOrder = TrainerMainWindowConfigScope.GetString(HomeToolbarSettings.FeatureOrderConfigKey);
+                string normalizedFeatureOrder = HomeToolbarSettings.NormalizeFeatureOrder(currentFeatureOrder);
+                if (normalizedFeatureOrder != currentFeatureOrder)
+                {
+                    TrainerMainWindowConfigScope.SetRaw(
+                        HomeToolbarSettings.FeatureOrderConfigKey,
+                        normalizedFeatureOrder);
+                }
+            }
             ApplyTopBarButtonCornerRadius();
             ApplyTopBarLayout();
-            if (isSuperCompact)
+            if (isSuperCompact && applySuperCompactMode)
                 ApplySuperCompactModeLayout(true, true);
             UpdateMainContextMenuVisibility();
         }
@@ -3117,7 +3274,7 @@ namespace TypeSunny.UI
             return layoutVersion != _resultsLayoutVersion;
         }
 
-        private void ApplySuperCompactModeLayout(bool isSuperCompact, bool forceRefresh = false)
+        private void ApplySuperCompactModeLayout(bool isSuperCompact, bool forceRefresh = false, double normalWindowHeightOverride = 0)
         {
             if (isSuperCompact && !forceRefresh && _isSuperCompactLayoutApplied && _superCompactLayoutSnapshot != null)
             {
@@ -3131,6 +3288,8 @@ namespace TypeSunny.UI
                 if (isSuperCompact)
                 {
                     var snapshot = CaptureSuperCompactLayoutSnapshot();
+                    if (normalWindowHeightOverride > 100 && normalWindowHeightOverride < 4000)
+                        snapshot.WindowHeight = normalWindowHeightOverride;
                     TrimSuperCompactBottomButtonRow();
                     stack1.Visibility = Visibility.Collapsed;
                     stack1.Margin = new Thickness(0);
@@ -3166,7 +3325,7 @@ namespace TypeSunny.UI
                     _superCompactLayoutSnapshot = null;
                     ApplyTopBarLayout();
                     _isResultsExpanded = shouldRestoreResultsExpanded;
-                    Config.dicts["成绩面板展开"] = shouldRestoreResultsExpanded ? "是" : "否";
+                    TrainerMainWindowConfigScope.SetRaw("成绩面板展开", shouldRestoreResultsExpanded ? "是" : "否");
 
                     if (shouldRestoreResultsExpanded)
                         ExpandResultsPanelLayout(false);
@@ -3218,7 +3377,7 @@ namespace TypeSunny.UI
             // snapshot.WindowHeight 需记录"切回普通模式时要恢复到的大尺寸"，直接用 Config["窗口高度"]。
             if (!StateManager.ConfigLoaded)
             {
-                double normalH = Config.GetDouble("窗口高度");
+                double normalH = ScopedConfigDouble("窗口高度");
                 if (normalH > 200 && normalH < 4000)
                     snapshot.WindowHeight = normalH;
             }
@@ -3458,7 +3617,7 @@ namespace TypeSunny.UI
             if (saveExpandedHeight)
             {
                 _expandedWindowHeight = this.ActualHeight;
-                Config.dicts["展开窗口高度"] = _expandedWindowHeight.ToString("F0");
+                TrainerMainWindowConfigScope.SetRaw("展开窗口高度", _expandedWindowHeight.ToString("F0"));
             }
             else if (adjustWindowHeight)
             {
@@ -3556,13 +3715,13 @@ namespace TypeSunny.UI
             if (MainContextMenu == null)
                 return;
 
-            MenuHomeSuperCompact.IsChecked = Config.GetBool(SuperCompactModeConfigKey);
+            MenuHomeSuperCompact.IsChecked = TrainerMainWindowConfigScope.GetBool(SuperCompactModeConfigKey);
             MenuHomePrev.IsEnabled = BtnPrev.IsEnabled;
             MenuHomeNext.IsEnabled = BtnNext.IsEnabled;
             MenuHomeSendArticle.IsEnabled = BtnSendArticle.IsEnabled;
             MenuHomeSendArticle.Header = BtnSendArticle.Content ?? "发文F2";
             MenuHomeToggleResults.Header = _isResultsExpanded ? "收起成绩" : "展开成绩";
-            MenuHomeToggleResults.IsEnabled = !Config.GetBool(SuperCompactModeConfigKey);
+            MenuHomeToggleResults.IsEnabled = !TrainerMainWindowConfigScope.GetBool(SuperCompactModeConfigKey);
         }
 
 
@@ -3776,15 +3935,15 @@ namespace TypeSunny.UI
             if (_suppressWindowSizeChangeUpdatesDepth > 0 || !StateManager.ConfigLoaded)
                 return;
 
-            Config.Set("窗口宽度", this.Width, 0);
-            if (Config.GetBool(SuperCompactModeConfigKey))
+            TrainerMainWindowConfigScope.Set("窗口宽度", this.Width, 0);
+            if (TrainerMainWindowConfigScope.GetBool(SuperCompactModeConfigKey))
             {
                 // 一键极简模式下，窗口高度变化只写入"一键极简后窗口高度"，不污染普通模式的"窗口高度"
-                Config.Set("一键极简后窗口高度", this.Height, 0);
+                TrainerMainWindowConfigScope.Set("一键极简后窗口高度", this.Height, 0);
             }
             else
             {
-                Config.Set("窗口高度", this.Height, 0);
+                TrainerMainWindowConfigScope.Set("窗口高度", this.Height, 0);
             }
 
             // UpdateDisplay(UpdateLevel.PageArrange);
@@ -6663,6 +6822,7 @@ public async Task SendArticle()
             {
                 StateManager.txtSource = source;
             }
+            SyncTrainerMainWindowConfigScope(source);
 
             StateManager.retypeType = retypeType;
 
@@ -7927,21 +8087,7 @@ public async Task SendArticle()
             // 确保打单器日志队列被清空
             CounterLog.Shutdown();
 
-            Config.Set("窗口坐标X", this.Left, 0);
-            Config.Set("窗口坐标Y", this.Top, 0);
-            // 分流保存：一键极简下 this.Height 是小尺寸，不能覆盖普通模式的"窗口高度"
-            if (Config.GetBool(SuperCompactModeConfigKey))
-            {
-                Config.Set("一键极简后窗口高度", this.Height, 0);
-                // 普通模式的"窗口高度"保留不变
-            }
-            else
-            {
-                Config.Set("窗口高度", this.Height, 0);
-            }
-            Config.Set("窗口宽度", this.Width, 0);
-
-            SaveDisplayInputRatio();
+            SaveCurrentMainWindowScopedState();
             Config.WriteConfig(0);
 
             //         StopHook();
@@ -9853,7 +9999,7 @@ public async Task SendArticle()
 
         private void MenuHomeSuperCompact_Click(object sender, RoutedEventArgs e)
         {
-            Config.Set(SuperCompactModeConfigKey, MenuHomeSuperCompact.IsChecked);
+            TrainerMainWindowConfigScope.Set(SuperCompactModeConfigKey, MenuHomeSuperCompact.IsChecked);
             ApplyHomeToolbarSettings();
         }
 
@@ -11034,12 +11180,12 @@ public async Task SendArticle()
 
             if (_isResultsExpanded)
             {
-                Config.Set("成绩面板展开", true);
+                SetScopedConfig("成绩面板展开", true);
                 ExpandResultsPanelLayout(true);
             }
             else
             {
-                Config.Set("成绩面板展开", false);
+                SetScopedConfig("成绩面板展开", false);
                 CollapseResultsPanelLayout(true, true);
             }
         }
@@ -11239,7 +11385,7 @@ public async Task SendArticle()
             var grid_a = this.FindName("grid_a") as Grid;
             if (grid_a != null)
             {
-                double resultsRatio = Config.GetDouble("成绩区高度比例");
+                double resultsRatio = ScopedConfigDouble("成绩区高度比例");
                 // 合理范围 [0.05, 0.7]：太小会让成绩区看不见，太大会挤没跟打区
                 if (resultsRatio < 0.05 || resultsRatio > 0.7)
                     resultsRatio = 0.2;
@@ -11257,7 +11403,7 @@ public async Task SendArticle()
                 }
                 else
                 {
-                    double articleTypingRatio = Config.GetDouble("发文区跟打区比例");
+                    double articleTypingRatio = ScopedConfigDouble("发文区跟打区比例");
                     // 合理范围 [0.2, 0.9]：超出一般是 bug 写入的坏值
                     if (articleTypingRatio < 0.2 || articleTypingRatio > 0.9)
                         articleTypingRatio = 0.56;
@@ -11272,7 +11418,7 @@ public async Task SendArticle()
             }
         }
 
-        private void SaveDisplayInputRatio()
+        private void SaveDisplayInputRatio(bool activeScope = false)
         {
             if (_isSuperCompactLayoutApplied || _suppressWindowSizeChangeUpdatesDepth > 0)
                 return;
@@ -11297,7 +11443,10 @@ public async Task SendArticle()
                         if (articleTypingTotal > 0 && articleHeight >= 30 && typingHeight >= 30)
                         {
                             double articleTypingRatio = articleHeight / articleTypingTotal;
-                            Config.dicts["发文区跟打区比例"] = articleTypingRatio.ToString("F6");
+                            if (activeScope)
+                                TrainerMainWindowConfigScope.SetActiveScopeRaw("发文区跟打区比例", articleTypingRatio.ToString("F6"));
+                            else
+                                TrainerMainWindowConfigScope.SetRaw("发文区跟打区比例", articleTypingRatio.ToString("F6"));
                         }
                     }
 
@@ -11307,7 +11456,10 @@ public async Task SendArticle()
                         double resultsRatio = resultsHeight / total;
                         if (resultsRatio >= 0.05 && resultsRatio <= 0.7)
                         {
-                            Config.dicts["成绩区高度比例"] = resultsRatio.ToString("F6");
+                            if (activeScope)
+                                TrainerMainWindowConfigScope.SetActiveScopeRaw("成绩区高度比例", resultsRatio.ToString("F6"));
+                            else
+                                TrainerMainWindowConfigScope.SetRaw("成绩区高度比例", resultsRatio.ToString("F6"));
                         }
                     }
 

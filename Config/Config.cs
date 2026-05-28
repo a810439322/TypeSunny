@@ -91,6 +91,7 @@ namespace TypeSunny
             "显示首页剪贴板载文", "是",
             "显示首页群载文", "是",
             "显示首页选群", "是",
+            "练单主窗口单独记忆", "是",
             "一键极简", "否",
             "一键极简后窗口高度", "0",
             "成绩签名", "",
@@ -337,7 +338,7 @@ namespace TypeSunny
                                 string value = line_p.Substring(pos + 1).Trim();
 
                                 string migratedKey = GetMigratedConfigKey(key);
-                                if (dicts.ContainsKey(migratedKey))
+                                if (dicts.ContainsKey(migratedKey) || IsTrainerMainWindowScopedConfigKey(migratedKey))
                                     dicts[migratedKey] = value;
 
                                 break;
@@ -378,6 +379,41 @@ namespace TypeSunny
             if (key == "平滑滚动")
                 return "平滑换行";
             return key;
+        }
+
+        private static bool IsTrainerMainWindowScopedConfigKey(string key)
+        {
+            if (string.IsNullOrEmpty(key) || !key.StartsWith("练单场景_"))
+                return false;
+
+            string baseKey = key.Substring("练单场景_".Length);
+            switch (baseKey)
+            {
+                case "窗口高度":
+                case "窗口宽度":
+                case "窗口坐标X":
+                case "窗口坐标Y":
+                case "一键极简":
+                case "一键极简后窗口高度":
+                case "成绩面板展开":
+                case "展开窗口高度":
+                case "发文区跟打区比例":
+                case "成绩区高度比例":
+                case "首页功能按钮顺序":
+                case "显示首页文来":
+                case "显示首页练单":
+                case "显示首页晴双拼":
+                case "显示首页赛文":
+                case "显示首页设置":
+                case "显示首页本地文章":
+                case "显示首页重打":
+                case "显示首页剪贴板载文":
+                case "显示首页群载文":
+                case "显示首页选群":
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         private static void MigrateSmoothCaretLegacyValue()
