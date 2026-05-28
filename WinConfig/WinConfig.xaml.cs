@@ -3512,9 +3512,9 @@ namespace TypeSunny
 
             var visibility = HomeToolbarSettings.FeatureEntries.ToDictionary(
                 entry => entry.VisibilityConfigKey,
-                entry => Config.GetBool(entry.VisibilityConfigKey));
+                entry => TrainerMainWindowConfigScope.GetBool(entry.VisibilityConfigKey));
             var currentOrder = HomeToolbarSettings.GetFeatureEntries(
-                Config.GetString(HomeToolbarSettings.FeatureOrderConfigKey));
+                TrainerMainWindowConfigScope.GetString(HomeToolbarSettings.FeatureOrderConfigKey));
 
             var listBox = new ListBox
             {
@@ -3579,10 +3579,10 @@ namespace TypeSunny
 
                     orderedNames.Add(entry.DisplayName);
                     if (checkboxes.ContainsKey(entry.Key))
-                        Config.Set(entry.VisibilityConfigKey, checkboxes[entry.Key].IsChecked == true);
+                        TrainerMainWindowConfigScope.Set(entry.VisibilityConfigKey, checkboxes[entry.Key].IsChecked == true);
                 }
 
-                Config.Set(HomeToolbarSettings.FeatureOrderConfigKey, string.Join(",", orderedNames));
+                TrainerMainWindowConfigScope.Set(HomeToolbarSettings.FeatureOrderConfigKey, string.Join(",", orderedNames));
                 RefreshMainWindowHomeToolbar();
             };
 
@@ -3744,7 +3744,7 @@ namespace TypeSunny
                 };
                 var chk = new CheckBox
                 {
-                    IsChecked = Config.GetBool(entry.VisibilityConfigKey),
+                    IsChecked = TrainerMainWindowConfigScope.GetBool(entry.VisibilityConfigKey),
                     Style = FindResource("ModernToggleStyle") as Style,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 4, 8, 4)
@@ -3759,12 +3759,12 @@ namespace TypeSunny
 
                 chk.Checked += (s, e) =>
                 {
-                    Config.Set(entry.VisibilityConfigKey, true);
+                    TrainerMainWindowConfigScope.Set(entry.VisibilityConfigKey, true);
                     RefreshMainWindowHomeToolbar();
                 };
                 chk.Unchecked += (s, e) =>
                 {
-                    Config.Set(entry.VisibilityConfigKey, false);
+                    TrainerMainWindowConfigScope.Set(entry.VisibilityConfigKey, false);
                     RefreshMainWindowHomeToolbar();
                 };
 

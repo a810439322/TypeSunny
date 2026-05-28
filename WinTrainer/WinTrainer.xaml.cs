@@ -2153,6 +2153,7 @@ namespace TypeSunny
             hitDecreaseDisplay.Text = cfg["每轮降击"];
             accuracyDisplay.Text = cfg["换段键准"];
             CbCloseAfterSend.IsChecked = cfg["练单发文后关闭窗口"] == "否" ? false : true;
+            CbTrainerMainWindowMemory.IsChecked = Config.GetBool(TrainerMainWindowConfigScope.EnabledConfigKey);
 
             // 恢复字体大小
             if (double.TryParse(cfg["练单器字体大小"], out double savedFtsize) && savedFtsize >= 10 && savedFtsize <= 72)
@@ -2318,6 +2319,16 @@ namespace TypeSunny
             SaveCloseAfterSendSetting();
         }
 
+        private void CbTrainerMainWindowMemory_Checked(object sender, RoutedEventArgs e)
+        {
+            SaveTrainerMainWindowMemorySetting();
+        }
+
+        private void CbTrainerMainWindowMemory_Unchecked(object sender, RoutedEventArgs e)
+        {
+            SaveTrainerMainWindowMemorySetting();
+        }
+
         private void SaveCloseAfterSendSetting()
         {
             if (!CfgInit)
@@ -2325,6 +2336,24 @@ namespace TypeSunny
 
             cfg["练单发文后关闭窗口"] = CbCloseAfterSend.IsChecked == true ? "是" : "否";
             WriteCfg();
+        }
+
+        private void SaveTrainerMainWindowMemorySetting()
+        {
+            if (!CfgInit)
+                return;
+
+            Config.Set(TrainerMainWindowConfigScope.EnabledConfigKey, CbTrainerMainWindowMemory.IsChecked == true);
+            MainWindow.Current?.RefreshTrainerMainWindowMemoryMode();
+        }
+
+        private void BtnResetTrainerMainWindowMemory_Click(object sender, RoutedEventArgs e)
+        {
+            var result = MessageBox.Show("确定要清空练单场景下的主窗口记忆吗？", "重置确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result != MessageBoxResult.Yes)
+                return;
+
+            MainWindow.Current?.ResetTrainerMainWindowMemory();
         }
 
         private void CloseTrainerWindowAfterSendIfNeeded()
