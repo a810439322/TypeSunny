@@ -8,6 +8,27 @@ $configWindowCode = Get-Content -Raw -Encoding UTF8 (Join-Path $root 'WinConfig\
 $autoHideScoreLabelKey = [string]::Concat([char[]]@(0x5931, 0x7126, 0x540E, 0x81EA, 0x52A8, 0x9690, 0x85CF, 0x6210, 0x7EE9, 0x533A, 0x6587, 0x5B57))
 $scoreCategoryTitle = [string]::Concat([char[]]@(0x6210, 0x7EE9))
 
+function Get-MethodBlock([string]$source, [string]$methodName) {
+    $match = [regex]::Match($source, 'private\s+void\s+' + [regex]::Escape($methodName) + '\([^)]*\)\s*\{')
+    if (-not $match.Success) {
+        throw "Unable to find $methodName handler."
+    }
+
+    $depth = 0
+    for ($i = $match.Index; $i -lt $source.Length; $i++) {
+        if ($source[$i] -eq '{') {
+            $depth++
+        } elseif ($source[$i] -eq '}') {
+            $depth--
+            if ($depth -eq 0) {
+                return $source.Substring($match.Index, $i - $match.Index + 1)
+            }
+        }
+    }
+
+    throw "Unable to parse $methodName handler."
+}
+
 $match = [regex]::Match($mainXaml, '<TextBox\s+Name="TbxResults"[^>]*>')
 if (-not $match.Success) {
     throw 'Unable to find TbxResults TextBox.'
@@ -150,6 +171,27 @@ if ($mainCode -notmatch 'GridSplitterResults_DragCompleted[\s\S]{0,1200}Schedule
 
 if ($mainCode -notmatch 'GridSplitterResults_PreviewMouseUp[\s\S]{0,1200}ScheduleResultsRelayout\(\);') {
     throw 'Score panel custom height drag should schedule delayed relayout.'
+}
+
+$sizeChangedBlock = Get-MethodBlock $mainCode 'win_size_change'
+if ($sizeChangedBlock -match 'RefreshTypingStatDisplay\(\);') {
+    throw 'Window width resizing should not refresh score panel on every SizeChanged event.'
+}
+
+if ($sizeChangedBlock -notmatch '_isWindowResizeDragInProgress[\s\S]{0,200}return;[\s\S]{0,120}RunWindowResizeCompletedWork\(\);') {
+    throw 'Window SizeChanged should defer heavy resize work while native border dragging is active.'
+}
+
+if ($mainCode -notmatch 'private bool _isWindowResizeDragInProgress') {
+    throw 'Window resize should track native border dragging so heavy work can be deferred until drag end.'
+}
+
+if ($mainCode -notmatch 'ResizeBorder_MouseLeftButtonDown[\s\S]{0,1800}RunWindowResizeCompletedWork\(\);') {
+    throw 'Native border resizing should run deferred resize work after SendMessage returns.'
+}
+
+if ($mainCode -notmatch 'private void RunWindowResizeCompletedWork\(\)[\s\S]{0,900}RefreshTypingStatDisplay\(\);') {
+    throw 'Deferred resize work should refresh the score panel after resizing completes.'
 }
 
 Write-Host 'Score panel presentation tests passed.'

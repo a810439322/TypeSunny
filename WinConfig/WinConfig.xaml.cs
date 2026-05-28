@@ -1125,7 +1125,7 @@ namespace TypeSunny
                     cb.SelectedIndex = 0;
                 }
 
-                valueControl = cb;
+                valueControl = CreateSelectorWithDirectoryButton(cb, "字提");
             }
             else if (itemKey == "词提方案")
             {
@@ -1156,7 +1156,7 @@ namespace TypeSunny
                     cb.SelectedIndex = 0;
                 }
 
-                valueControl = cb;
+                valueControl = CreateSelectorWithDirectoryButton(cb, "词提");
             }
             else if (itemKey == "当前Logo")
             {
@@ -1188,7 +1188,7 @@ namespace TypeSunny
                 cb.SelectedIndex = selectedIndex;
                 cb.SelectionChanged += Logo_SelectionChanged;
 
-                valueControl = cb;
+                valueControl = CreateSelectorWithDirectoryButton(cb, "ico");
             }
             else if (itemKey == "字提字体")
             {
@@ -1598,6 +1598,57 @@ namespace TypeSunny
 
             AttachAutoSave(itemKey, valueControl);
             return valueControl;
+        }
+
+        private StackPanel CreateSelectorWithDirectoryButton(ComboBox comboBox, string folderName)
+        {
+            var panel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 0, 0, 0)
+            };
+
+            panel.Children.Add(comboBox);
+            panel.Children.Add(CreateOpenDirectoryButton(folderName));
+            return panel;
+        }
+
+        private Button CreateOpenDirectoryButton(string folderName)
+        {
+            var button = new Button
+            {
+                Content = "打开目录",
+                Width = 70,
+                Height = 28,
+                Margin = new Thickness(8, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Tag = folderName
+            };
+
+            button.Click += (s, e) => OpenResourceDirectory(folderName);
+            return button;
+        }
+
+        private void OpenResourceDirectory(string folderName)
+        {
+            try
+            {
+                string folderPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", folderName);
+                if (!System.IO.Directory.Exists(folderPath))
+                {
+                    System.IO.Directory.CreateDirectory(folderPath);
+                }
+
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = folderPath,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"打开目录失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private static bool IsSmoothCaretDurationItem(string itemKey)
@@ -2291,13 +2342,14 @@ namespace TypeSunny
             {
                 Title = "重命名主题",
                 Width = 350,
-                Height = 150,
+                MinHeight = 220,
+                SizeToContent = SizeToContent.Height,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = this,
                 ResizeMode = ResizeMode.NoResize
             };
 
-            var panel = new StackPanel { Margin = new Thickness(20) };
+            var panel = new StackPanel { Margin = new Thickness(20, 20, 20, 24) };
 
             var label = new TextBlock
             {
@@ -2324,13 +2376,15 @@ namespace TypeSunny
                 Content = "确定",
                 Width = 70,
                 Height = 28,
-                Margin = new Thickness(0, 0, 10, 0)
+                Margin = new Thickness(0, 0, 10, 0),
+                IsDefault = true
             };
             var cancelBtn = new Button
             {
                 Content = "取消",
                 Width = 70,
-                Height = 28
+                Height = 28,
+                IsCancel = true
             };
 
             buttonPanel.Children.Add(okBtn);
@@ -3917,12 +3971,20 @@ namespace TypeSunny
             {
                 AttachComboBoxAutoSave(comboBox, itemKey);
             }
-            else if (valueControl is StackPanel panel &&
-                     (itemKey == "文来接口地址" || itemKey == "赛文服务器地址"))
+            else if (valueControl is StackPanel panel)
             {
-                var nestedTextBox = panel.Children.OfType<TextBox>().FirstOrDefault();
-                if (nestedTextBox != null)
-                    AttachTextBoxAutoSave(nestedTextBox, itemKey);
+                if (itemKey == "文来接口地址" || itemKey == "赛文服务器地址")
+                {
+                    var nestedTextBox = panel.Children.OfType<TextBox>().FirstOrDefault();
+                    if (nestedTextBox != null)
+                        AttachTextBoxAutoSave(nestedTextBox, itemKey);
+                }
+                else
+                {
+                    var nestedComboBox = panel.Children.OfType<ComboBox>().FirstOrDefault();
+                    if (nestedComboBox != null)
+                        AttachComboBoxAutoSave(nestedComboBox, itemKey);
+                }
             }
         }
 
@@ -4421,6 +4483,10 @@ namespace TypeSunny
                             value.Add("");
                         }
                     }
+                    else if (cb != null)
+                    {
+                        ExtractControlValue(cb, labelText, key, value);
+                    }
                 }
             }
         }
@@ -4571,6 +4637,17 @@ namespace TypeSunny
                     (int)comboBox.GetValue(Grid.ColumnProperty) == 1)
                 {
                     return comboBox;
+                }
+
+                if (child is Panel panel &&
+                    (int)panel.GetValue(Grid.RowProperty) == row &&
+                    (int)panel.GetValue(Grid.ColumnProperty) == 1)
+                {
+                    var comboBoxInPanel = panel.Children.OfType<ComboBox>().FirstOrDefault();
+                    if (comboBoxInPanel != null)
+                    {
+                        return comboBoxInPanel;
+                    }
                 }
             }
 

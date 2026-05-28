@@ -91,6 +91,8 @@ namespace TypeSunny.UI
         private DispatcherTimer _mouseCursorRevealTimer;
         private bool _isMouseCursorTemporarilyRevealed;
         private Point? _lastMouseCursorRevealPosition;
+        private bool _isWindowResizeDragInProgress;
+        private bool _hasPendingWindowResizeDragWork;
 
         private sealed class SuperCompactLayoutSnapshot
         {
@@ -448,6 +450,8 @@ namespace TypeSunny.UI
                 // 更新进度条（所有模式）
                 int totalWords = TextInfo.Words.Count;
                 int typedWords = nextToType;
+                if (_copybookMode != null && _copybookMode.IsActive)
+                    typedWords = _copybookMode.TypedLength;
                 if (typedWords < 0) typedWords = 0;
                 if (typedWords > totalWords) typedWords = totalWords;
 
@@ -2726,7 +2730,7 @@ namespace TypeSunny.UI
             int typedWords = 0;
 
             if (_copybookMode != null && _copybookMode.IsActive)
-                typedWords = _copybookMode.CurrentIndex;
+                typedWords = _copybookMode.TypedLength;
             else if (_tracingMode != null && _tracingMode.IsActive)
                 typedWords = _tracingMode.CurrentIndex;
             else if (TbxInput != null)
@@ -3757,20 +3761,35 @@ namespace TypeSunny.UI
 
             if (StateManager.ConfigLoaded)
             {
-                Config.Set("窗口宽度", this.Width, 0);
-                if (Config.GetBool(SuperCompactModeConfigKey))
+                if (_isWindowResizeDragInProgress)
                 {
-                    // 一键极简模式下，窗口高度变化只写入"一键极简后窗口高度"，不污染普通模式的"窗口高度"
-                    Config.Set("一键极简后窗口高度", this.Height, 0);
+                    _hasPendingWindowResizeDragWork = true;
+                    return;
                 }
-                else
-                {
-                    Config.Set("窗口高度", this.Height, 0);
-                }
-                // UpdateDisplay(UpdateLevel.PageArrange);
-                DelayUpdateDisplay(500, UpdateLevel.PageArrange);
-                RefreshTypingStatDisplay();
+
+                RunWindowResizeCompletedWork();
             }
+        }
+
+        private void RunWindowResizeCompletedWork()
+        {
+            if (_suppressWindowSizeChangeUpdatesDepth > 0 || !StateManager.ConfigLoaded)
+                return;
+
+            Config.Set("窗口宽度", this.Width, 0);
+            if (Config.GetBool(SuperCompactModeConfigKey))
+            {
+                // 一键极简模式下，窗口高度变化只写入"一键极简后窗口高度"，不污染普通模式的"窗口高度"
+                Config.Set("一键极简后窗口高度", this.Height, 0);
+            }
+            else
+            {
+                Config.Set("窗口高度", this.Height, 0);
+            }
+
+            // UpdateDisplay(UpdateLevel.PageArrange);
+            DelayUpdateDisplay(500, UpdateLevel.PageArrange);
+            RefreshTypingStatDisplay();
         }
 
 
@@ -4481,7 +4500,8 @@ namespace TypeSunny.UI
                 Score.InputWordCount = StopInputWordCountPolicy.Resolve(
                     savedTxtSource,
                     scoreInputWordsBeforeRefresh,
-                    tbxInputTextElements);
+                    tbxInputTextElements,
+                    IsCopybookOrTracingActive());
                 savedInputWords = Score.InputWordCount; // 更新保存的输入字数
 
                 //计算错字
@@ -4808,10 +4828,7 @@ namespace TypeSunny.UI
                             else //有错字，发送成绩（后续通用逻辑会处理错字重打）
                             {
                                 WriteDebugLog($"[本地文章] 有错字，发送成绩");
-                                if (Config.GetBool("自动发送成绩"))
-                                {
-                                    QQHelper.SendQQMessage(qqGroupName, result, 250, this);
-                                }
+                                SendLocalArticleResultOnly(result, qqGroupName, 250);
                                 // 不进入错字重打，让后续的通用错字重打逻辑（line 2940-2977）处理
                                 WriteDebugLog($"[本地文章] 让通用逻辑处理错字重打");
                             }
@@ -11525,7 +11542,21 @@ public async Task SendArticle()
 
             if (direction != 0)
             {
-                SendMessage(windowHandle, WM_NCLBUTTONDOWN, (IntPtr)direction, IntPtr.Zero);
+                _isWindowResizeDragInProgress = true;
+                _hasPendingWindowResizeDragWork = false;
+                try
+                {
+                    SendMessage(windowHandle, WM_NCLBUTTONDOWN, (IntPtr)direction, IntPtr.Zero);
+                }
+                finally
+                {
+                    _isWindowResizeDragInProgress = false;
+                    if (_hasPendingWindowResizeDragWork)
+                    {
+                        _hasPendingWindowResizeDragWork = false;
+                        RunWindowResizeCompletedWork();
+                    }
+                }
             }
         }
 

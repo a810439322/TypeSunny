@@ -27,6 +27,7 @@ namespace TypeSunny.UI.Modes
         private readonly List<FrameworkElement> _wrongCharHints = new List<FrameworkElement>();
         private readonly ImeBackspacePolicy _imeBackspacePolicy = new ImeBackspacePolicy();
         private readonly FinishOnceGate _finishGate = new FinishOnceGate();
+        private readonly CopybookInputBuffer _inputBuffer = new CopybookInputBuffer();
         private int _currentIndex;
         private bool _isActive;
         private int _visualAdvanceVersion;
@@ -42,6 +43,7 @@ namespace TypeSunny.UI.Modes
 
         public bool IsActive => _isActive;
         public int CurrentIndex => _currentIndex;
+        public int TypedLength => _inputBuffer.Length;
 
         internal int GetBackgroundAnimationDurationMilliseconds()
         {
@@ -68,6 +70,7 @@ namespace TypeSunny.UI.Modes
 
             _isActive = true;
             _currentIndex = Score.InputWordCount;
+            SyncInputBufferFromCurrentState();
 
             // 隐藏跟打区（只隐藏输入框，保留按钮区）
             _main.TbxInput.Visibility = Visibility.Collapsed;
@@ -260,11 +263,10 @@ namespace TypeSunny.UI.Modes
         {
             if (!_isActive) return;
             _currentIndex = 0;
+            _inputBuffer.Clear();
             _finishGate.Reset();
             // 清除所有错字提示
-            foreach (var hint in _wrongCharHints)
-                _overlay.Children.Remove(hint);
-            _wrongCharHints.Clear();
+            ClearWrongCharHints();
             _imeBackspacePolicy.Reset();
             ClearImeCompositionState();
             if (_inputCapture != null)
@@ -308,6 +310,20 @@ namespace TypeSunny.UI.Modes
                 if (hint.Tag is int idx && idx < TextInfo.Blocks.Count)
                     hint.Opacity = TextInfo.Blocks[idx].Opacity;
             }
+        }
+
+        private void SyncInputBufferFromCurrentState()
+        {
+            int typedCount = Score.InputWordCount;
+            if (typedCount < 0) typedCount = 0;
+            if (typedCount > TextInfo.Words.Count) typedCount = TextInfo.Words.Count;
+
+            string typedText = "";
+            for (int i = 0; i < typedCount; i++)
+                typedText += TextInfo.Words[i];
+
+            _inputBuffer.SetText(typedText, typedCount);
+            _currentIndex = _inputBuffer.CaretIndex;
         }
 
         private void OnLostFocus(object sender, RoutedEventArgs e)
@@ -453,60 +469,32 @@ namespace TypeSunny.UI.Modes
                 && TextInfo.wordStates[TextInfo.Words.Count - 1] != WordStates.RIGHT)
             {
                 _currentIndex = TextInfo.Words.Count - 1;
+                _inputBuffer.MoveCaret(_currentIndex);
             }
 
-            // 逐字比对
-            for (int i = 0; i < si.LengthInTextElements && _currentIndex < TextInfo.Words.Count; i++)
+            int commitIndex = _currentIndex;
+            int inserted = _inputBuffer.Insert(inputText);
+            _currentIndex = _inputBuffer.CaretIndex;
+
+            if (inserted > 0)
             {
-                string ch = si.SubstringByTextElements(i, 1);
-                string expected = TextInfo.Words[_currentIndex];
+                ClearCodeLabelProgressFrom(commitIndex);
+                RefreshTypedStateFromInputBuffer();
 
-                // 方向键回到旧位置重打时，先清掉残留的错字提示
-                RemoveWrongCharHint(_currentIndex - TextInfo.PageStartIndex);
-
-                bool isCorrect = (ch == expected) || _main.IsLookingType;
-                if (i == 0 && !string.IsNullOrEmpty(committedComposition))
-                    _main.CommitCodeLabelProgress(_currentIndex, committedComposition, isCorrect);
-
-                if (isCorrect)
+                if (commitIndex < TextInfo.Words.Count && !string.IsNullOrEmpty(committedComposition))
                 {
-                    TextInfo.wordStates[_currentIndex] = WordStates.RIGHT;
-                    if (!_main.IsBlindType)
-                        QueueDisplayBlockStateBackground(_currentIndex, Colors.CorrectBackground);
-                }
-                else
-                {
-                    TextInfo.wordStates[_currentIndex] = WordStates.WRONG;
-                    if (!_main.IsBlindType)
-                    {
-                        QueueDisplayBlockStateBackground(_currentIndex, Colors.IncorrectBackground);
-                        ShowWrongCharHint(ch, _currentIndex - TextInfo.PageStartIndex);
-                    }
-                }
-
-                _currentIndex++;
-            }
-
-            // 更新成绩
-            Score.TotalWordCount = TextInfo.Words.Count;
-            Score.InputWordCount = _currentIndex;
-            Score.Wrong = 0;
-            if (!_main.IsLookingType)
-            {
-                for (int i = 0; i < TextInfo.wordStates.Count; i++)
-                {
-                    if (TextInfo.wordStates[i] == WordStates.WRONG)
-                        Score.Wrong++;
+                    string typed = _inputBuffer.GetElement(commitIndex);
+                    bool isCorrect = typed == TextInfo.Words[commitIndex] || _main.IsLookingType;
+                    _main.CommitCodeLabelProgress(commitIndex, committedComposition, isCorrect);
                 }
             }
-
             HideCompositionText();
 
             // 更新标题栏进度条和窗口标题
-            _main.UpdateTitleProgress(_currentIndex);
+            _main.UpdateTitleProgress(_inputBuffer.Length);
 
             // 检查是否结束：必须打完且最后一个字正确才结算
-            if (_currentIndex >= TextInfo.Words.Count
+            if (_inputBuffer.Length >= TextInfo.Words.Count
                 && TextInfo.wordStates[TextInfo.Words.Count - 1] == WordStates.RIGHT)
             {
                 ScheduleFinalVisualsAndStop();
@@ -542,6 +530,85 @@ namespace TypeSunny.UI.Modes
                 _inputCapture.Text = "";
 
             _inputCapture.Select(0, 0);
+        }
+
+        private void RefreshTypedStateFromInputBuffer()
+        {
+            Score.TotalWordCount = TextInfo.Words.Count;
+            Score.InputWordCount = _inputBuffer.Length;
+            Score.Wrong = 0;
+
+            ClearWrongCharHints();
+
+            var states = _inputBuffer.BuildStates(TextInfo.Words, _main.IsLookingType);
+            for (int i = 0; i < TextInfo.wordStates.Count; i++)
+            {
+                WordStates previousState = TextInfo.wordStates[i];
+                WordStates state = i < states.Length
+                    ? ToWordState(states[i])
+                    : WordStates.NO_TYPE;
+
+                TextInfo.wordStates[i] = state;
+
+                if (!_main.IsBlindType)
+                {
+                    if (previousState != state && IsIndexOnCurrentPage(i))
+                    {
+                        Brush background = GetQueuedBackgroundForState(state);
+                        QueueDisplayBlockStateBackground(i, background);
+                    }
+
+                    if (state == WordStates.WRONG && IsIndexOnCurrentPage(i))
+                        ShowWrongCharHint(_inputBuffer.GetElement(i), i - TextInfo.PageStartIndex);
+                }
+
+                if (!_main.IsLookingType && state == WordStates.WRONG)
+                    Score.Wrong++;
+            }
+        }
+
+        private static WordStates ToWordState(CopybookInputState state)
+        {
+            switch (state)
+            {
+                case CopybookInputState.Right:
+                    return WordStates.RIGHT;
+                case CopybookInputState.Wrong:
+                    return WordStates.WRONG;
+                default:
+                    return WordStates.NO_TYPE;
+            }
+        }
+
+        private static bool IsIndexOnCurrentPage(int globalIndex)
+        {
+            int localIndex = globalIndex - TextInfo.PageStartIndex;
+            return localIndex >= 0 && localIndex < TextInfo.Blocks.Count;
+        }
+
+        private static Brush GetQueuedBackgroundForState(WordStates state)
+        {
+            if (state == WordStates.RIGHT)
+                return Colors.CorrectBackground;
+            if (state == WordStates.WRONG)
+                return Colors.IncorrectBackground;
+            return null;
+        }
+
+        private void ClearCodeLabelProgressFrom(int globalStart)
+        {
+            if (globalStart < 0)
+                globalStart = 0;
+
+            var keysToClear = new List<int>();
+            foreach (int key in TextInfo.CodeLabelInputs.Keys)
+            {
+                if (key >= globalStart)
+                    keysToClear.Add(key);
+            }
+
+            foreach (int key in keysToClear)
+                _main.ClearCodeLabelProgress(key);
         }
 
         private void ScheduleAdvanceVisuals()
@@ -582,6 +649,7 @@ namespace TypeSunny.UI.Modes
             }
 
             bool isBackspace = inputKey == Key.Back;
+            bool isDelete = inputKey == Key.Delete;
             bool shouldDeletePreviousWord = false;
 
             if (isBackspace)
@@ -615,7 +683,8 @@ namespace TypeSunny.UI.Modes
                 }
                 else if (inputKey == Key.Escape ||
                     (inputKey == Key.Z && Keyboard.Modifiers == ModifierKeys.Control) ||
-                    isNavKey)
+                    isNavKey ||
+                    isDelete)
                 {
                     e.Handled = true;
                     return;
@@ -644,30 +713,19 @@ namespace TypeSunny.UI.Modes
                 return;
             }
 
-            if (isBackspace)
+            if (isBackspace || isDelete)
             {
-                if (!shouldDeletePreviousWord)
+                if (isBackspace && !shouldDeletePreviousWord)
                 {
                     return;
                 }
 
-                // 没有未上屏编码时，退格回退到上一个字
-                if (_currentIndex > 0)
+                bool deleted = isBackspace ? _inputBuffer.Backspace() : _inputBuffer.Delete();
+                if (deleted)
                 {
-                    _currentIndex--;
-
-                    // 清除上一个字的状态
-                    TextInfo.wordStates[_currentIndex] = WordStates.NO_TYPE;
-                    if (!_main.IsBlindType)
-                    {
-                        RemovePendingBackgroundChange(_currentIndex);
-                        _main.SetDisplayBlockStateBackgroundByGlobalIndex(_currentIndex, null);
-                    }
-
-                    // 移除该位置的错字提示
-                    RemoveWrongCharHint(_currentIndex - TextInfo.PageStartIndex);
-                    _main.ClearCodeLabelProgress(_currentIndex);
-                    Score.InputWordCount = _currentIndex;
+                    _currentIndex = _inputBuffer.CaretIndex;
+                    ClearCodeLabelProgressFrom(_currentIndex);
+                    RefreshTypedStateFromInputBuffer();
 
                     UpdatePosition(true);
                     if (Config.GetBool("贪吃蛇模式") || StateManager.txtSource == TxtSource.raceApi)
@@ -675,8 +733,10 @@ namespace TypeSunny.UI.Modes
                     else
                         ScrollToCurrentChar();
 
+                    FlushPendingBackgroundChanges();
                     // 更新字提显示
                     _main.UpdateZiTi();
+                    _main.UpdateTitleProgress(_inputBuffer.Length);
                 }
                 e.Handled = true;
             }
@@ -733,7 +793,7 @@ namespace TypeSunny.UI.Modes
                     if (ctrl) target = maxIdx;
                     else
                     {
-                        int lineEnd = FindLineEdgeIndex(_currentIndex, toStart: false);
+                        int lineEnd = FindTypedLineEndIndex(_currentIndex);
                         if (lineEnd >= 0) target = lineEnd;
                     }
                     break;
@@ -745,7 +805,9 @@ namespace TypeSunny.UI.Modes
             if (target == _currentIndex) return;
 
             _currentIndex = target;
-            Score.InputWordCount = _currentIndex;
+            _inputBuffer.MoveCaret(_currentIndex);
+            _currentIndex = _inputBuffer.CaretIndex;
+            Score.InputWordCount = _inputBuffer.Length;
 
             _main.ClearCodeLabelProgress(_currentIndex);
             UpdatePosition(true);
@@ -754,7 +816,7 @@ namespace TypeSunny.UI.Modes
             else
                 ScrollToCurrentChar();
             _main.UpdateZiTi();
-            _main.UpdateTitleProgress(_currentIndex);
+            _main.UpdateTitleProgress(_inputBuffer.Length);
         }
 
         private int FindPrevWordIndex(int curGlobal)
@@ -873,6 +935,45 @@ namespace TypeSunny.UI.Modes
                 return bestLocal >= 0 ? bestLocal + TextInfo.PageStartIndex : -1;
             }
             catch { return -1; }
+        }
+
+        private int FindTypedLineEndIndex(int curGlobal)
+        {
+            int localCur = curGlobal - TextInfo.PageStartIndex;
+            if (localCur < 0 || localCur >= TextInfo.Blocks.Count) return -1;
+
+            try
+            {
+                var lineIndexes = new List<int>();
+                var grid = (Grid)_main.BdDisplay.Child;
+                var curBlock = TextInfo.Blocks[localCur];
+                var curPos = curBlock.TranslatePoint(new Point(0, 0), grid);
+                double fs = MainWindow.DisplayFontSize;
+                double yTolerance = fs * 0.4;
+
+                for (int i = 0; i < TextInfo.Blocks.Count; i++)
+                {
+                    var pos = TextInfo.Blocks[i].TranslatePoint(new Point(0, 0), grid);
+                    if (Math.Abs(pos.Y - curPos.Y) <= yTolerance)
+                        lineIndexes.Add(i + TextInfo.PageStartIndex);
+                }
+
+                if (lineIndexes.Count == 0) return -1;
+
+                return CopybookNavigation.FindEndTargetWithinTypedLine(
+                    curGlobal,
+                    TextInfo.Words.Count,
+                    lineIndexes,
+                    IsTypedIndex);
+            }
+            catch { return -1; }
+        }
+
+        private static bool IsTypedIndex(int globalIndex)
+        {
+            return globalIndex >= 0
+                && globalIndex < TextInfo.wordStates.Count
+                && TextInfo.wordStates[globalIndex] != WordStates.NO_TYPE;
         }
 
         // 在当前视觉行内找到最左或最右的字，返回全局索引
@@ -1024,6 +1125,17 @@ namespace TypeSunny.UI.Modes
                     _wrongCharHints.RemoveAt(i);
                 }
             }
+        }
+
+        private void ClearWrongCharHints()
+        {
+            if (_overlay != null)
+            {
+                foreach (var hint in _wrongCharHints)
+                    _overlay.Children.Remove(hint);
+            }
+
+            _wrongCharHints.Clear();
         }
 
         /// <summary>

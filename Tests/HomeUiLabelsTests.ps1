@@ -37,6 +37,13 @@ Assert-Contains 'previous article context item' $mainXaml 'Header="上一段Ctrl
 Assert-Contains 'next article context item' $mainXaml 'Header="下一段Ctrl+P"'
 Assert-Contains 'results toggle context item' $mainXaml 'Header="收起成绩"'
 Assert-Contains 'super compact context item' $mainXaml 'x:Name="MenuHomeSuperCompact" Header="一键极简" IsCheckable="True"'
+$resultsToggleBlockMatch = [regex]::Match($mainXaml, '<Button x:Name="BtnToggleResults"[\s\S]*?</Button>')
+if (-not $resultsToggleBlockMatch.Success) {
+    throw 'results toggle button block was not found'
+}
+$resultsToggleBlock = $resultsToggleBlockMatch.Value
+Assert-Contains 'results toggle keeps breathing room from right edge' $resultsToggleBlock 'Margin="0,0,10,0"'
+Assert-Contains 'results toggle right padding participates in layout' $resultsToggleBlock 'Padding="{TemplateBinding Padding}"'
 
 $configCode = Get-Content -Path (Join-Path $root 'WinConfig\WinConfig.xaml.cs') -Raw
 Assert-Contains 'home settings section title' $configCode '首页按纽显示'

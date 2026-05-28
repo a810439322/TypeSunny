@@ -14,6 +14,7 @@
         Width="620" Height="450"
         SizeToContent="Manual"
         Closing="Window_Closing"
+        PreviewKeyDown="Window_PreviewKeyDown"
         IsVisibleChanged="Window_IsVisibleChanged">
 
     <Window.Resources>
@@ -183,12 +184,10 @@
 
     <Window.InputBindings>
         <KeyBinding Gesture="Ctrl+L" Command="{StaticResource Chongda}"/>
-        <KeyBinding Key="Return" Command="{StaticResource SendArticle}"/>
     </Window.InputBindings>
 
     <Window.CommandBindings>
         <CommandBinding Command="{StaticResource Chongda}" Executed="InternalHotkeyCtrlL"/>
-        <CommandBinding Command="{StaticResource SendArticle}" Executed="InternalHotkeyEnterSend"/>
     </Window.CommandBindings>
 
     <Window.Effect>
@@ -245,6 +244,9 @@
                             <Button x:Name="BtnRandAll" Content="全体乱序" Margin="8,0,0,0" Click="RandAllClick" Style="{StaticResource ModernButtonStyle}"/>
                             <Button Content="恢复顺序" Margin="5,0,0,0" Click="norm_Click" Style="{StaticResource ModernButtonStyle}"/>
                             <Button Content="发文" Margin="5,0,0,0" Click="BtnSend_Click" Style="{StaticResource ModernButtonStyle}"/>
+                            <CheckBox x:Name="CbCloseAfterSend" Margin="10,0,0,0" VerticalAlignment="Center" Checked="CbCloseAfterSend_Checked" Unchecked="CbCloseAfterSend_Unchecked" Foreground="{DynamicResource TextForeground}">
+                                <TextBlock Text="发文后关闭窗口" Foreground="{DynamicResource TextForeground}" FontSize="12"/>
+                            </CheckBox>
                         </StackPanel>
                         <TextBlock x:Name="TBHitrate" Grid.Column="1" Text="击键 0.00" Foreground="{DynamicResource TextForeground}" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="12"/>
                     </Grid>

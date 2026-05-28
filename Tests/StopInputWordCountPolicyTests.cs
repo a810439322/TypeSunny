@@ -13,6 +13,8 @@ namespace TypeSunny.Tests
                 TrainerKeepsExistingScoreCountWhenInputSnapshotIsEmpty();
                 TrainerUsesSnapshotCountWhenSnapshotHasText();
                 NonTrainerUsesSnapshotCount();
+                HiddenInputModeKeepsExistingScoreCountWhenSnapshotIsEmpty();
+                HiddenInputModeIgnoresSnapshotText();
 
                 Console.WriteLine("All StopInputWordCountPolicy tests passed.");
                 return 0;
@@ -43,6 +45,20 @@ namespace TypeSunny.Tests
             int actual = StopInputWordCountPolicy.Resolve(TxtSource.book, 10, 0);
 
             AssertEqual("non-trainer empty snapshot uses snapshot count", 0, actual);
+        }
+
+        private static void HiddenInputModeKeepsExistingScoreCountWhenSnapshotIsEmpty()
+        {
+            int actual = StopInputWordCountPolicy.Resolve(TxtSource.book, 10, 0, true);
+
+            AssertEqual("hidden input mode empty snapshot keeps Score input count", 10, actual);
+        }
+
+        private static void HiddenInputModeIgnoresSnapshotText()
+        {
+            int actual = StopInputWordCountPolicy.Resolve(TxtSource.book, 10, 2, true);
+
+            AssertEqual("hidden input mode ignores incomplete input snapshot", 10, actual);
         }
 
         private static void AssertEqual(string name, int expected, int actual)

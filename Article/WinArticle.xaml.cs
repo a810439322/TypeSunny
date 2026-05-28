@@ -29,6 +29,7 @@ namespace TypeSunny
         private const int HT_RIGHT = 11;
         private const int HT_TOP = 12;
         private const int HT_BOTTOM = 15;
+        private readonly ArticleSendKeyboardPolicy keyboardPolicy = new ArticleSendKeyboardPolicy();
 
         public WinArticle()
         {
@@ -53,6 +54,7 @@ namespace TypeSunny
             TbSectionSize.Text = ArticleManager.SectionSize.ToString();
             CbFilter.IsChecked = ArticleManager.EnableFilter;
             CbRemoveSpace.IsChecked = ArticleManager.RemoveSpace;
+            CbCloseAfterSend.IsChecked = Config.GetBool("本地发文后关闭窗口");
             CbSegmentMode.SelectedIndex = ArticleManager.SegmentMode == ArticleManager.SegmentModeManual ? 1 : 0;
         }
 
@@ -343,6 +345,8 @@ namespace TypeSunny
             var mainWindow = MainWindow.Current ?? App.Current.MainWindow as MainWindow;
             if (mainWindow != null)
                 await mainWindow.SendArticle();
+
+            CloseArticleWindowAfterSendIfNeeded();
         }
 
         private async void BtnSend_Click(object sender, RoutedEventArgs e)
@@ -384,6 +388,24 @@ namespace TypeSunny
                 ArticleManager.RemoveSpace = (CbRemoveSpace.IsChecked == true);
                 Reload();
             }
+        }
+
+        private void CbCloseAfterSend_Checked(object sender, RoutedEventArgs e)
+        {
+            SaveCloseAfterSendSetting();
+        }
+
+        private void CbCloseAfterSend_Unchecked(object sender, RoutedEventArgs e)
+        {
+            SaveCloseAfterSendSetting();
+        }
+
+        private void SaveCloseAfterSendSetting()
+        {
+            if (!AllLoaded)
+                return;
+
+            Config.Set("本地发文后关闭窗口", CbCloseAfterSend.IsChecked == true);
         }
 
         private void CbSegmentMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -431,12 +453,43 @@ namespace TypeSunny
                         e.Handled = true;
                     break;
 
+                case Key.Up:
+                    if (IsTextInputFocused())
+                        return;
+
+                    e.Handled = true;
+                    HandleArticleSelectionKey(keyboardPolicy.HandleKey(ArticleSendKeyboardKey.Up));
+                    break;
+
+                case Key.Down:
+                    if (IsTextInputFocused())
+                        return;
+
+                    e.Handled = true;
+                    HandleArticleSelectionKey(keyboardPolicy.HandleKey(ArticleSendKeyboardKey.Down));
+                    break;
+
                 case Key.Enter:
                     if (Keyboard.FocusedElement == TbSearch)
                         return;
 
                     e.Handled = true;
-                    await SendCurrentArticle();
+                    var enterAction = keyboardPolicy.HandleKey(ArticleSendKeyboardKey.Enter);
+                    if (enterAction == ArticleSendKeyboardAction.SendArticle)
+                        await SendCurrentArticle();
+                    else if (enterAction == ArticleSendKeyboardAction.ConfirmArticleSelection)
+                        FocusArticlePreview();
+                    break;
+
+                case Key.Space:
+                    if (IsTextInputFocused())
+                        return;
+
+                    if (keyboardPolicy.HandleKey(ArticleSendKeyboardKey.Space) == ArticleSendKeyboardAction.ConfirmArticleSelection)
+                    {
+                        e.Handled = true;
+                        FocusArticlePreview();
+                    }
                     break;
 
                 case Key.Left:
@@ -460,6 +513,48 @@ namespace TypeSunny
                     MoveArticleMenuFocus();
                     break;
             }
+        }
+
+        private void HandleArticleSelectionKey(ArticleSendKeyboardAction action)
+        {
+            if (action == ArticleSendKeyboardAction.SelectPreviousArticle)
+            {
+                MoveFileSelection(-1);
+                return;
+            }
+
+            if (action == ArticleSendKeyboardAction.SelectNextArticle)
+            {
+                MoveFileSelection(1);
+            }
+        }
+
+        private void MoveFileSelection(int delta)
+        {
+            if (CbFiles.Items.Count <= 0)
+                return;
+
+            int currentIndex = CbFiles.SelectedIndex;
+            if (currentIndex < 0)
+                currentIndex = 0;
+
+            int nextIndex = Math.Max(0, Math.Min(CbFiles.Items.Count - 1, currentIndex + delta));
+            if (nextIndex != CbFiles.SelectedIndex)
+                CbFiles.SelectedIndex = nextIndex;
+
+            CbFiles.Focus();
+            CbFiles.IsDropDownOpen = true;
+        }
+
+        private void FocusArticlePreview()
+        {
+            TbTest.Focus();
+        }
+
+        private void CloseArticleWindowAfterSendIfNeeded()
+        {
+            if (CbCloseAfterSend.IsChecked == true)
+                Hide();
         }
 
         private static bool IsModifiedShortcut(KeyEventArgs e)

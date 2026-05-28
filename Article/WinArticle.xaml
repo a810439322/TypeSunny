@@ -225,6 +225,9 @@
                             <Button Content="刷新" Margin="8,0,0,0" Click="BtnReload_Click" Style="{StaticResource ModernButtonStyle}"/>
                             <Button Content="打开目录" Margin="5,0,0,0" Click="BtnOpen_Click" Style="{StaticResource ModernButtonStyle}"/>
                             <Button Content="发送" Margin="5,0,0,0" Click="BtnSend_Click" Style="{StaticResource ModernButtonStyle}"/>
+                            <CheckBox x:Name="CbCloseAfterSend" Margin="10,0,0,0" VerticalAlignment="Center" Checked="CbCloseAfterSend_Checked" Unchecked="CbCloseAfterSend_Unchecked" Foreground="{DynamicResource TextForeground}">
+                                <TextBlock Text="发文后关闭窗口" Foreground="{DynamicResource TextForeground}" FontSize="12"/>
+                            </CheckBox>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                             <CheckBox Name="CbFilter" VerticalAlignment="Center" Checked="CbFilter_Checked" Unchecked="CbFilter_Unchecked" Foreground="{DynamicResource TextForeground}">

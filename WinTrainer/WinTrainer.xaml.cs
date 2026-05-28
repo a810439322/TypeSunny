@@ -105,6 +105,7 @@ namespace TypeSunny
              {"练单器窗口左边", "0" },
              {"练单器窗口顶边", "0" },
              {"练单器最大化状态", "False" },
+             {"练单发文后关闭窗口", "否" },
 
         };
 
@@ -112,6 +113,7 @@ namespace TypeSunny
         bool SliderInit;
         private bool _isRefreshingFileList;
         private readonly TrainerAutoSendPolicy autoSendPolicy = new TrainerAutoSendPolicy();
+        private readonly ArticleSendKeyboardPolicy keyboardPolicy = new ArticleSendKeyboardPolicy();
 
    //     List<string> InputWords = new List<string>();
         bool Jumped = false;
@@ -983,12 +985,6 @@ namespace TypeSunny
             e.Handled = true;
         }
 
-        private void InternalHotkeyEnterSend(object sender, ExecutedRoutedEventArgs e)
-        {
-            BtnSend_Click(null, null);
-            e.Handled = true;
-        }
-
         private void DisplayHit()
         {
 
@@ -1774,6 +1770,91 @@ namespace TypeSunny
 
         }
 
+        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (IsModifiedShortcut(e) || IsTextInputFocused())
+                return;
+
+            switch (e.Key)
+            {
+                case Key.Up:
+                    e.Handled = true;
+                    HandleArticleSelectionKey(keyboardPolicy.HandleKey(ArticleSendKeyboardKey.Up));
+                    break;
+
+                case Key.Down:
+                    e.Handled = true;
+                    HandleArticleSelectionKey(keyboardPolicy.HandleKey(ArticleSendKeyboardKey.Down));
+                    break;
+
+                case Key.Enter:
+                    e.Handled = true;
+                    var enterAction = keyboardPolicy.HandleKey(ArticleSendKeyboardKey.Enter);
+                    if (enterAction == ArticleSendKeyboardAction.SendArticle)
+                        BtnSend_Click(null, null);
+                    else if (enterAction == ArticleSendKeyboardAction.ConfirmArticleSelection)
+                        FocusTrainerPreview();
+                    break;
+
+                case Key.Space:
+                    if (keyboardPolicy.HandleKey(ArticleSendKeyboardKey.Space) == ArticleSendKeyboardAction.ConfirmArticleSelection)
+                    {
+                        e.Handled = true;
+                        FocusTrainerPreview();
+                    }
+                    break;
+            }
+        }
+
+        private static bool IsModifiedShortcut(KeyEventArgs e)
+        {
+            return (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0;
+        }
+
+        private bool IsTextInputFocused()
+        {
+            return Keyboard.FocusedElement == speedDisplay
+                || Keyboard.FocusedElement == numDisplay
+                || Keyboard.FocusedElement == hitDecreaseDisplay
+                || Keyboard.FocusedElement == accuracyDisplay;
+        }
+
+        private void HandleArticleSelectionKey(ArticleSendKeyboardAction action)
+        {
+            if (action == ArticleSendKeyboardAction.SelectPreviousArticle)
+            {
+                MoveFileSelection(-1);
+                return;
+            }
+
+            if (action == ArticleSendKeyboardAction.SelectNextArticle)
+            {
+                MoveFileSelection(1);
+            }
+        }
+
+        private void MoveFileSelection(int delta)
+        {
+            if (FileSelector.Items.Count <= 0)
+                return;
+
+            int currentIndex = FileSelector.SelectedIndex;
+            if (currentIndex < 0)
+                currentIndex = 0;
+
+            int nextIndex = Math.Max(0, Math.Min(FileSelector.Items.Count - 1, currentIndex + delta));
+            if (nextIndex != FileSelector.SelectedIndex)
+                FileSelector.SelectedIndex = nextIndex;
+
+            FileSelector.Focus();
+            FileSelector.IsDropDownOpen = true;
+        }
+
+        private void FocusTrainerPreview()
+        {
+            fld.Focus();
+        }
+
 
      
 
@@ -2071,6 +2152,7 @@ namespace TypeSunny
             numDisplay.Text = cfg["每组字数"];
             hitDecreaseDisplay.Text = cfg["每轮降击"];
             accuracyDisplay.Text = cfg["换段键准"];
+            CbCloseAfterSend.IsChecked = cfg["练单发文后关闭窗口"] == "否" ? false : true;
 
             // 恢复字体大小
             if (double.TryParse(cfg["练单器字体大小"], out double savedFtsize) && savedFtsize >= 10 && savedFtsize <= 72)
@@ -2223,6 +2305,32 @@ namespace TypeSunny
             MainWindow.Current.LoadText(matchText, RetypeType.first, TxtSource.trainer, false, true);
             MainWindow.Current.FocusInput();
             MainWindow.Current.SendContentToClipboardOrQQ(matchText, true, 150);
+            CloseTrainerWindowAfterSendIfNeeded();
+        }
+
+        private void CbCloseAfterSend_Checked(object sender, RoutedEventArgs e)
+        {
+            SaveCloseAfterSendSetting();
+        }
+
+        private void CbCloseAfterSend_Unchecked(object sender, RoutedEventArgs e)
+        {
+            SaveCloseAfterSendSetting();
+        }
+
+        private void SaveCloseAfterSendSetting()
+        {
+            if (!CfgInit)
+                return;
+
+            cfg["练单发文后关闭窗口"] = CbCloseAfterSend.IsChecked == true ? "是" : "否";
+            WriteCfg();
+        }
+
+        private void CloseTrainerWindowAfterSendIfNeeded()
+        {
+            if (CbCloseAfterSend.IsChecked == true)
+                Close();
         }
 
         private WinTrainerHistoryWindow _historyWindow;

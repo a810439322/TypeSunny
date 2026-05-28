@@ -631,13 +631,17 @@
                 </Menu>
 
                 <!-- 展开/收起按钮 -->
-                <Button x:Name="BtnToggleResults" Content="▼" Width="auto" DockPanel.Dock="Right" HorizontalAlignment="Right" Click="BtnToggleResults_Click" Background="Transparent" BorderThickness="0" Foreground="{Binding ElementName=MainWin, Path=Foreground}" FontSize="12" Padding="10,2" Margin="0,0,5,0">
+                <Button x:Name="BtnToggleResults" Content="▼" Width="auto" DockPanel.Dock="Right" HorizontalAlignment="Right" Click="BtnToggleResults_Click" Background="Transparent" BorderThickness="0" Foreground="{Binding ElementName=MainWin, Path=Foreground}" FontSize="12" Padding="10,2" Margin="0,0,10,0">
                     <Button.Style>
                         <Style TargetType="Button">
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="Button">
-                                        <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        <Border Background="{TemplateBinding Background}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
                                     </ControlTemplate>
                                 </Setter.Value>
                             </Setter>

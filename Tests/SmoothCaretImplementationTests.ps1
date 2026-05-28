@@ -49,7 +49,7 @@ Assert-Match 'CopybookMode should record dynamic motion timing after typed input
 Assert-Match 'CopybookMode should queue typed background updates for visual flush.' $copybookCode 'QueueDisplayBlockStateBackground'
 Assert-Match 'CopybookMode should flush typed backgrounds together with animated caret advance.' $copybookCode 'ScheduleAdvanceVisuals[\s\S]*?FlushPendingBackgroundChanges\(\)[\s\S]*?UpdatePosition\s*\(\s*true\s*\)'
 Assert-Match 'CopybookMode should replace older queued background for the same index.' $copybookCode 'QueueDisplayBlockStateBackground[\s\S]*?RemovePendingBackgroundChange\(globalIndex\)[\s\S]*?_pendingBackgroundChanges\.Add'
-Assert-Match 'CopybookMode backspace should cancel queued typed background before clearing it.' $copybookCode 'TextInfo\.wordStates\[_currentIndex\]\s*=\s*WordStates\.NO_TYPE;[\s\S]*?RemovePendingBackgroundChange\(_currentIndex\)[\s\S]*?SetDisplayBlockStateBackgroundByGlobalIndex\(_currentIndex,\s*null\)'
+Assert-Match 'CopybookMode delete/backspace should refresh typed state from editable buffer.' $copybookCode '_inputBuffer\.Backspace\(\)[\s\S]*?_inputBuffer\.Delete\(\)[\s\S]*?RefreshTypedStateFromInputBuffer\(\)'
 Assert-Match 'CopybookMode should sync caret while smooth scrolling.' $copybookCode 'CompositionTarget\.Rendering\s*\+='
 Assert-Match 'CopybookMode ScrollToCurrentChar should pass scroll sync callbacks.' $copybookCode 'SmoothScrollTo\s*\([^;]*StartScrollSync[^;]*StopScrollSync'
 Assert-Match 'CopybookMode should keep scroll-tracking state while doing final scroll position sync.' $copybookCode 'StopScrollSync[\s\S]*?UpdatePosition\s*\(\s*false\s*\)[\s\S]*?_isScrollAnimating\s*=\s*false'
