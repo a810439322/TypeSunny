@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -60,6 +61,27 @@ namespace TypeSunny
             private set => Config.Set("全量包体积", value.ToString());
         }
 
+        public static DateTime LatestReleasePublishedUtc
+        {
+            get => ReadUtcTicks("最新发布UTC时间");
+            private set => Config.Set("最新发布UTC时间", ReleaseIdentity.ToUtcTicks(value).ToString());
+        }
+
+        public static string LatestReleasePublishedBeijingTime =>
+            ReleaseIdentity.FormatBeijingTime(LatestReleasePublishedUtc);
+
+        public static string InstalledVersion
+        {
+            get => Config.GetString("已安装版本");
+            private set => Config.Set("已安装版本", value);
+        }
+
+        public static DateTime InstalledReleasePublishedUtc
+        {
+            get => ReadUtcTicks("已安装发布UTC时间");
+            private set => Config.Set("已安装发布UTC时间", ReleaseIdentity.ToUtcTicks(value).ToString());
+        }
+
         private static DateTime LastCheckTime
         {
             get
@@ -109,13 +131,12 @@ namespace TypeSunny
             {
                 try
                 {
-                    string current = CurrentVersion;
-                    string latest = LatestVersion;
-                    if (string.IsNullOrEmpty(latest) || latest == "未知")
-                        return false;
-                    if (string.IsNullOrEmpty(current) || current == "未知")
-                        return false;
-                    return CompareVersions(latest, current) > 0;
+                    return ReleaseIdentity.HasUpdate(
+                        LatestVersion,
+                        CurrentVersion,
+                        LatestReleasePublishedUtc,
+                        InstalledVersion,
+                        InstalledReleasePublishedUtc);
                 }
                 catch (Exception ex)
                 {
@@ -130,7 +151,7 @@ namespace TypeSunny
             get
             {
                 if (!HasUpdate) return false;
-                if (LatestVersion == IgnoredVersion) return false;
+                if (ReleaseIdentity.IsIgnored(IgnoredVersion, LatestVersion, CurrentVersion, LatestReleasePublishedUtc)) return false;
                 if (IsDismissedToday) return false;
                 return true;
             }
@@ -146,6 +167,36 @@ namespace TypeSunny
             if (int.TryParse(v1, out int num1) && int.TryParse(v2, out int num2))
                 return num1.CompareTo(num2);
             return string.Compare(v1, v2, StringComparison.Ordinal);
+        }
+
+        private static DateTime ReadUtcTicks(string key)
+        {
+            string value = Config.GetString(key);
+            if (long.TryParse(value, out long ticks))
+                return ReleaseIdentity.FromUtcTicks(ticks);
+            return DateTime.MinValue;
+        }
+
+        private static DateTime ParseReleasePublishedUtc(JObject json)
+        {
+            string[] fields = { "published_at", "created_at", "updated_at" };
+            foreach (string field in fields)
+            {
+                string value = json[field]?.ToString();
+                if (string.IsNullOrWhiteSpace(value))
+                    continue;
+
+                if (DateTimeOffset.TryParse(
+                    value,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                    out var dto))
+                {
+                    return dto.UtcDateTime;
+                }
+            }
+
+            return DateTime.MinValue;
         }
 
         private static async Task<long> MeasureLatencyAsync(string url)
@@ -229,6 +280,7 @@ namespace TypeSunny
                     }
 
                     LatestVersion = latestVersion;
+                    LatestReleasePublishedUtc = ParseReleasePublishedUtc(json);
                     Changelog = json["body"]?.ToString() ?? "";
 
                     string updateUrl = "";
@@ -257,7 +309,7 @@ namespace TypeSunny
                     FullPackageUrl = fullUrl;
                     LastCheckTime = DateTime.Now;
 
-                    Debug.WriteLine($"[VersionManager] 获取到最新版本: {latestVersion}");
+                    Debug.WriteLine($"[VersionManager] 获取到最新版本: {latestVersion}, 发布时间UTC: {LatestReleasePublishedUtc:O}");
                     return HasUpdate;
                 }
             }
@@ -286,8 +338,8 @@ namespace TypeSunny
 
         public static void IgnoreVersion()
         {
-            IgnoredVersion = LatestVersion;
-            Debug.WriteLine($"[VersionManager] 用户选择忽略版本: {LatestVersion}");
+            IgnoredVersion = ReleaseIdentity.Build(LatestVersion, LatestReleasePublishedUtc);
+            Debug.WriteLine($"[VersionManager] 用户选择忽略版本: {IgnoredVersion}");
         }
 
         public static void DismissUpdateReminder()

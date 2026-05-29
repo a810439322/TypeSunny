@@ -29,7 +29,7 @@ namespace TypeSunny.UI
 
             this.EnableEscapeToClose();
 
-            txtVersion.Text = $"当前版本：{VersionManager.CurrentVersion}　→　最新版本：{VersionManager.LatestVersion}";
+            txtVersion.Text = FormatVersionText();
             txtChangelog.Text = string.IsNullOrEmpty(VersionManager.Changelog) ? "暂无更新说明" : VersionManager.Changelog;
 
             btnUpdate.Content = FormatButtonText("立即更新", VersionManager.UpdatePackageSize);
@@ -43,6 +43,15 @@ namespace TypeSunny.UI
             if (bytes <= 0) return label;
             double mb = bytes / 1024.0 / 1024.0;
             return $"{label} ({mb:F1}MB)";
+        }
+
+        private static string FormatVersionText()
+        {
+            string text = $"当前版本：{VersionManager.CurrentVersion}　→　最新版本：{VersionManager.LatestVersion}";
+            string publishedTime = VersionManager.LatestReleasePublishedBeijingTime;
+            if (!string.IsNullOrEmpty(publishedTime))
+                text += $"（发布于 {publishedTime}）";
+            return text;
         }
 
         private void ApplyThemeColors()

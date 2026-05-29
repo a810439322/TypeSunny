@@ -144,6 +144,7 @@
       <SubType>Designer</SubType>
     </ApplicationDefinition>
     <Compile Include="Version\GeneratedVersion.cs" />
+    <Compile Include="Version\ReleaseIdentity.cs" />
     <Compile Include="Version\VersionCheckPolicy.cs" />
     <Compile Include="Version\VersionManager.cs" />
     <Compile Include="Article\ArticleConfig.cs" />

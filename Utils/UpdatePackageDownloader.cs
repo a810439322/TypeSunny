@@ -14,6 +14,19 @@ namespace TypeSunny.Utils
             string packageUrl,
             IProgress<(long downloaded, long? total)> progress,
             CancellationToken ct)
+            => await DownloadAndApplyAsync(
+                packageUrl,
+                VersionManager.LatestVersion,
+                ReleaseIdentity.ToUtcTicks(VersionManager.LatestReleasePublishedUtc).ToString(),
+                progress,
+                ct);
+
+        internal static async Task DownloadAndApplyAsync(
+            string packageUrl,
+            string installedVersion,
+            string installedReleaseUtcTicks,
+            IProgress<(long downloaded, long? total)> progress,
+            CancellationToken ct)
         {
             if (string.IsNullOrWhiteSpace(packageUrl))
                 throw new ArgumentException("packageUrl 不能为空", nameof(packageUrl));
@@ -33,7 +46,7 @@ namespace TypeSunny.Utils
             string mainExe = Process.GetCurrentProcess().MainModule.FileName;
             string appDirClean = appDir.TrimEnd('\\');
 
-            Process.Start(updaterPath, $"\"{zipPath}\" \"{appDirClean}\" {pid} \"{mainExe}\"");
+            Process.Start(updaterPath, $"\"{zipPath}\" \"{appDirClean}\" {pid} \"{mainExe}\" \"{installedVersion}\" \"{installedReleaseUtcTicks}\"");
             Application.Current.Shutdown();
         }
 

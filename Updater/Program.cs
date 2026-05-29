@@ -36,6 +36,8 @@ namespace Updater
             string zipPath = args[0];
             string targetDir = args[1];
             string mainExePath = args[3];
+            string installedVersion = args.Length >= 5 ? args[4] : "";
+            string installedReleaseUtcTicks = args.Length >= 6 ? args[5] : "";
 
             if (!int.TryParse(args[2], out int pid))
             {
@@ -100,6 +102,15 @@ namespace Updater
                         Log($"  更新: {entry.FullName}");
                         entry.ExtractToFile(destPath, true);
                     }
+                }
+
+                try
+                {
+                    UpdaterConfigWriter.SaveInstalledRelease(targetDir, installedVersion, installedReleaseUtcTicks);
+                }
+                catch (Exception ex)
+                {
+                    Log($"保存已安装版本信息失败: {ex.Message}");
                 }
 
                 Log("更新完成，正在启动主程序...");
