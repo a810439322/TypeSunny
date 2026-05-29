@@ -36,7 +36,7 @@ namespace TypeSunny.Tests
                 CalibrationServiceSkipsWhenTextHashMismatches();
                 CalibrateAndTrainAsyncRunsSequentiallyOffUiThread();
                 PredictorIgnoresSingletonLearnedUnit();
-                FormatterHidesBelowMinDisplayConfidence();
+                FormatterShowsLowConfidencePrediction();
                 FormatterDefaultsConfidenceVisibleButNotForced();
                 FormatterForcesOnlySpeedByDefault();
                 FormatterRequiresConfidenceAboveEightyPercentForScoreAttachment();
@@ -659,9 +659,8 @@ namespace TypeSunny.Tests
                 3, prediction.Units.Count);
         }
 
-        private static void FormatterHidesBelowMinDisplayConfidence()
+        private static void FormatterShowsLowConfidencePrediction()
         {
-            // 低置信预测：完全不显示，让调用方退回纯基础难度
             var prediction = new PersonalScorePrediction
             {
                 Units = new List<string> { "中" },
@@ -671,7 +670,7 @@ namespace TypeSunny.Tests
                 PredictedHitRate = 4,
                 PredictedKpw = 4,
                 PersonalDifficultyScore = 1,
-                Confidence = 0.10  // 远低于 0.30 阈值
+                Confidence = 0.10
             };
 
             string formatted = PersonalScorePredictionFormatter.Format(
@@ -679,18 +678,8 @@ namespace TypeSunny.Tests
                 PersonalScorePredictionFormatter.DefaultOrder,
                 _ => true);
 
-            AssertEqual("low confidence hides everything", "", formatted);
-
-            // 边界：0.30 刚好 —— 也应该被屏蔽（< 严格小于）
-            prediction.Confidence = PersonalScorePredictionFormatter.MinDisplayConfidence - 0.001;
-            AssertEqual("just below threshold still hidden",
-                "",
-                PersonalScorePredictionFormatter.Format(prediction, PersonalScorePredictionFormatter.DefaultOrder, _ => true));
-
-            // 高于阈值：正常显示
-            prediction.Confidence = PersonalScorePredictionFormatter.MinDisplayConfidence + 0.001;
-            AssertTrue("at threshold shows content",
-                PersonalScorePredictionFormatter.Format(prediction, PersonalScorePredictionFormatter.DefaultOrder, _ => true).Contains("预测速度"));
+            AssertTrue("low confidence still shows speed", formatted.Contains("预测速度60.00"));
+            AssertTrue("low confidence still shows confidence", formatted.Contains("置信10%"));
         }
 
         private static PersonalScorePredictionSnapshot NewSnapshotWith(int chars, double predictedSeconds, double predictedHits)

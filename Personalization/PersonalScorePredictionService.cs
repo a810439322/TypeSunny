@@ -7,17 +7,29 @@ namespace TypeSunny.Personalization
     internal sealed class PersonalScorePredictionService
     {
         private readonly IPersonalTypingProfileStore store;
+        private readonly AllHistoryTypingHistoryStore historyStore;
         private readonly Func<string, double> baseDifficultyCalculator;
         private readonly Func<string, IEnumerable<string>> difficultySegmenter;
         private readonly object pendingWriteLock = new object();
         private Task pendingWrite;
+        private bool historyBootstrapAttempted;
 
         public PersonalScorePredictionService(
             IPersonalTypingProfileStore store,
             Func<string, double> baseDifficultyCalculator,
             Func<string, IEnumerable<string>> difficultySegmenter = null)
+            : this(store, baseDifficultyCalculator, difficultySegmenter, new AllHistoryTypingHistoryStore())
+        {
+        }
+
+        public PersonalScorePredictionService(
+            IPersonalTypingProfileStore store,
+            Func<string, double> baseDifficultyCalculator,
+            Func<string, IEnumerable<string>> difficultySegmenter,
+            AllHistoryTypingHistoryStore historyStore)
         {
             this.store = store ?? new PersonalTypingProfileStore();
+            this.historyStore = historyStore;
             this.baseDifficultyCalculator = baseDifficultyCalculator ?? (_ => 0);
             this.difficultySegmenter = difficultySegmenter ?? (_ => new string[0]);
         }
@@ -145,6 +157,207 @@ namespace TypeSunny.Personalization
             }
         }
 
+        public Task RecordHistoryCalibrateAndTrainAsync(
+            AllHistoryRoundRecord historyRecord,
+            PersonalScorePredictionSnapshot snapshot,
+            PersonalTypingRoundStats stats,
+            string expectedTextHash)
+        {
+            if (historyRecord == null)
+                return CalibrateAndTrainAsync(snapshot, stats, expectedTextHash, "", new string[0], new long[0], new long[0]);
+
+            string[] commitTextArr = ToArray(historyRecord.CommitTexts);
+            long[] commitTimeArr = ToArray(historyRecord.CommitTimes);
+            long[] keyTimeArr = ToArray(historyRecord.KeyTimes);
+            string targetText = historyRecord.TargetText ?? "";
+
+            lock (pendingWriteLock)
+            {
+                Task previous = pendingWrite;
+                Action job = () =>
+                {
+                    bool shouldTrain = historyRecord.IsFirstAttempt;
+                    try
+                    {
+                        if (historyStore != null)
+                        {
+                            long roundId = historyStore.AppendRound(historyRecord);
+                            AllHistoryRoundSummary summary = historyStore.LoadRoundSummary(roundId);
+                            shouldTrain = summary != null && summary.IsFirstAttempt;
+                        }
+                    }
+                    catch
+                    {
+                        // 历史库失败不能影响首打训练；显式重打仍不能训练画像。
+                    }
+
+                    if (!shouldTrain)
+                        return;
+
+                    try { Calibrate(snapshot, stats, expectedTextHash); } catch { }
+                    try { TrainFromCommitUnitsOnly(historyRecord, stats); } catch { }
+                };
+
+                Task next = (previous == null || previous.IsCompleted)
+                    ? Task.Run(job)
+                    : previous.ContinueWith(_ => job(), TaskContinuationOptions.ExecuteSynchronously);
+
+                pendingWrite = next;
+                return next;
+            }
+        }
+
+        public int RebuildProfileFromHistory(bool firstAttemptsOnly)
+        {
+            if (historyStore == null)
+                return 0;
+
+            int count = 0;
+            var profile = new PersonalTypingProfile();
+            foreach (AllHistoryReplayRound round in historyStore.LoadReplayRounds(firstAttemptsOnly))
+            {
+                if (round == null || round.Samples == null || round.Samples.Count == 0)
+                    continue;
+
+                var session = new PersonalTypingSession
+                {
+                    EffectiveStatCharacters = Math.Max(0, round.Stats.TotalWords - 3),
+                    EffectiveMilliseconds = round.Stats.TotalSeconds * 1000.0
+                };
+
+                foreach (AllHistoryUnitSample sample in round.Samples)
+                {
+                    if (sample == null
+                        || string.IsNullOrEmpty(sample.UnitText)
+                        || sample.UnitLength <= 0
+                        || sample.UnitLength > 4
+                        || sample.StartCharIndex < 3
+                        || !PersonalUnitExtractor.IsPureChineseUnit(sample.UnitText))
+                    {
+                        continue;
+                    }
+
+                    session.Samples.Add(new PersonalTypingUnitSample(
+                        sample.UnitText,
+                        sample.ElapsedMilliseconds,
+                        sample.KeyCount));
+                }
+
+                if (session.EffectiveStatCharacters <= 0 || session.Samples.Count == 0)
+                    continue;
+
+                profile.Update(session, round.Stats);
+                count++;
+            }
+
+            store.Save(profile);
+            return count;
+        }
+
+        private void TrainFromCommitUnitsOnly(AllHistoryRoundRecord record, PersonalTypingRoundStats stats)
+        {
+            if (record == null || stats == null)
+                return;
+
+            var session = BuildCommitUnitSession(record);
+            if (session.EffectiveStatCharacters <= 0 || session.Samples.Count == 0)
+                return;
+
+            var sampleTexts = new HashSet<string>();
+            foreach (PersonalTypingUnitSample sample in session.Samples)
+            {
+                if (sample != null && !string.IsNullOrEmpty(sample.Text))
+                    sampleTexts.Add(sample.Text);
+            }
+
+            PersonalTypingProfile profile = store.LoadWithUnits(sampleTexts);
+            profile.Update(session, stats);
+            store.ApplyTraining(profile);
+        }
+
+        private static PersonalTypingSession BuildCommitUnitSession(AllHistoryRoundRecord record)
+        {
+            var session = new PersonalTypingSession
+            {
+                EffectiveStatCharacters = Math.Max(0, record.TotalWords - 3),
+                EffectiveMilliseconds = Math.Max(0, record.TotalSeconds * 1000.0)
+            };
+
+            string[] commits = ToArray(record.CommitTexts);
+            long[] commitTimes = ToArray(record.CommitTimes);
+            long[] keyTimes = ToArray(record.KeyTimes);
+            int count = Math.Min(commits.Length, commitTimes.Length);
+            int charIndex = 0;
+            long previousCommitTime = 0;
+
+            for (int i = 0; i < count; i++)
+            {
+                string unit = commits[i] ?? "";
+                int unitLength = new System.Globalization.StringInfo(unit).LengthInTextElements;
+                long commitTime = commitTimes[i];
+                int start = charIndex;
+                int end = charIndex + unitLength;
+
+                if (start >= 3
+                    && unitLength > 0
+                    && unitLength <= 4
+                    && PersonalUnitExtractor.IsPureChineseUnit(unit))
+                {
+                    session.Samples.Add(new PersonalTypingUnitSample(
+                        unit,
+                        EffectiveMillisecondsBetween(previousCommitTime, commitTime, keyTimes),
+                        CountKeysBetween(previousCommitTime, commitTime, keyTimes)));
+                }
+
+                charIndex = end;
+                previousCommitTime = commitTime;
+            }
+
+            return session;
+        }
+
+        private static int CountKeysBetween(long startExclusive, long endInclusive, long[] keyTimes)
+        {
+            int count = 0;
+            if (keyTimes == null)
+                return count;
+
+            for (int i = 0; i < keyTimes.Length; i++)
+            {
+                if (keyTimes[i] > startExclusive && keyTimes[i] <= endInclusive)
+                    count++;
+            }
+            return count;
+        }
+
+        private static double EffectiveMillisecondsBetween(long start, long end, long[] keyTimes)
+        {
+            if (end <= start)
+                return 0;
+
+            var events = new List<long>();
+            events.Add(start);
+            if (keyTimes != null)
+            {
+                for (int i = 0; i < keyTimes.Length; i++)
+                {
+                    if (keyTimes[i] > start && keyTimes[i] < end)
+                        events.Add(keyTimes[i]);
+                }
+            }
+            events.Add(end);
+
+            double effective = end - start;
+            for (int i = 1; i < events.Count; i++)
+            {
+                long gap = events[i] - events[i - 1];
+                if (gap > 10000)
+                    effective -= gap;
+            }
+
+            return Math.Max(0, effective);
+        }
+
         /// <summary>
         /// 等待最近一次 <see cref="TrainAsync"/> 完成。MainWindow 关窗时调用，
         /// 避免后台 Train 还没落盘进程就退出。
@@ -172,6 +385,11 @@ namespace TypeSunny.Personalization
                 HashSet<string> candidateKeys = PersonalUnitExtractor.CollectAllKeys(text, fallbackSegments);
 
                 PersonalTypingProfile profile = store.LoadWithUnits(candidateKeys);
+                if (profile.EffectiveStatCharacters <= 0)
+                {
+                    TryBootstrapProfileFromHistory();
+                    profile = store.LoadWithUnits(candidateKeys);
+                }
                 if (profile.EffectiveStatCharacters <= 0)
                     return new PersonalScorePredictionSnapshot();
 
@@ -298,6 +516,11 @@ namespace TypeSunny.Personalization
 
             PersonalTypingProfile profile = store.LoadWithUnits(candidateKeys);
             if (profile.EffectiveStatCharacters <= 0)
+            {
+                TryBootstrapProfileFromHistory();
+                profile = store.LoadWithUnits(candidateKeys);
+            }
+            if (profile.EffectiveStatCharacters <= 0)
                 return new PersonalScorePrediction();
 
             double baseScore = GetBaseDifficultyScore(text, baseDifficultyText);
@@ -314,6 +537,16 @@ namespace TypeSunny.Personalization
             if (baseScore <= 0)
                 baseScore = Math.Max(0.01, baseDifficultyCalculator(text ?? ""));
             return baseScore;
+        }
+
+        private void TryBootstrapProfileFromHistory()
+        {
+            if (historyBootstrapAttempted || historyStore == null)
+                return;
+
+            historyBootstrapAttempted = true;
+            try { RebuildProfileFromHistory(firstAttemptsOnly: true); }
+            catch { }
         }
 
         internal static double ExtractDifficultyScore(string difficultyText)

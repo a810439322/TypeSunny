@@ -8,13 +8,6 @@ namespace TypeSunny.Personalization
     {
         public const double ScoreAttachmentConfidenceThreshold = 0.80;
 
-        /// <summary>
-        /// 显示阈值：置信度低于该值时整段预测都不显示，让用户看到的还是纯基础难度。
-        /// 冷启动期 confidence ≈ 0，预测往往严重失真，显示出来会让用户失去信任。
-        /// 阈值定在 0.30 是经验值——大致对应"至少 1/3 字符在 DP 路径上是成熟样本"。
-        /// </summary>
-        public const double MinDisplayConfidence = 0.30;
-
         private static readonly string[] DefaultOrderItems =
         {
             "速度",
@@ -84,10 +77,6 @@ namespace TypeSunny.Personalization
             Func<string, bool> isVisible)
         {
             if (prediction == null || prediction.PredictedSpeed <= 0)
-                return "";
-
-            // 低置信完全不显示，调用方会回退到只显示基础难度
-            if (prediction.Confidence < MinDisplayConfidence)
                 return "";
 
             var parts = new List<string>();

@@ -173,6 +173,7 @@
     <Compile Include="Difficulty\QingDifficultyScorer.cs" />
     <Compile Include="Difficulty\DifficultyDict.cs" />
     <Compile Include="Personalization\IPersonalTypingProfileStore.cs" />
+    <Compile Include="Personalization\AllHistoryTypingHistoryStore.cs" />
     <Compile Include="Personalization\LegacyJsonProfile.cs" />
     <Compile Include="Personalization\PersonalPredictionCalibration.cs" />
     <Compile Include="Personalization\PersonalScorePredictionFormatter.cs" />
