@@ -12,6 +12,12 @@ function Assert-Contains($name, $text, $needle) {
     }
 }
 
+function Assert-NotContains($name, $text, $needle) {
+    if ($text.Contains($needle)) {
+        throw "$name should not contain text: $needle"
+    }
+}
+
 function Get-Block($text, $startNeedle, $endNeedle) {
     $start = $text.IndexOf($startNeedle)
     if ($start -lt 0) {
@@ -60,12 +66,21 @@ Assert-Contains 'home toolbar can skip compact layout while switching scopes' $h
 Assert-Contains 'home toolbar guards compact reapply during scoped state switching' $homeBlock 'if (isSuperCompact && applySuperCompactMode)'
 
 Assert-Contains 'trainer has memory checkbox' $trainerXaml 'CbTrainerMainWindowMemory'
-Assert-Contains 'trainer has reset memory button' $trainerXaml 'BtnResetTrainerMainWindowMemory'
+Assert-NotContains 'trainer no longer has reset memory button' $trainerXaml 'BtnResetTrainerMainWindowMemory'
 Assert-Contains 'trainer stacks send-close and main-window-memory checkboxes vertically' $trainerXaml 'x:Name="TrainerSendOptionsPanel"'
 Assert-Contains 'trainer send option stack is vertical' $trainerXaml 'x:Name="TrainerSendOptionsPanel" Orientation="Vertical"'
 Assert-Contains 'trainer reads memory switch' $trainerCode 'TrainerMainWindowConfigScope.EnabledConfigKey'
 Assert-Contains 'trainer toggle refreshes main scope' $trainerCode 'RefreshTrainerMainWindowMemoryMode()'
-Assert-Contains 'trainer reset calls main reset' $trainerCode 'ResetTrainerMainWindowMemory()'
+Assert-Contains 'trainer disabling memory asks with themed confirmation' $trainerCode 'ConfirmResetTrainerMainWindowMemoryOnDisable()'
+Assert-Contains 'trainer confirmation uses shared chromeless dialog template' $trainerCode 'DialogTheming.ApplyChromelessTheme(dialog)'
+Assert-Contains 'trainer confirmed disable resets main memory' $trainerCode 'ResetTrainerMainWindowMemory()'
+Assert-NotContains 'trainer no longer has reset button handler' $trainerCode 'BtnResetTrainerMainWindowMemory_Click'
+Assert-NotContains 'trainer memory reset no longer uses native message box' $trainerCode 'MessageBox.Show("确定要清空练单场景下的主窗口记忆吗？"'
+
+$disableMemoryBlock = Get-Block $trainerCode 'private void CbTrainerMainWindowMemory_Unchecked' 'private bool ConfirmResetTrainerMainWindowMemoryOnDisable()'
+if ($disableMemoryBlock.IndexOf('RefreshTrainerMainWindowMemoryMode()') -gt $disableMemoryBlock.IndexOf('ResetTrainerMainWindowMemory()')) {
+    throw 'trainer memory disable must switch back to the global main-window scope before clearing trainer-scoped memory.'
+}
 
 $homeSettingsBlock = Get-Block $configCode 'private void AppendHomeToolbarSettings' 'private void AppendFixedHomeModuleSettings'
 Assert-Contains 'settings home toolbar reads scoped visibility' $homeSettingsBlock 'TrainerMainWindowConfigScope.GetBool(entry.VisibilityConfigKey)'

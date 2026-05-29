@@ -41,17 +41,13 @@ namespace TypeSunny.Utils
                 {
                     foreach (var button in normalButtons)
                     {
-                        if (button == null)
-                            continue;
-                        button.Background = p.ButtonBg;
-                        button.Foreground = p.ButtonFg;
+                        ApplyButtonTheme(button, p, false);
                     }
                 }
 
                 if (accentButton != null)
                 {
-                    accentButton.Background = p.Accent;
-                    accentButton.Foreground = new SolidColorBrush(System.Windows.Media.Colors.White);
+                    ApplyButtonTheme(accentButton, p, true);
                     if (progressBar != null)
                         progressBar.Foreground = p.Accent;
                 }
@@ -64,7 +60,7 @@ namespace TypeSunny.Utils
 
         /// <summary>
         /// 对整个窗口递归应用主题色：窗口本体上色，再遍历所有子控件按类型上色。
-        /// 主按钮（IsDefault=true）使用 accent 颜色。
+        /// 普通按钮使用统一的弹窗按钮模板，避免走系统默认高亮色。
         /// </summary>
         internal static void ApplyToWindow(Window window)
         {
@@ -270,9 +266,7 @@ namespace TypeSunny.Utils
             switch (node)
             {
                 case Button btn:
-                    btn.Background = btn.IsDefault ? p.Accent : p.ButtonBg;
-                    btn.Foreground = btn.IsDefault ? new SolidColorBrush(System.Windows.Media.Colors.White) : p.ButtonFg;
-                    btn.BorderBrush = new SolidColorBrush(p.BorderColor);
+                    ApplyButtonTheme(btn, p, false);
                     break;
 
                 case TextBox tb:
@@ -320,11 +314,59 @@ namespace TypeSunny.Utils
             public SolidColorBrush WindowBg;
             public SolidColorBrush WindowFg;
             public SolidColorBrush ButtonBg;
+            public SolidColorBrush ButtonHoverBg;
+            public SolidColorBrush ButtonPressedBg;
             public SolidColorBrush ButtonFg;
+            public SolidColorBrush AccentHoverBg;
+            public SolidColorBrush AccentPressedBg;
             public SolidColorBrush InputBg;   // 跟打区背景色
             public SolidColorBrush InputFg;   // 跟打区字体色
             public SolidColorBrush Accent;    // 标题栏进度条颜色
             public Color BorderColor;
+        }
+
+        private static void ApplyButtonTheme(Button button, Palette p, bool isAccent)
+        {
+            if (button == null)
+                return;
+
+            button.Background = isAccent ? p.Accent : p.ButtonBg;
+            button.Foreground = isAccent ? Brushes.White : p.ButtonFg;
+            button.BorderBrush = new SolidColorBrush(p.BorderColor);
+            button.FocusVisualStyle = null;
+            if (button.ReadLocalValue(Control.TemplateProperty) == DependencyProperty.UnsetValue)
+                button.Template = GetDialogButtonTemplate(p, isAccent);
+        }
+
+        private static ControlTemplate GetDialogButtonTemplate(Palette p, bool isAccent)
+        {
+            string border = p.BorderColor.ToString();
+            string hover = (isAccent ? p.AccentHoverBg : p.ButtonHoverBg).Color.ToString();
+            string pressed = (isAccent ? p.AccentPressedBg : p.ButtonPressedBg).Color.ToString();
+
+            string xaml = $@"<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='Button'>
+    <Border x:Name='border'
+            Background='{{TemplateBinding Background}}'
+            BorderBrush='{border}'
+            BorderThickness='{{TemplateBinding BorderThickness}}'
+            CornerRadius='4'
+            Padding='{{TemplateBinding Padding}}'>
+        <ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center' TextBlock.Foreground='{{TemplateBinding Foreground}}' RecognizesAccessKey='True'/>
+    </Border>
+    <ControlTemplate.Triggers>
+        <Trigger Property='IsMouseOver' Value='True'>
+            <Setter TargetName='border' Property='Background' Value='{hover}'/>
+        </Trigger>
+        <Trigger Property='IsPressed' Value='True'>
+            <Setter TargetName='border' Property='Background' Value='{pressed}'/>
+        </Trigger>
+        <Trigger Property='IsEnabled' Value='False'>
+            <Setter Property='Opacity' Value='0.55'/>
+        </Trigger>
+    </ControlTemplate.Triggers>
+</ControlTemplate>";
+
+            return (ControlTemplate)XamlReader.Parse(xaml);
         }
 
         private static Palette LoadPalette()
@@ -356,12 +398,33 @@ namespace TypeSunny.Utils
                 WindowBg = new SolidColorBrush(bgColor),
                 WindowFg = new SolidColorBrush(fgColor),
                 ButtonBg = new SolidColorBrush(btnBgColor),
+                ButtonHoverBg = new SolidColorBrush(ShiftColor(btnBgColor, 15)),
+                ButtonPressedBg = new SolidColorBrush(ShiftColor(btnBgColor, 30)),
                 ButtonFg = new SolidColorBrush(btnFgColor),
+                AccentHoverBg = new SolidColorBrush(ShiftColor(accentColor, 15)),
+                AccentPressedBg = new SolidColorBrush(ShiftColor(accentColor, 30)),
                 InputBg = new SolidColorBrush(inputBgColor),
                 InputFg = new SolidColorBrush(inputFgColor),
                 Accent = new SolidColorBrush(accentColor),
                 BorderColor = borderColor
             };
+        }
+
+        private static Color ShiftColor(Color color, int amount)
+        {
+            double brightness = (color.R * 0.299 + color.G * 0.587 + color.B * 0.114) / 255.0;
+            int delta = brightness < 0.5 ? amount : -amount;
+            return Color.FromRgb(
+                ClampColor(color.R + delta),
+                ClampColor(color.G + delta),
+                ClampColor(color.B + delta));
+        }
+
+        private static byte ClampColor(int value)
+        {
+            if (value < 0) return 0;
+            if (value > 255) return 255;
+            return (byte)value;
         }
     }
 }

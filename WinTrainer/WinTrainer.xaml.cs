@@ -112,8 +112,11 @@ namespace TypeSunny
         bool CfgInit;
         bool SliderInit;
         private bool _isRefreshingFileList;
+        private bool _isUpdatingTrainerMainWindowMemoryCheckBox;
+        private bool _isApplyingArticleSettings;
         private readonly TrainerAutoSendPolicy autoSendPolicy = new TrainerAutoSendPolicy();
         private readonly ArticleSendKeyboardPolicy keyboardPolicy = new ArticleSendKeyboardPolicy();
+        private Dictionary<string, string> defaultArticleSettings = new Dictionary<string, string>();
 
    //     List<string> InputWords = new List<string>();
         bool Jumped = false;
@@ -217,6 +220,10 @@ namespace TypeSunny
             public int RoundTotalBacks { get; set; }
             public int RoundTotalCorrection { get; set; }
             public int RoundAccWordCount { get; set; }
+            public string TargetHitSetting { get; set; }
+            public string HitDecreaseSetting { get; set; }
+            public string GroupSizeSetting { get; set; }
+            public string TargetAccuracySetting { get; set; }
 
             public ArticleStatisticsData()
             {
@@ -985,6 +992,18 @@ namespace TypeSunny
             e.Handled = true;
         }
 
+        private void InternalHotkeyCtrlShiftL(object sender, ExecutedRoutedEventArgs e)
+        {
+            RandAllGroup();
+            e.Handled = true;
+        }
+
+        private void InternalHotkeyCtrlShiftU(object sender, ExecutedRoutedEventArgs e)
+        {
+            RestoreOrder();
+            e.Handled = true;
+        }
+
         private void DisplayHit()
         {
 
@@ -1346,6 +1365,10 @@ namespace TypeSunny
                 RoundTotalBacks = roundTotalBacks,
                 RoundTotalCorrection = roundTotalCorrection,
                 RoundAccWordCount = roundAccWordCount,
+                TargetHitSetting = cfg["换段击键"],
+                HitDecreaseSetting = cfg["每轮降击"],
+                GroupSizeSetting = cfg["每组字数"],
+                TargetAccuracySetting = cfg["换段键准"],
                 // 深拷贝 DisplayRoot
                 DisplayRoot = DisplayRoot.Select(section => new List<string>(section)).ToList()
             };
@@ -1384,6 +1407,8 @@ namespace TypeSunny
                 RetypeCount = data.RetypeCount;
                 MaxHitRate = data.MaxHitRate;
 
+                ApplyArticleSettings(data);
+
                 // 恢复文章内容（包括乱序状态）
                 if (data.DisplayRoot != null && data.DisplayRoot.Count > 0)
                 {
@@ -1411,9 +1436,64 @@ namespace TypeSunny
                 roundAccWordCount = 0;
                 RetypeCount = 0;
                 MaxHitRate = 0;
+                ApplyDefaultArticleSettings();
             }
 
             UpdateUIState();
+        }
+
+        private void ApplyArticleSettings(ArticleStatisticsData data)
+        {
+            if (data == null)
+                return;
+
+            string targetHit = string.IsNullOrWhiteSpace(data.TargetHitSetting) ? GetDefaultArticleSetting("换段击键") : data.TargetHitSetting;
+            string hitDecrease = string.IsNullOrWhiteSpace(data.HitDecreaseSetting) ? GetDefaultArticleSetting("每轮降击") : data.HitDecreaseSetting;
+            string groupSize = string.IsNullOrWhiteSpace(data.GroupSizeSetting) ? GetDefaultArticleSetting("每组字数") : data.GroupSizeSetting;
+            string targetAccuracy = string.IsNullOrWhiteSpace(data.TargetAccuracySetting) ? GetDefaultArticleSetting("换段键准") : data.TargetAccuracySetting;
+
+            ApplyArticleSettings(targetHit, hitDecrease, groupSize, targetAccuracy);
+        }
+
+        private void ApplyDefaultArticleSettings()
+        {
+            ApplyArticleSettings(
+                GetDefaultArticleSetting("换段击键"),
+                GetDefaultArticleSetting("每轮降击"),
+                GetDefaultArticleSetting("每组字数"),
+                GetDefaultArticleSetting("换段键准"));
+        }
+
+        private string GetDefaultArticleSetting(string key)
+        {
+            if (defaultArticleSettings.ContainsKey(key))
+                return defaultArticleSettings[key];
+            return cfg.ContainsKey(key) ? cfg[key] : "";
+        }
+
+        private void ApplyArticleSettings(string targetHit, string hitDecrease, string groupSize, string targetAccuracy)
+        {
+            _isApplyingArticleSettings = true;
+            try
+            {
+                cfg["换段击键"] = targetHit;
+                cfg["每轮降击"] = hitDecrease;
+                cfg["每组字数"] = groupSize;
+                cfg["换段键准"] = targetAccuracy;
+
+                if (speedDisplay != null)
+                    speedDisplay.Text = targetHit;
+                if (hitDecreaseDisplay != null)
+                    hitDecreaseDisplay.Text = hitDecrease;
+                if (numDisplay != null)
+                    numDisplay.Text = groupSize;
+                if (accuracyDisplay != null)
+                    accuracyDisplay.Text = targetAccuracy;
+            }
+            finally
+            {
+                _isApplyingArticleSettings = false;
+            }
         }
 
         /// <summary>
@@ -1436,6 +1516,7 @@ namespace TypeSunny
                         // 保存击键率和速度列表
                         writer.WriteLine($"H\t{string.Join(",", data.RoundHitRates)}");
                         writer.WriteLine($"S\t{string.Join(",", data.RoundSpeeds)}");
+                        writer.WriteLine($"C\t{data.TargetHitSetting}\t{data.HitDecreaseSetting}\t{data.GroupSizeSetting}\t{data.TargetAccuracySetting}");
 
                         // 保存 DisplayRoot（乱序后的文章内容）
                         // 格式：D\t段数\t每段的字数（逗号分隔）
@@ -1498,6 +1579,21 @@ namespace TypeSunny
                                 if (!string.IsNullOrEmpty(speedStr))
                                 {
                                     data.RoundSpeeds = speedStr.Split(',').Select(s => double.TryParse(s, out double val) ? val : 0).ToList();
+                                }
+                            }
+                        }
+                        else if (line.StartsWith("C\t"))
+                        {
+                            // 每篇文本独立设置
+                            if (data != null)
+                            {
+                                var parts = line.Split('\t');
+                                if (parts.Length >= 5)
+                                {
+                                    data.TargetHitSetting = parts[1];
+                                    data.HitDecreaseSetting = parts[2];
+                                    data.GroupSizeSetting = parts[3];
+                                    data.TargetAccuracySetting = parts[4];
                                 }
                             }
                         }
@@ -2087,6 +2183,11 @@ namespace TypeSunny
 
         private void norm_Click(object sender, RoutedEventArgs e)
         {
+            RestoreOrder();
+        }
+
+        private void RestoreOrder()
+        {
             ReadTxt(true, skipInGroupRand: true);
         }
 
@@ -2152,6 +2253,10 @@ namespace TypeSunny
             numDisplay.Text = cfg["每组字数"];
             hitDecreaseDisplay.Text = cfg["每轮降击"];
             accuracyDisplay.Text = cfg["换段键准"];
+            defaultArticleSettings["换段击键"] = cfg["换段击键"];
+            defaultArticleSettings["每组字数"] = cfg["每组字数"];
+            defaultArticleSettings["每轮降击"] = cfg["每轮降击"];
+            defaultArticleSettings["换段键准"] = cfg["换段键准"];
             CbCloseAfterSend.IsChecked = cfg["练单发文后关闭窗口"] == "否" ? false : true;
             CbTrainerMainWindowMemory.IsChecked = Config.GetBool(TrainerMainWindowConfigScope.EnabledConfigKey);
 
@@ -2321,12 +2426,35 @@ namespace TypeSunny
 
         private void CbTrainerMainWindowMemory_Checked(object sender, RoutedEventArgs e)
         {
-            SaveTrainerMainWindowMemorySetting();
+            if (_isUpdatingTrainerMainWindowMemoryCheckBox || !CfgInit)
+                return;
+
+            Config.Set(TrainerMainWindowConfigScope.EnabledConfigKey, true);
+            MainWindow.Current?.RefreshTrainerMainWindowMemoryMode();
         }
 
         private void CbTrainerMainWindowMemory_Unchecked(object sender, RoutedEventArgs e)
         {
-            SaveTrainerMainWindowMemorySetting();
+            if (_isUpdatingTrainerMainWindowMemoryCheckBox || !CfgInit)
+                return;
+
+            if (!ConfirmResetTrainerMainWindowMemoryOnDisable())
+            {
+                _isUpdatingTrainerMainWindowMemoryCheckBox = true;
+                try
+                {
+                    CbTrainerMainWindowMemory.IsChecked = true;
+                }
+                finally
+                {
+                    _isUpdatingTrainerMainWindowMemoryCheckBox = false;
+                }
+                return;
+            }
+
+            Config.Set(TrainerMainWindowConfigScope.EnabledConfigKey, false);
+            MainWindow.Current?.RefreshTrainerMainWindowMemoryMode();
+            MainWindow.Current?.ResetTrainerMainWindowMemory();
         }
 
         private void SaveCloseAfterSendSetting()
@@ -2338,22 +2466,84 @@ namespace TypeSunny
             WriteCfg();
         }
 
-        private void SaveTrainerMainWindowMemorySetting()
+        private bool ConfirmResetTrainerMainWindowMemoryOnDisable()
         {
-            if (!CfgInit)
-                return;
+            var dialog = new Window
+            {
+                Title = "关闭确认",
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                SizeToContent = SizeToContent.Height,
+                Width = 380,
+                MinWidth = 340,
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false,
+                Icon = this.Icon
+            };
 
-            Config.Set(TrainerMainWindowConfigScope.EnabledConfigKey, CbTrainerMainWindowMemory.IsChecked == true);
-            MainWindow.Current?.RefreshTrainerMainWindowMemoryMode();
-        }
+            var root = new Grid
+            {
+                Margin = new Thickness(18, 16, 18, 18)
+            };
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        private void BtnResetTrainerMainWindowMemory_Click(object sender, RoutedEventArgs e)
-        {
-            var result = MessageBox.Show("确定要清空练单场景下的主窗口记忆吗？", "重置确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (result != MessageBoxResult.Yes)
-                return;
+            var message = new TextBlock
+            {
+                Text = "关闭主窗口单独记忆会清空练单场景下已单独保存的主窗口记忆。确定要关闭并清空吗？",
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 14,
+                LineHeight = 22,
+                Margin = new Thickness(0, 0, 0, 18)
+            };
+            Grid.SetRow(message, 0);
+            root.Children.Add(message);
 
-            MainWindow.Current?.ResetTrainerMainWindowMemory();
+            var buttonPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            Grid.SetRow(buttonPanel, 1);
+
+            var confirmButton = new Button
+            {
+                Content = "确定",
+                ToolTip = "确认关闭并清空",
+                MinWidth = 76,
+                Padding = new Thickness(12, 6, 12, 6),
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+
+            var cancelButton = new Button
+            {
+                Content = "取消",
+                ToolTip = "取消",
+                IsCancel = true,
+                MinWidth = 76,
+                Padding = new Thickness(12, 6, 12, 6)
+            };
+
+            confirmButton.Click += (s, args) =>
+            {
+                dialog.DialogResult = true;
+                dialog.Close();
+            };
+
+            cancelButton.Click += (s, args) =>
+            {
+                dialog.DialogResult = false;
+                dialog.Close();
+            };
+
+            buttonPanel.Children.Add(confirmButton);
+            buttonPanel.Children.Add(cancelButton);
+            root.Children.Add(buttonPanel);
+
+            dialog.Content = root;
+            DialogTheming.ApplyChromelessTheme(dialog);
+
+            return dialog.ShowDialog() == true;
         }
 
         private void CloseTrainerWindowAfterSendIfNeeded()
@@ -2665,6 +2855,9 @@ namespace TypeSunny
         // 字数显示TextChanged事件
         private void NumDisplay_TextChanged(object sender, TextChangedEventArgs e)
         {
+            if (_isApplyingArticleSettings)
+                return;
+
             if (CfgInit && numDisplay.Text.Length > 0)
             {
                 if (int.TryParse(numDisplay.Text, out int value))
@@ -2685,6 +2878,9 @@ namespace TypeSunny
         // 换段击键显示TextChanged事件
         private void SpeedDisplay_TextChanged(object sender, TextChangedEventArgs e)
         {
+            if (_isApplyingArticleSettings)
+                return;
+
             if (CfgInit && speedDisplay.Text.Length > 0)
             {
                 if (double.TryParse(speedDisplay.Text, out double value))
@@ -2713,6 +2909,9 @@ namespace TypeSunny
         // 每轮降击显示TextChanged事件
         private void HitDecreaseDisplay_TextChanged(object sender, TextChangedEventArgs e)
         {
+            if (_isApplyingArticleSettings)
+                return;
+
             if (CfgInit && hitDecreaseDisplay.Text.Length > 0)
             {
                 if (double.TryParse(hitDecreaseDisplay.Text, out double value))
@@ -2794,6 +2993,9 @@ namespace TypeSunny
 
         private void AccuracyDisplay_TextChanged(object sender, TextChangedEventArgs e)
         {
+            if (_isApplyingArticleSettings)
+                return;
+
             if (CfgInit && accuracyDisplay.Text.Length > 0)
             {
                 if (int.TryParse(accuracyDisplay.Text, out int value))

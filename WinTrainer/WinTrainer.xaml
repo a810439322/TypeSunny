@@ -19,6 +19,8 @@
 
     <Window.Resources>
         <RoutedUICommand x:Key="Chongda" Text="Retype"/>
+        <RoutedUICommand x:Key="ShuffleAll" Text="ShuffleAll"/>
+        <RoutedUICommand x:Key="RestoreOrder" Text="RestoreOrder"/>
         <RoutedUICommand x:Key="SendArticle" Text="SendArticle"/>
 
         <!-- 主题颜色资源 -->
@@ -184,10 +186,14 @@
 
     <Window.InputBindings>
         <KeyBinding Gesture="Ctrl+L" Command="{StaticResource Chongda}"/>
+        <KeyBinding Gesture="Ctrl+Shift+L" Command="{StaticResource ShuffleAll}"/>
+        <KeyBinding Gesture="Ctrl+Shift+U" Command="{StaticResource RestoreOrder}"/>
     </Window.InputBindings>
 
     <Window.CommandBindings>
         <CommandBinding Command="{StaticResource Chongda}" Executed="InternalHotkeyCtrlL"/>
+        <CommandBinding Command="{StaticResource ShuffleAll}" Executed="InternalHotkeyCtrlShiftL"/>
+        <CommandBinding Command="{StaticResource RestoreOrder}" Executed="InternalHotkeyCtrlShiftU"/>
     </Window.CommandBindings>
 
     <Window.Effect>
@@ -225,9 +231,9 @@
                             <TextBlock x:Name="TitleBarStats" FontSize="11" Foreground="{DynamicResource TextForeground}" Margin="12,0,0,0" Opacity="0.85"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
-                            <Button x:Name="BtnMinimize" Content="━" Click="BtnMinimize_Click" Style="{StaticResource TitleBarButtonStyle}"/>
-                            <Button x:Name="BtnMaximize" Content="◻" Click="BtnMaximize_Click" Style="{StaticResource TitleBarButtonStyle}"/>
-                            <Button x:Name="BtnClose" Content="×" Click="BtnClose_Click" Style="{StaticResource TitleBarCloseButtonStyle}"/>
+                            <Button x:Name="BtnMinimize" Content="━" ToolTip="最小化" Click="BtnMinimize_Click" Style="{StaticResource TitleBarButtonStyle}"/>
+                            <Button x:Name="BtnMaximize" Content="◻" ToolTip="最大化 / 还原" Click="BtnMaximize_Click" Style="{StaticResource TitleBarButtonStyle}"/>
+                            <Button x:Name="BtnClose" Content="×" ToolTip="关闭（Esc）" Click="BtnClose_Click" Style="{StaticResource TitleBarCloseButtonStyle}"/>
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -241,9 +247,9 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Orientation="Horizontal">
                             <ComboBox x:Name="FileSelector" Width="110" Height="26" SelectionChanged="FileSelector_SelectionChanged"/>
-                            <Button x:Name="BtnRandAll" Content="全体乱序" Margin="8,0,0,0" Click="RandAllClick" Style="{StaticResource ModernButtonStyle}"/>
-                            <Button Content="恢复顺序" Margin="5,0,0,0" Click="norm_Click" Style="{StaticResource ModernButtonStyle}"/>
-                            <Button Content="发文" Margin="5,0,0,0" Click="BtnSend_Click" Style="{StaticResource ModernButtonStyle}"/>
+                            <Button x:Name="BtnRandAll" Content="全体乱序" ToolTip="全体乱序 / 余字乱序（Ctrl+Shift+L）" Margin="8,0,0,0" Click="RandAllClick" Style="{StaticResource ModernButtonStyle}"/>
+                            <Button x:Name="BtnRestoreOrder" Content="恢复顺序" ToolTip="恢复顺序（Ctrl+Shift+U）" Margin="5,0,0,0" Click="norm_Click" Style="{StaticResource ModernButtonStyle}"/>
+                            <Button Content="发文" ToolTip="发文（Enter）" Margin="5,0,0,0" Click="BtnSend_Click" Style="{StaticResource ModernButtonStyle}"/>
                             <StackPanel x:Name="TrainerSendOptionsPanel" Orientation="Vertical" Margin="10,0,0,0" VerticalAlignment="Center">
                                 <CheckBox x:Name="CbCloseAfterSend" Margin="0,0,0,2" Checked="CbCloseAfterSend_Checked" Unchecked="CbCloseAfterSend_Unchecked" Foreground="{DynamicResource TextForeground}">
                                     <TextBlock Text="发文后关闭窗口" Foreground="{DynamicResource TextForeground}" FontSize="12"/>
@@ -252,7 +258,6 @@
                                     <TextBlock Text="主窗口单独记忆" Foreground="{DynamicResource TextForeground}" FontSize="12"/>
                                 </CheckBox>
                             </StackPanel>
-                            <Button x:Name="BtnResetTrainerMainWindowMemory" Content="重置主窗口记忆" Margin="8,0,0,0" Click="BtnResetTrainerMainWindowMemory_Click" Style="{StaticResource ModernButtonStyle}"/>
                         </StackPanel>
                         <TextBlock x:Name="TBHitrate" Grid.Column="1" Text="击键 0.00" Foreground="{DynamicResource TextForeground}" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="12"/>
                     </Grid>
@@ -275,9 +280,9 @@
                     <TextBlock x:Name="stattxt2" Grid.Column="1" Text="" Foreground="{DynamicResource AccentColor}" VerticalAlignment="Center" Margin="0,0,8,0" FontSize="11"/>
                     <Slider x:Name="sld" Grid.Column="2" HorizontalAlignment="Stretch" VerticalAlignment="Center" ValueChanged="Slider_ValueChanged" IsSnapToTickEnabled="True" Opacity="0.6"/>
                     <StackPanel Grid.Column="2" HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal">
-                        <Button x:Name="BtnReset" Content="重置统计" Padding="15,4" Click="BtnReset_Click" Style="{StaticResource ModernButtonStyle}" Visibility="Collapsed"/>
+                        <Button x:Name="BtnReset" Content="重置统计" ToolTip="重置当前文本统计" Padding="15,4" Click="BtnReset_Click" Style="{StaticResource ModernButtonStyle}" Visibility="Collapsed"/>
                     </StackPanel>
-                    <Button x:Name="BtnHistory" Grid.Column="3" Content="历史" Margin="5,0,0,0" Padding="15,4" Click="BtnHistory_Click" Style="{StaticResource ModernButtonStyle}"/>
+                    <Button x:Name="BtnHistory" Grid.Column="3" Content="历史" ToolTip="查看练单历史" Margin="5,0,0,0" Padding="15,4" Click="BtnHistory_Click" Style="{StaticResource ModernButtonStyle}"/>
                 </Grid>
 
                 <!-- 设置面板 -->
@@ -302,8 +307,8 @@
                                 <TextBlock Grid.Column="0" Text="≥" FontSize="14" Foreground="{DynamicResource TextForeground}" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                 <TextBox x:Name="speedDisplay" Grid.Column="1" Text="6" Style="{StaticResource NumberInputStyle}" InputMethod.IsInputMethodEnabled="False" TextChanged="SpeedDisplay_TextChanged"/>
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="4,0,0,0">
-                                    <Button Content="▲" Click="SpeedUp" Style="{StaticResource NumberButtonStyle}" Margin="0,0,2,0"/>
-                                    <Button Content="▼" Click="SpeedDown" Style="{StaticResource NumberButtonStyle}" Margin="0,2,0,0"/>
+                                    <Button Content="▲" ToolTip="提高换段击键" Click="SpeedUp" Style="{StaticResource NumberButtonStyle}" Margin="0,0,2,0"/>
+                                    <Button Content="▼" ToolTip="降低换段击键" Click="SpeedDown" Style="{StaticResource NumberButtonStyle}" Margin="0,2,0,0"/>
                                 </StackPanel>
                             </Grid>
                         </StackPanel>
@@ -322,8 +327,8 @@
                                 <TextBlock Grid.Column="0" Text="≥" FontSize="14" Foreground="{DynamicResource TextForeground}" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                 <TextBox x:Name="accuracyDisplay" Grid.Column="1" Text="100" Style="{StaticResource NumberInputStyle}" InputMethod.IsInputMethodEnabled="False" TextChanged="AccuracyDisplay_TextChanged"/>
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="4,0,0,0">
-                                    <Button Content="▲" Click="AccuracyUp" Style="{StaticResource NumberButtonStyle}" Margin="0,0,2,0"/>
-                                    <Button Content="▼" Click="AccuracyDown" Style="{StaticResource NumberButtonStyle}" Margin="0,2,0,0"/>
+                                    <Button Content="▲" ToolTip="提高换段键准" Click="AccuracyUp" Style="{StaticResource NumberButtonStyle}" Margin="0,0,2,0"/>
+                                    <Button Content="▼" ToolTip="降低换段键准" Click="AccuracyDown" Style="{StaticResource NumberButtonStyle}" Margin="0,2,0,0"/>
                                 </StackPanel>
                             </Grid>
                             <TextBlock Text="%" Foreground="{DynamicResource TextForeground}" FontSize="10" HorizontalAlignment="Center" Margin="0,4,0,0" Opacity="0.7"/>
@@ -341,8 +346,8 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="numDisplay" Grid.Column="0" Text="10" Style="{StaticResource NumberInputStyle}" InputMethod.IsInputMethodEnabled="False" TextChanged="NumDisplay_TextChanged"/>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="4,0,0,0">
-                                    <Button Content="▲" Click="NumUp" Style="{StaticResource NumberButtonStyle}" Margin="0,0,2,0"/>
-                                    <Button Content="▼" Click="NumDown" Style="{StaticResource NumberButtonStyle}" Margin="0,2,0,0"/>
+                                    <Button Content="▲" ToolTip="增加每组字数" Click="NumUp" Style="{StaticResource NumberButtonStyle}" Margin="0,0,2,0"/>
+                                    <Button Content="▼" ToolTip="减少每组字数" Click="NumDown" Style="{StaticResource NumberButtonStyle}" Margin="0,2,0,0"/>
                                 </StackPanel>
                             </Grid>
                             <TextBlock Text="字/组" Foreground="{DynamicResource TextForeground}" FontSize="10" HorizontalAlignment="Center" Margin="0,4,0,0" Opacity="0.7"/>
@@ -362,8 +367,8 @@
                                 <TextBlock Grid.Column="0" Text="≤" FontSize="14" Foreground="{DynamicResource TextForeground}" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                 <TextBox x:Name="hitDecreaseDisplay" Grid.Column="1" Text="0.05" Style="{StaticResource NumberInputStyle}" InputMethod.IsInputMethodEnabled="False" TextChanged="HitDecreaseDisplay_TextChanged"/>
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="4,0,0,0">
-                                    <Button Content="▲" Click="HitDecreaseUp" Style="{StaticResource NumberButtonStyle}" Margin="0,0,2,0"/>
-                                    <Button Content="▼" Click="HitDecreaseDown" Style="{StaticResource NumberButtonStyle}" Margin="0,2,0,0"/>
+                                    <Button Content="▲" ToolTip="提高每轮降击" Click="HitDecreaseUp" Style="{StaticResource NumberButtonStyle}" Margin="0,0,2,0"/>
+                                    <Button Content="▼" ToolTip="降低每轮降击" Click="HitDecreaseDown" Style="{StaticResource NumberButtonStyle}" Margin="0,2,0,0"/>
                                 </StackPanel>
                             </Grid>
                         </StackPanel>

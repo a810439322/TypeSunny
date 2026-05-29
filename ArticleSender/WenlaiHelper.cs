@@ -187,7 +187,7 @@ namespace TypeSunny.ArticleSender
             {
                 Title = "文来注册",
                 Width = 350,
-                Height = 380,
+                Height = 400,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = owner,
                 ResizeMode = ResizeMode.NoResize
@@ -200,13 +200,17 @@ namespace TypeSunny.ArticleSender
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 2: 密码
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 4: 邮箱
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 4: 确认密码
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(5) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 6: 显示密码
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 6: 验证码
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 8: 邮箱
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 8: 自动登录
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 10: 验证码
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 12: 自动登录
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(20) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 10: 按钮
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 14: 按钮
 
             var inputBg = Utils.Colors.FromString(Config.GetString("跟打区背景色"));
             var inputFg = Utils.Colors.FromString(Config.GetString("跟打区字体色"));
@@ -241,8 +245,120 @@ namespace TypeSunny.ArticleSender
             Grid.SetRow(txtPassword, 2);
             grid.Children.Add(txtPassword);
 
+            // 密码明文显示框（与 PasswordBox 重叠，显示密码时切换可见性）
+            var txtPasswordPlain = new TextBox
+            {
+                Padding = new Thickness(5),
+                Margin = new Thickness(70, 0, 0, 0),
+                Background = inputBg, Foreground = inputFg, BorderBrush = inputBorder,
+                Visibility = Visibility.Collapsed
+            };
+            Grid.SetRow(txtPasswordPlain, 2);
+            grid.Children.Add(txtPasswordPlain);
+
+            var lblConfirm = new Label { Content = "确认密码:", Foreground = labelFg };
+            Grid.SetRow(lblConfirm, 4);
+            grid.Children.Add(lblConfirm);
+
+            var txtConfirm = new PasswordBox
+            {
+                Padding = new Thickness(5),
+                Margin = new Thickness(70, 0, 0, 0),
+                Background = inputBg, Foreground = inputFg, BorderBrush = inputBorder
+            };
+            Grid.SetRow(txtConfirm, 4);
+            grid.Children.Add(txtConfirm);
+
+            var txtConfirmPlain = new TextBox
+            {
+                Padding = new Thickness(5),
+                Margin = new Thickness(70, 0, 0, 0),
+                Background = inputBg, Foreground = inputFg, BorderBrush = inputBorder,
+                Visibility = Visibility.Collapsed
+            };
+            Grid.SetRow(txtConfirmPlain, 4);
+            grid.Children.Add(txtConfirmPlain);
+
+            // 显示密码勾选框：在 PasswordBox 与明文 TextBox 之间同步并切换可见性
+            var chkShowPassword = new CheckBox
+            {
+                Content = "显示密码",
+                Margin = new Thickness(70, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = labelFg
+            };
+            Grid.SetRow(chkShowPassword, 6);
+            grid.Children.Add(chkShowPassword);
+
+            // 确认密码不一致时的实时提示（输入过程中即时反馈）
+            // btnRegister / btnSendCode 提前声明，供 UpdateConfirmHint 在不一致时禁用
+            Button btnRegister = null;
+            Button btnSendCode = null;
+            var lblConfirmHint = new TextBlock
+            {
+                Text = "两次密码不一致",
+                Foreground = System.Windows.Media.Brushes.Tomato,
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Visibility = Visibility.Collapsed
+            };
+            Grid.SetRow(lblConfirmHint, 6);
+            grid.Children.Add(lblConfirmHint);
+
+            void UpdateConfirmHint()
+            {
+                // 确认框为空时不提示，避免还没输完就报红
+                bool mismatch = !string.IsNullOrEmpty(txtConfirm.Password)
+                                && txtPassword.Password != txtConfirm.Password;
+                lblConfirmHint.Visibility = mismatch ? Visibility.Visible : Visibility.Collapsed;
+                // 不一致时禁用注册和发送验证码按钮（在下方创建）
+                if (btnRegister != null)
+                    btnRegister.IsEnabled = !mismatch;
+                if (btnSendCode != null)
+                    btnSendCode.IsEnabled = !mismatch;
+            }
+
+            // 同步两种输入框的内容，避免切换时丢失已输入的密码
+            txtPassword.PasswordChanged += (s, args) =>
+            {
+                if (txtPasswordPlain.Text != txtPassword.Password)
+                    txtPasswordPlain.Text = txtPassword.Password;
+                UpdateConfirmHint();
+            };
+            txtPasswordPlain.TextChanged += (s, args) =>
+            {
+                if (txtPassword.Password != txtPasswordPlain.Text)
+                    txtPassword.Password = txtPasswordPlain.Text;
+            };
+            txtConfirm.PasswordChanged += (s, args) =>
+            {
+                if (txtConfirmPlain.Text != txtConfirm.Password)
+                    txtConfirmPlain.Text = txtConfirm.Password;
+                UpdateConfirmHint();
+            };
+            txtConfirmPlain.TextChanged += (s, args) =>
+            {
+                if (txtConfirm.Password != txtConfirmPlain.Text)
+                    txtConfirm.Password = txtConfirmPlain.Text;
+            };
+            chkShowPassword.Checked += (s, args) =>
+            {
+                txtPassword.Visibility = Visibility.Collapsed;
+                txtPasswordPlain.Visibility = Visibility.Visible;
+                txtConfirm.Visibility = Visibility.Collapsed;
+                txtConfirmPlain.Visibility = Visibility.Visible;
+            };
+            chkShowPassword.Unchecked += (s, args) =>
+            {
+                txtPasswordPlain.Visibility = Visibility.Collapsed;
+                txtPassword.Visibility = Visibility.Visible;
+                txtConfirmPlain.Visibility = Visibility.Collapsed;
+                txtConfirm.Visibility = Visibility.Visible;
+            };
+
             var lblEmail = new Label { Content = "邮箱:", Foreground = labelFg };
-            Grid.SetRow(lblEmail, 4);
+            Grid.SetRow(lblEmail, 8);
             grid.Children.Add(lblEmail);
 
             var txtEmail = new TextBox
@@ -251,11 +367,11 @@ namespace TypeSunny.ArticleSender
                 Margin = new Thickness(70, 0, 0, 0),
                 Background = inputBg, Foreground = inputFg, BorderBrush = inputBorder
             };
-            Grid.SetRow(txtEmail, 4);
+            Grid.SetRow(txtEmail, 8);
             grid.Children.Add(txtEmail);
 
             var lblCode = new Label { Content = "验证码:", Foreground = labelFg };
-            Grid.SetRow(lblCode, 6);
+            Grid.SetRow(lblCode, 10);
             grid.Children.Add(lblCode);
 
             var codePanel = new Grid();
@@ -272,7 +388,7 @@ namespace TypeSunny.ArticleSender
             Grid.SetColumn(txtCode, 0);
             codePanel.Children.Add(txtCode);
 
-            var btnSendCode = new Button
+            btnSendCode = new Button
             {
                 Content = "发送",
                 Width = 60,
@@ -282,7 +398,7 @@ namespace TypeSunny.ArticleSender
             Grid.SetColumn(btnSendCode, 1);
             codePanel.Children.Add(btnSendCode);
 
-            Grid.SetRow(codePanel, 6);
+            Grid.SetRow(codePanel, 10);
             grid.Children.Add(codePanel);
 
             var chkAutoLogin = new CheckBox
@@ -292,7 +408,7 @@ namespace TypeSunny.ArticleSender
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = labelFg
             };
-            Grid.SetRow(chkAutoLogin, 8);
+            Grid.SetRow(chkAutoLogin, 12);
             grid.Children.Add(chkAutoLogin);
 
             var btnPanel = new StackPanel
@@ -300,9 +416,9 @@ namespace TypeSunny.ArticleSender
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Right
             };
-            Grid.SetRow(btnPanel, 10);
+            Grid.SetRow(btnPanel, 14);
 
-            var btnRegister = new Button
+            btnRegister = new Button
             {
                 Content = "注册",
                 Width = 80,
@@ -642,7 +758,7 @@ namespace TypeSunny.ArticleSender
             {
                 Title = "文来登录",
                 Width = 350,
-                Height = 260,
+                Height = 300,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = owner,
                 ResizeMode = ResizeMode.NoResize
@@ -654,10 +770,12 @@ namespace TypeSunny.ArticleSender
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 0: 用户名
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 2: 密码
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(5) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 4: 显示密码
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(20) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 4: 按钮
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 6: 按钮
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 6: 注册链接
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 8: 注册链接
 
             var lblUsername = new Label { Content = "用户名:", Foreground = Utils.Colors.FromString(Config.GetString("窗体字体色")) };
             Grid.SetRow(lblUsername, 0);
@@ -691,12 +809,59 @@ namespace TypeSunny.ArticleSender
             Grid.SetRow(txtPassword, 2);
             grid.Children.Add(txtPassword);
 
+            // 密码明文显示框（与 PasswordBox 重叠，显示密码时切换可见性）
+            var txtPasswordPlain = new TextBox
+            {
+                Text = account?.Password ?? "",
+                Padding = new Thickness(5),
+                Margin = new Thickness(70, 0, 0, 0),
+                Background = Utils.Colors.FromString(Config.GetString("跟打区背景色")),
+                Foreground = Utils.Colors.FromString(Config.GetString("跟打区字体色")),
+                BorderBrush = Utils.Colors.FromString(Config.GetString("按钮背景色")),
+                Visibility = Visibility.Collapsed
+            };
+            Grid.SetRow(txtPasswordPlain, 2);
+            grid.Children.Add(txtPasswordPlain);
+
+            // 显示密码勾选框：在 PasswordBox 与明文 TextBox 之间同步并切换可见性
+            var chkShowPassword = new CheckBox
+            {
+                Content = "显示密码",
+                Margin = new Thickness(70, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = Utils.Colors.FromString(Config.GetString("窗体字体色"))
+            };
+            Grid.SetRow(chkShowPassword, 4);
+            grid.Children.Add(chkShowPassword);
+
+            // 同步两种输入框的内容，避免切换时丢失已输入的密码
+            txtPassword.PasswordChanged += (s, args) =>
+            {
+                if (txtPasswordPlain.Text != txtPassword.Password)
+                    txtPasswordPlain.Text = txtPassword.Password;
+            };
+            txtPasswordPlain.TextChanged += (s, args) =>
+            {
+                if (txtPassword.Password != txtPasswordPlain.Text)
+                    txtPassword.Password = txtPasswordPlain.Text;
+            };
+            chkShowPassword.Checked += (s, args) =>
+            {
+                txtPassword.Visibility = Visibility.Collapsed;
+                txtPasswordPlain.Visibility = Visibility.Visible;
+            };
+            chkShowPassword.Unchecked += (s, args) =>
+            {
+                txtPasswordPlain.Visibility = Visibility.Collapsed;
+                txtPassword.Visibility = Visibility.Visible;
+            };
+
             var btnPanel = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Right
             };
-            Grid.SetRow(btnPanel, 4);
+            Grid.SetRow(btnPanel, 6);
 
             var btnLogin = new Button
             {
@@ -839,7 +1004,7 @@ namespace TypeSunny.ArticleSender
                 FontSize = 12,
                 Padding = new Thickness(0)
             };
-            Grid.SetRow(btnRegisterLink, 6);
+            Grid.SetRow(btnRegisterLink, 8);
             btnRegisterLink.Click += (s, args) =>
             {
                 loginDialog.DialogResult = false;

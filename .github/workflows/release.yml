@@ -16,6 +16,10 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set timezone
+        shell: pwsh
+        run: tzutil /s "China Standard Time"
+
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
