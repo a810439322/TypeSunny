@@ -4579,6 +4579,25 @@ namespace TypeSunny.UI
             return retypeType == RetypeType.wrongRetype || retypeType == RetypeType.slowRetype;
         }
 
+        private static string MapAllHistoryRetypeReason(RetypeType retypeType)
+        {
+            switch (retypeType)
+            {
+                case RetypeType.first:
+                    return "first";
+                case RetypeType.retype:
+                    return "manual_retype";
+                case RetypeType.shuffle:
+                    return "shuffle";
+                case RetypeType.wrongRetype:
+                    return "wrong";
+                case RetypeType.slowRetype:
+                    return "slow";
+                default:
+                    return retypeType.ToString();
+            }
+        }
+
         internal bool TryHandleFinishedActionFromKey(Key inputKey)
         {
             bool shouldStart = inputKey == Key.Space || inputKey == Key.Enter;
@@ -4679,6 +4698,22 @@ namespace TypeSunny.UI
                 double savedCiRatio = Score.GetCiRatio() * 100; // 打词率（转换为百分制）
                 int savedChoose = Score.GetChoose();
                 int savedBiaoDing = Score.GetBiaoDing();
+                string savedDifficultyText = Score.DifficultyText ?? "";
+                double savedDifficultyScore = PersonalScorePredictionService.ExtractDifficultyScore(savedDifficultyText);
+                string savedTargetText = string.Concat(TextInfo.Words);
+                string savedTargetTextHash = PersonalScorePredictionSnapshot.ComputeTextHash(savedTargetText);
+                string savedAttemptGroupKey = string.IsNullOrEmpty(TextInfo.TextMD5)
+                    ? savedTargetTextHash
+                    : TextInfo.TextMD5;
+                string[] savedCommitTexts = Score.CommitText == null
+                    ? new string[0]
+                    : Score.CommitText.ToArray();
+                long[] savedCommitTimes = Score.CommitTime == null
+                    ? new long[0]
+                    : Score.CommitTime.ToArray();
+                long[] savedKeyTimes = Score.KeyTime == null
+                    ? new long[0]
+                    : Score.KeyTime.ToArray();
                 string savedArticleName = "";
                 string savedArticleMark = "";
                 string savedDifficultyName = "";
@@ -5329,6 +5364,61 @@ namespace TypeSunny.UI
                 // 对于错字重打和慢字重打，只在开启了对应功能时才不记录
                 if (savedTxtSource != TxtSource.trainer)
                 {
+                    string articleName = savedArticleName;
+                    string articleMark = savedArticleMark;
+                    var roundStats = new PersonalTypingRoundStats
+                    {
+                        TotalWords = savedTotalWords,
+                        TotalSeconds = savedTotalSeconds,
+                        TotalHits = savedTotalHit,
+                        Speed = savedSpeed,
+                        HitRate = savedHitRate,
+                        Kpw = savedKPW,
+                        Accuracy = savedAccuracy,
+                        Backs = savedBacks,
+                        Correction = savedCorrection,
+                        WasteCodes = savedWasteCodes,
+                        Choose = savedChoose
+                    };
+
+                    var historyRecord = new AllHistoryRoundRecord
+                    {
+                        CreatedAt = DateTime.Now,
+                        AppVersion = GeneratedVersion.CurrentVersion,
+                        SchemaVersion = 1,
+                        TargetText = savedTargetText,
+                        TextHash = savedTargetTextHash,
+                        ArticleName = articleName,
+                        Source = savedTxtSource.ToString(),
+                        AttemptGroupKey = savedAttemptGroupKey,
+                        IsFirstAttempt = savedRetypeType == RetypeType.first,
+                        RetypeReason = MapAllHistoryRetypeReason(savedRetypeType),
+                        TotalWords = savedTotalWords,
+                        InputWords = savedInputWords,
+                        TotalSeconds = savedTotalSeconds,
+                        TotalHits = savedTotalHit,
+                        Speed = savedSpeed,
+                        HitRate = savedHitRate,
+                        Kpw = savedKPW,
+                        Accuracy = savedAccuracy,
+                        Wrong = savedWrong,
+                        Backs = savedBacks,
+                        Correction = savedCorrection,
+                        WasteCodes = savedWasteCodes,
+                        Choose = savedChoose,
+                        DifficultyText = savedDifficultyText,
+                        DifficultyScore = savedDifficultyScore,
+                        CommitTexts = savedCommitTexts,
+                        CommitTimes = savedCommitTimes,
+                        KeyTimes = savedKeyTimes
+                    };
+
+                    _ = personalScorePredictionService.RecordHistoryCalibrateAndTrainAsync(
+                        historyRecord,
+                        calibrationPredictionSnapshot,
+                        roundStats,
+                        savedTargetTextHash);
+
                     // 只在开启功能且是重打模式时才不记录
                     bool shouldRecord = true;
                     if (savedRetypeType == RetypeType.wrongRetype && Config.GetBool("错字重打"))
@@ -5340,10 +5430,6 @@ namespace TypeSunny.UI
                     {
                         try
                         {
-                            // 直接使用保存的值（已经在 StopHelper 开始时根据来源设置好了）
-                            string articleName = savedArticleName;
-                            string articleMark = savedArticleMark;
-
                             var record = new ArticleLog.ArticleRecord
                             {
                                 Time = DateTime.Now,
@@ -5367,30 +5453,6 @@ namespace TypeSunny.UI
                                 BiaoDing = savedBiaoDing,
                                 DifficultyName = savedDifficultyName
                             };
-
-                            var roundStats = new PersonalTypingRoundStats
-                            {
-                                TotalWords = savedTotalWords,
-                                TotalSeconds = savedTotalSeconds,
-                                TotalHits = savedTotalHit,
-                                Speed = savedSpeed,
-                                HitRate = savedHitRate,
-                                Kpw = savedKPW,
-                                Accuracy = savedAccuracy,
-                                Backs = savedBacks,
-                                Correction = savedCorrection,
-                                WasteCodes = savedWasteCodes,
-                                Choose = savedChoose
-                            };
-
-                            personalScorePredictionService.CalibrateAndTrainAsync(
-                                calibrationPredictionSnapshot,
-                                roundStats,
-                                PersonalScorePredictionSnapshot.ComputeTextHash(string.Concat(TextInfo.Words)),
-                                string.Concat(TextInfo.Words),
-                                Score.CommitText,
-                                Score.CommitTime,
-                                Score.KeyTime);
 
                             // 根据来源记录到不同的日志（使用保存的 txtSource）
                             if (savedTxtSource == TxtSource.articlesender)
