@@ -5381,43 +5381,46 @@ namespace TypeSunny.UI
                         Choose = savedChoose
                     };
 
-                    var historyRecord = new AllHistoryRoundRecord
+                    if (savedRetypeType != RetypeType.wrongRetype && savedRetypeType != RetypeType.slowRetype)
                     {
-                        CreatedAt = DateTime.Now,
-                        AppVersion = GeneratedVersion.CurrentVersion,
-                        SchemaVersion = 1,
-                        TargetText = savedTargetText,
-                        TextHash = savedTargetTextHash,
-                        ArticleName = articleName,
-                        Source = savedTxtSource.ToString(),
-                        AttemptGroupKey = savedAttemptGroupKey,
-                        IsFirstAttempt = savedRetypeType == RetypeType.first,
-                        RetypeReason = MapAllHistoryRetypeReason(savedRetypeType),
-                        TotalWords = savedTotalWords,
-                        InputWords = savedInputWords,
-                        TotalSeconds = savedTotalSeconds,
-                        TotalHits = savedTotalHit,
-                        Speed = savedSpeed,
-                        HitRate = savedHitRate,
-                        Kpw = savedKPW,
-                        Accuracy = savedAccuracy,
-                        Wrong = savedWrong,
-                        Backs = savedBacks,
-                        Correction = savedCorrection,
-                        WasteCodes = savedWasteCodes,
-                        Choose = savedChoose,
-                        DifficultyText = savedDifficultyText,
-                        DifficultyScore = savedDifficultyScore,
-                        CommitTexts = savedCommitTexts,
-                        CommitTimes = savedCommitTimes,
-                        KeyTimes = savedKeyTimes
-                    };
+                        var historyRecord = new AllHistoryRoundRecord
+                        {
+                            CreatedAt = DateTime.Now,
+                            AppVersion = GeneratedVersion.CurrentVersion,
+                            SchemaVersion = 1,
+                            TargetText = savedTargetText,
+                            TextHash = savedTargetTextHash,
+                            ArticleName = articleName,
+                            Source = savedTxtSource.ToString(),
+                            AttemptGroupKey = savedAttemptGroupKey,
+                            IsFirstAttempt = savedRetypeType == RetypeType.first,
+                            RetypeReason = MapAllHistoryRetypeReason(savedRetypeType),
+                            TotalWords = savedTotalWords,
+                            InputWords = savedInputWords,
+                            TotalSeconds = savedTotalSeconds,
+                            TotalHits = savedTotalHit,
+                            Speed = savedSpeed,
+                            HitRate = savedHitRate,
+                            Kpw = savedKPW,
+                            Accuracy = savedAccuracy,
+                            Wrong = savedWrong,
+                            Backs = savedBacks,
+                            Correction = savedCorrection,
+                            WasteCodes = savedWasteCodes,
+                            Choose = savedChoose,
+                            DifficultyText = savedDifficultyText,
+                            DifficultyScore = savedDifficultyScore,
+                            CommitTexts = savedCommitTexts,
+                            CommitTimes = savedCommitTimes,
+                            KeyTimes = savedKeyTimes
+                        };
 
-                    _ = personalScorePredictionService.RecordHistoryCalibrateAndTrainAsync(
-                        historyRecord,
-                        calibrationPredictionSnapshot,
-                        roundStats,
-                        savedTargetTextHash);
+                        _ = personalScorePredictionService.RecordHistoryCalibrateAndTrainAsync(
+                            historyRecord,
+                            calibrationPredictionSnapshot,
+                            roundStats,
+                            savedTargetTextHash);
+                    }
 
                     // 只在开启功能且是重打模式时才不记录
                     bool shouldRecord = true;

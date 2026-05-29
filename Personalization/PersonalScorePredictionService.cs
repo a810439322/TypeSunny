@@ -166,10 +166,8 @@ namespace TypeSunny.Personalization
             if (historyRecord == null)
                 return CalibrateAndTrainAsync(snapshot, stats, expectedTextHash, "", new string[0], new long[0], new long[0]);
 
-            string[] commitTextArr = ToArray(historyRecord.CommitTexts);
-            long[] commitTimeArr = ToArray(historyRecord.CommitTimes);
-            long[] keyTimeArr = ToArray(historyRecord.KeyTimes);
-            string targetText = historyRecord.TargetText ?? "";
+            if (ShouldSkipAllHistoryRound(historyRecord))
+                return Task.FromResult(0);
 
             lock (pendingWriteLock)
             {
@@ -205,6 +203,15 @@ namespace TypeSunny.Personalization
                 pendingWrite = next;
                 return next;
             }
+        }
+
+        private static bool ShouldSkipAllHistoryRound(AllHistoryRoundRecord historyRecord)
+        {
+            string reason = historyRecord.RetypeReason ?? "";
+            return reason.Equals("wrong", StringComparison.OrdinalIgnoreCase)
+                   || reason.Equals("slow", StringComparison.OrdinalIgnoreCase)
+                   || reason.Equals("wrongRetype", StringComparison.OrdinalIgnoreCase)
+                   || reason.Equals("slowRetype", StringComparison.OrdinalIgnoreCase);
         }
 
         public int RebuildProfileFromHistory(bool firstAttemptsOnly)

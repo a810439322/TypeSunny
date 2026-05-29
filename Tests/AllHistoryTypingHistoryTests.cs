@@ -17,6 +17,7 @@ namespace TypeSunny.Tests
                 StoreLoadsOnlyFirstAttemptSamplesForReplay();
                 StoreAssignsAttemptIndexFromHistory();
                 ServiceTrainsProfileFromFirstAttemptHistoryOnly();
+                ServiceSkipsWrongAndSlowRetypeHistory();
                 ServiceRebuildsProfileFromFirstAttemptHistory();
                 ExplicitRetypeDoesNotTrainWhenHistoryIsEmpty();
                 StoreSubtractsLongPausesFromUnitElapsedMilliseconds();
@@ -173,6 +174,62 @@ namespace TypeSunny.Tests
                 PersonalTypingProfile profile = profileStore.Load();
                 AssertTrue("first attempt unit trained", profile.Units.ContainsKey("中国"));
                 AssertFalse("retype-only unit not trained", profile.Units.ContainsKey("中国人"));
+            }
+            finally
+            {
+                if (profileStore != null) profileStore.Dispose();
+                if (historyStore != null) historyStore.Dispose();
+                DeleteDb(profilePath);
+                DeleteDb(PersonalTypingProfileStore.NormalizePathToDb(profilePath));
+                DeleteDb(historyPath);
+            }
+        }
+
+        private static void ServiceSkipsWrongAndSlowRetypeHistory()
+        {
+            string profilePath = TempDbPath();
+            string historyPath = TempDbPath();
+            PersonalTypingProfileStore profileStore = null;
+            AllHistoryTypingHistoryStore historyStore = null;
+            try
+            {
+                profileStore = new PersonalTypingProfileStore(profilePath);
+                historyStore = new AllHistoryTypingHistoryStore(historyPath);
+                var service = new PersonalScorePredictionService(
+                    profileStore,
+                    value => 2.0,
+                    value => new string[0],
+                    historyStore);
+
+                string text = "一二三中国";
+                var wrong = NewRoundRecord(text, new[] { "一", "二", "三", "中国" },
+                    new long[] { 100, 200, 300, 800 },
+                    new long[] { 50, 150, 250, 350, 450, 650 },
+                    retypeType: RetypeType.wrongRetype,
+                    attemptIndex: 0);
+                wrong.RetypeReason = "wrong";
+
+                var slow = NewRoundRecord(text, new[] { "一", "二", "三", "中国" },
+                    new long[] { 120, 240, 360, 900 },
+                    new long[] { 60, 180, 300, 420, 540, 720 },
+                    retypeType: RetypeType.slowRetype,
+                    attemptIndex: 0);
+                slow.RetypeReason = "slow";
+
+                service.RecordHistoryCalibrateAndTrainAsync(
+                    wrong,
+                    new PersonalScorePredictionSnapshot(),
+                    wrong.ToRoundStats(),
+                    wrong.TextHash);
+                service.RecordHistoryCalibrateAndTrainAsync(
+                    slow,
+                    new PersonalScorePredictionSnapshot(),
+                    slow.ToRoundStats(),
+                    slow.TextHash);
+                service.FlushPendingWrites();
+
+                AssertEqual("wrong and slow retypes are not stored in all_history", 0, historyStore.LoadReplayRoundSummaries().Count());
+                AssertFalse("wrong and slow retypes did not train", profileStore.Load().Units.ContainsKey("中国"));
             }
             finally
             {
