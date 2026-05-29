@@ -1194,7 +1194,7 @@ namespace TypeSunny.UI
             if (block == null)
                 return;
 
-            if (IsCodeDisplayEnabled())
+            if (IsCodeDisplayEnabled() || HasStateBackgroundOverlay(localIndex))
             {
                 SmoothBackground.Apply(block, null, 0);
                 SetStateBackgroundOverlay(localIndex, background);
@@ -1209,6 +1209,44 @@ namespace TypeSunny.UI
         internal void SetDisplayBlockStateBackgroundByGlobalIndex(int globalIndex, Brush background)
         {
             SetDisplayBlockStateBackground(globalIndex - TextInfo.PageStartIndex, background);
+        }
+
+        internal void ResyncDisplayBlockStateBackgroundByGlobalIndex(int globalIndex, Brush background)
+        {
+            int localIndex = globalIndex - TextInfo.PageStartIndex;
+            if (localIndex < 0 || localIndex >= TextInfo.Blocks.Count)
+                return;
+
+            if (!IsCodeDisplayEnabled() && !HasStateBackgroundOverlay(localIndex))
+                return;
+
+            var block = TextInfo.Blocks[localIndex];
+            if (block != null && block.Background != null)
+                SmoothBackground.Apply(block, null, 0);
+
+            ResyncStateBackgroundOverlay(localIndex, background);
+        }
+
+        internal void SyncDisplayBlockStateBackground(int localIndex, Brush background)
+        {
+            if (localIndex < 0 || localIndex >= TextInfo.Blocks.Count)
+                return;
+
+            var block = TextInfo.Blocks[localIndex];
+            if (block == null)
+                return;
+
+            if (IsCodeDisplayEnabled() || HasStateBackgroundOverlay(localIndex))
+            {
+                if (block.Background != null)
+                    SmoothBackground.Apply(block, null, 0);
+                ResyncStateBackgroundOverlay(localIndex, background);
+            }
+            else
+            {
+                SetStateBackgroundOverlay(localIndex, null);
+                SmoothBackground.Apply(block, background, 0);
+            }
         }
 
         internal double GetDisplayStateBackgroundTopOffset(TextBlock textBlock)
@@ -1227,6 +1265,13 @@ namespace TypeSunny.UI
             return 150;
         }
 
+        private bool HasStateBackgroundOverlay(int localIndex)
+        {
+            return localIndex >= 0
+                   && localIndex < TextInfo.StateBackgrounds.Count
+                   && TextInfo.StateBackgrounds[localIndex] != null;
+        }
+
         private void SetStateBackgroundOverlay(int localIndex, Brush background)
         {
             if (localIndex < 0 || localIndex >= TextInfo.StateBackgrounds.Count)
@@ -1237,6 +1282,22 @@ namespace TypeSunny.UI
                 return;
 
             SmoothBackground.Apply(stateBackground, background, GetStateBackgroundAnimationDurationMilliseconds());
+        }
+
+        private void ResyncStateBackgroundOverlay(int localIndex, Brush background)
+        {
+            if (!HasStateBackgroundOverlay(localIndex))
+                return;
+
+            var stateBackground = TextInfo.StateBackgrounds[localIndex];
+            if (background == null)
+            {
+                if (stateBackground.Background != null)
+                    SmoothBackground.Apply(stateBackground, null, 0);
+                return;
+            }
+
+            SmoothBackground.Apply(stateBackground, background, 0);
         }
 
         private void EnsureCodeDisplayStateBackgrounds()

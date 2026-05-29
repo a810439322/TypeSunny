@@ -104,9 +104,50 @@ jobs:
           echo "Message: $msg"
           echo "Token length: $($token.Length)"
 
+          function Get-GiteeReleases($token) {
+            $all = @()
+            $page = 1
+            $perPage = 100
+
+            while ($true) {
+              $url = "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases?access_token=${token}&page=${page}&per_page=${perPage}"
+              $pageReleases = @(Invoke-RestMethod -Uri $url -Method Get)
+
+              if ($pageReleases.Count -eq 0) {
+                break
+              }
+
+              $all += $pageReleases
+
+              if ($pageReleases.Count -lt $perPage) {
+                break
+              }
+
+              $page++
+            }
+
+            return $all
+          }
+
+          function Remove-OldGiteeReleases($token, $keepReleaseCount) {
+            $releases = Get-GiteeReleases $token
+            $oldReleases = @($releases |
+              Sort-Object @{ Expression = { [DateTime]$_.created_at }; Descending = $true } |
+              Select-Object -Skip $keepReleaseCount)
+
+            foreach ($rel in $oldReleases) {
+              echo "Deleting old Gitee release $($rel.tag_name) (ID $($rel.id), created_at=$($rel.created_at))..."
+              Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases/$($rel.id)?access_token=${token}" `
+                -Method Delete
+              echo "Deleted $($rel.tag_name)"
+            }
+
+            echo "Kept latest $keepReleaseCount Gitee releases."
+          }
+
           echo "--- Step 0: Deleting existing release if any ---"
           try {
-            $releases = Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/fuchuxuan/TypeSunny/releases?access_token=${token}" -Method Get
+            $releases = Get-GiteeReleases $token
             foreach ($rel in $releases) {
               if ($rel.tag_name -eq "v$ver") {
                 echo "Found existing release ID $($rel.id) with tag v$ver, deleting..."
@@ -185,9 +226,28 @@ jobs:
           }
 
           # 更新包：必须成功，重试10次
+          echo "--- Step 2: Cleaning up old Gitee releases before upload ---"
+          $keepReleaseCount = 3
+          try {
+            Remove-OldGiteeReleases $token $keepReleaseCount
+          } catch {
+            echo "ERROR cleaning up old Gitee releases before upload: $($_.Exception.Message)"
+            echo "Response: $($_.ErrorDetails.Message)"
+            throw
+          }
+
           Upload-Asset "TypeSunny-${ver}-update.zip" $releaseId $token 10 $true
 
           # 全量包：可选，重试10次
           Upload-Asset "TypeSunny-${ver}-full.zip" $releaseId $token 10 $false
+
+          echo "--- Step 3: Cleaning up old Gitee releases after upload ---"
+          try {
+            Remove-OldGiteeReleases $token $keepReleaseCount
+          } catch {
+            echo "ERROR cleaning up old Gitee releases after upload: $($_.Exception.Message)"
+            echo "Response: $($_.ErrorDetails.Message)"
+            throw
+          }
 
           echo "=== Gitee Release Done ==="

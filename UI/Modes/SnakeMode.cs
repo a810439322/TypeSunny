@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using Brush = System.Windows.Media.Brush;
 using TypeSunny.Core;
 using TypeSunny.Utils;
 
@@ -20,6 +21,9 @@ namespace TypeSunny.UI.Modes
 
         public void Update(int nextToType)
         {
+            TextInfo.PageStartIndex = 0;
+            bool codeDisplayEnabled = _main.IsCodeDisplayEnabled();
+
             // 获取配置（赛文API强制使用前20后30）
             int preShowCount;
             int postShowCount;
@@ -36,13 +40,17 @@ namespace TypeSunny.UI.Modes
             }
 
             // 如果是第一次进入贪吃蛇模式，需要创建所有TextBlock
-            bool isFirstTime = (TextInfo.Blocks.Count != TextInfo.Words.Count);
+            bool isFirstTime = (TextInfo.Blocks.Count != TextInfo.Words.Count)
+                || IsSnakeDisplayStaleForCodeDisplay(codeDisplayEnabled);
             if (isFirstTime)
             {
                 // 清空显示区域
                 _main.TbDispay.Children.Clear();
                 _main.ScDisplay.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
                 TextInfo.Blocks.Clear();
+                TextInfo.BlocksStates.Clear();
+                TextInfo.CodeLabels.Clear();
+                TextInfo.StateBackgrounds.Clear();
 
                 // 获取字体设置
                 var fm = _main.GetCurrentFontFamily();
@@ -89,6 +97,7 @@ namespace TypeSunny.UI.Modes
 
                     _main.ApplyDisplayForeground(tb, i);
                     TextInfo.Blocks.Add(tb);
+                    TextInfo.BlocksStates.Add(WordStates.NO_TYPE);
                     _main.TbDispay.Children.Add(_main.CreateDisplayElement(tb, i));
                 }
             }
@@ -111,21 +120,33 @@ namespace TypeSunny.UI.Modes
                         opacity = 1.0 - (fadeDistance / 10.0);
                     }
 
-                    // 设置背景色
+                    WordStates state = WordStates.NO_TYPE;
+                    Brush background = null;
                     if (i < TextInfo.wordStates.Count)
                     {
-                        switch (TextInfo.wordStates[i])
+                        state = TextInfo.wordStates[i];
+                        switch (state)
                         {
                             case WordStates.WRONG:
-                                tb.Background = _main.IsBlindType ? null : Colors.IncorrectBackground;
+                                background = _main.IsBlindType ? null : Colors.IncorrectBackground;
                                 break;
                             case WordStates.RIGHT:
-                                tb.Background = _main.IsBlindType ? null : Colors.CorrectBackground;
+                                background = _main.IsBlindType ? null : Colors.CorrectBackground;
                                 break;
                             default:
-                                tb.Background = null;
+                                background = null;
                                 break;
                         }
+                    }
+
+                    if (i < TextInfo.BlocksStates.Count && TextInfo.BlocksStates[i] != state)
+                    {
+                        _main.SetDisplayBlockStateBackground(i, background);
+                        TextInfo.BlocksStates[i] = state;
+                    }
+                    else
+                    {
+                        _main.SyncDisplayBlockStateBackground(i, background);
                     }
 
                     _main.ApplyDisplayForeground(tb, i);
@@ -135,7 +156,15 @@ namespace TypeSunny.UI.Modes
                     // 当前要打的字符
                     opacity = 1.0;
                     _main.ApplyDisplayForeground(tb, i);
-                    tb.Background = null;
+                    if (i < TextInfo.BlocksStates.Count && TextInfo.BlocksStates[i] != WordStates.NO_TYPE)
+                    {
+                        _main.SetDisplayBlockStateBackground(i, null);
+                        TextInfo.BlocksStates[i] = WordStates.NO_TYPE;
+                    }
+                    else
+                    {
+                        _main.SyncDisplayBlockStateBackground(i, null);
+                    }
                 }
                 else
                 {
@@ -150,10 +179,18 @@ namespace TypeSunny.UI.Modes
                     }
 
                     _main.ApplyDisplayForeground(tb, i);
-                    tb.Background = null;
+                    if (i < TextInfo.BlocksStates.Count && TextInfo.BlocksStates[i] != WordStates.NO_TYPE)
+                    {
+                        _main.SetDisplayBlockStateBackground(i, null);
+                        TextInfo.BlocksStates[i] = WordStates.NO_TYPE;
+                    }
+                    else
+                    {
+                        _main.SyncDisplayBlockStateBackground(i, null);
+                    }
                 }
 
-                tb.Opacity = opacity;
+                ApplySnakeOpacity(tb, opacity);
             }
 
             // 字帖模式下同步错字提示的透明度
@@ -178,6 +215,39 @@ namespace TypeSunny.UI.Modes
                     // 忽略布局异常
                 }
             }
+        }
+
+        private bool IsSnakeDisplayStaleForCodeDisplay(bool codeDisplayEnabled)
+        {
+            if (TextInfo.Blocks.Count == 0)
+                return false;
+
+            if (!codeDisplayEnabled)
+                return TextInfo.CodeLabels.Count > 0 || TextInfo.StateBackgrounds.Count > 0;
+
+            for (int i = 0; i < TextInfo.Blocks.Count; i++)
+            {
+                if (TextInfo.CodeLabels.Count <= i || TextInfo.CodeLabels[i] == null)
+                    return true;
+
+                if (TextInfo.StateBackgrounds.Count <= i || TextInfo.StateBackgrounds[i] == null)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private void ApplySnakeOpacity(TextBlock textBlock, double opacity)
+        {
+            FrameworkElement displayElement = textBlock;
+            if (textBlock.Parent is FrameworkElement parentElement
+                && !ReferenceEquals(parentElement, _main.TbDispay))
+            {
+                displayElement = parentElement;
+                textBlock.Opacity = 1.0;
+            }
+
+            displayElement.Opacity = opacity;
         }
     }
 }

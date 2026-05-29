@@ -18,6 +18,7 @@ namespace TypeSunny.Tests
             Run("fade in applies target brush and opacity animation", FadeInAppliesTargetBrushAndOpacityAnimation);
             Run("fade in uses caret easing curve", FadeInUsesCaretEasingCurve);
             Run("fade in preserves target brush opacity", FadeInPreservesTargetBrushOpacity);
+            Run("reapplying same background does not restart fade in", ReapplyingSameBackgroundDoesNotRestartFadeIn);
             Run("apply preserves existing element opacity", ApplyPreservesExistingElementOpacity);
             Run("apply does not clear external brush animation", ApplyDoesNotClearExternalBrushAnimation);
             Run("clear removes brush without leaving opacity dimmed", ClearRemovesBrushWithoutLeavingOpacityDimmed);
@@ -100,6 +101,31 @@ namespace TypeSunny.Tests
 
                 PumpFor(180);
                 AssertNear(0.45, animatedBrush.Opacity, 0.01, "brush opacity");
+            }
+            finally
+            {
+                window.Close();
+            }
+        }
+
+        private static void ReapplyingSameBackgroundDoesNotRestartFadeIn()
+        {
+            Window window;
+            var border = CreateHostedBorder(out window);
+
+            try
+            {
+                SmoothBackground.Apply(border, Brushes.Red, 160);
+                PumpFor(80);
+
+                var animatedBrush = border.Background as SolidColorBrush;
+                AssertTrue(animatedBrush != null, "Expected a SolidColorBrush background.");
+                double opacityBefore = animatedBrush.Opacity;
+
+                SmoothBackground.Apply(border, Brushes.Red, 160);
+
+                AssertTrue(object.ReferenceEquals(animatedBrush, border.Background), "Expected reapplying the same background to keep the active brush.");
+                AssertTrue(animatedBrush.Opacity >= opacityBefore - 0.01, "Expected reapplying the same background not to restart fade-in opacity.");
             }
             finally
             {

@@ -568,6 +568,11 @@ namespace TypeSunny.UI.Modes
                         Brush background = GetQueuedBackgroundForState(state);
                         QueueDisplayBlockStateBackground(i, background);
                     }
+                    else if (IsIndexOnCurrentPage(i))
+                    {
+                        Brush background = GetQueuedBackgroundForState(state);
+                        _main.ResyncDisplayBlockStateBackgroundByGlobalIndex(i, background);
+                    }
 
                     if (state == WordStates.WRONG && IsIndexOnCurrentPage(i))
                         ShowWrongCharHint(_inputBuffer.GetElement(i), i - TextInfo.PageStartIndex);
