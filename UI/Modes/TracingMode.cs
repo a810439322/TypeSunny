@@ -230,6 +230,7 @@ namespace TypeSunny.UI.Modes
             if (!_isActive) return;
             _currentIndex = 0;
             _finishGate.Reset();
+            _pendingBackgroundChanges.Clear();
             _imeBackspacePolicy.Reset();
             ClearImeCompositionState();
             if (_inputCapture != null)
@@ -753,17 +754,22 @@ namespace TypeSunny.UI.Modes
 
         private void ProcessInputText(string inputText, string committedComposition = null)
         {
+            if (_currentIndex >= TextInfo.Words.Count)
+            {
+                if (TextInfo.wordStates[TextInfo.Words.Count - 1] != WordStates.RIGHT)
+                    FlushPendingBackgroundChanges();
+
+                HideCompositionText();
+                _main.UpdateTitleProgress(_currentIndex);
+                UpdatePosition(true);
+                _main.UpdateZiTi();
+                return;
+            }
+
             var si = new StringInfo(inputText);
             int wordsToRecord = _main.ResolveTypedWordCountDelta(inputText, si.LengthInTextElements, _currentIndex);
             _main.RecordTypedWords(wordsToRecord);
             _cursor?.RecordInput();
-
-            // 最后一个字打错后再次输入，退回到最后一个字重新比对
-            if (_currentIndex >= TextInfo.Words.Count
-                && TextInfo.wordStates[TextInfo.Words.Count - 1] != WordStates.RIGHT)
-            {
-                _currentIndex = TextInfo.Words.Count - 1;
-            }
 
             // 逐字比对
             for (int i = 0; i < si.LengthInTextElements && _currentIndex < TextInfo.Words.Count; i++)
@@ -819,6 +825,12 @@ namespace TypeSunny.UI.Modes
                 && TextInfo.wordStates[TextInfo.Words.Count - 1] == WordStates.RIGHT)
             {
                 ScheduleFinalVisualsAndStop();
+            }
+            else if (_currentIndex >= TextInfo.Words.Count)
+            {
+                FlushPendingBackgroundChanges();
+                UpdatePosition(true);
+                _main.UpdateZiTi();
             }
             else if (_currentIndex < TextInfo.Words.Count)
             {
@@ -1096,17 +1108,21 @@ namespace TypeSunny.UI.Modes
 
         private void UpdatePosition(bool animated = false)
         {
-            if (_inputCapture == null || _currentIndex >= _mirrorBlocks.Count || _mirrorBlocks.Count == 0)
+            if (_inputCapture == null || _currentIndex < 0 || _mirrorBlocks.Count == 0)
                 return;
 
             try
             {
                 var grid = (Grid)_main.BdDisplay.Child;
                 // 光标定位到镜像行的当前字位置
-                var mirrorBlock = _mirrorBlocks[_currentIndex];
+                int visualIndex = Math.Min(_currentIndex, _mirrorBlocks.Count - 1);
+                var mirrorBlock = _mirrorBlocks[visualIndex];
                 var pos = mirrorBlock.TranslatePoint(new Point(0, 0), grid);
                 double x = pos.X;
                 double y = pos.Y;
+                if (_currentIndex >= _mirrorBlocks.Count)
+                    x += mirrorBlock.ActualWidth;
+
                 double fs = MainWindow.DisplayFontSize;
                 double candidateOffset = Config.GetDouble("字帖候选框高度") * fs;
                 double codeDisplayExtra = _main.GetCodeDisplayImeOffset(fs);
@@ -1136,7 +1152,7 @@ namespace TypeSunny.UI.Modes
                         _cursor.SetPosition(x - 2, y + padTop, lineHeight);
                 }
 
-                PositionCodeTextElement(_compositionText, _currentIndex);
+                PositionCodeTextElement(_compositionText, visualIndex);
             }
             catch { }
         }

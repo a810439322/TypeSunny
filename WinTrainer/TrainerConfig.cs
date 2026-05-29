@@ -14,6 +14,8 @@ namespace TypeSunny
         static public string Path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TrainerConfig.txt");
         static private readonly object _writeLock = new object();  // 写入锁
         static private Timer _writeTimer = null;  // 单一延迟写入Timer（防抖）
+        private const int FileAccessRetryCount = 20;
+        private const int FileAccessRetryDelayMs = 50;
 
         static public void SetDefault(params string[] args)
         {
@@ -38,13 +40,7 @@ namespace TypeSunny
             {
                 try
                 {
-                    using (StreamWriter sw = new StreamWriter(Path))
-                    {
-                        foreach (var c in dicts)
-                        {
-                            sw.WriteLine(c.Key + "\t" + c.Value);
-                        }
-                    }
+                    WriteValuesLocked(dicts);
                 }
                 catch { }
             }
@@ -73,13 +69,7 @@ namespace TypeSunny
                 {
                     try
                     {
-                        using (StreamWriter sw = new StreamWriter(Path))
-                        {
-                            foreach (var c in dicts)
-                            {
-                                sw.WriteLine(c.Key + "\t" + c.Value);
-                            }
-                        }
+                        WriteValuesLocked(dicts);
                     }
                     catch { }
                 }
@@ -108,6 +98,52 @@ namespace TypeSunny
             }
         }
 
+        static public void WriteValues(Dictionary<string, string> values)
+        {
+            if (Path == "")
+                return;
+
+            lock (_writeLock)
+            {
+                WriteValuesLocked(values);
+            }
+        }
+
+        static private void WriteValuesLocked(Dictionary<string, string> values)
+        {
+            ExecuteWithFileAccessRetry(() =>
+            {
+                using (var stream = new FileStream(Path, FileMode.Create, FileAccess.Write, FileShare.Read))
+                using (var sw = new StreamWriter(stream, Encoding.UTF8))
+                {
+                    foreach (var c in values)
+                    {
+                        sw.WriteLine(c.Key + "\t" + c.Value);
+                    }
+                }
+            });
+        }
+
+        static public void ReadInto(Dictionary<string, string> values)
+        {
+            if (Path == "")
+                return;
+
+            if (!File.Exists(Path))
+            {
+                WriteValues(values);
+                return;
+            }
+
+            string[] lines;
+            lock (_writeLock)
+            {
+                lines = ReadAllLinesLocked();
+            }
+
+            ApplyLines(values, lines);
+        }
+
         static public void ReadConfig()
         {
             //     char[] sp = { '\r', ' ', '\t' };
@@ -121,10 +157,29 @@ namespace TypeSunny
             string[] lines;
             lock (_writeLock)  // 加锁防止读写冲突
             {
-                char[] sp1 = { '\n' };
-                lines = File.ReadAllText(Path).Split(sp1, StringSplitOptions.RemoveEmptyEntries);
+                lines = ReadAllLinesLocked();
             }
 
+            ApplyLines(dicts, lines);
+
+            WriteConfig();
+        }
+
+        static private string[] ReadAllLinesLocked()
+        {
+            return ExecuteWithFileAccessRetry(() =>
+            {
+                using (var stream = new FileStream(Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var reader = new StreamReader(stream, Encoding.UTF8, true))
+                {
+                    char[] sp1 = { '\n' };
+                    return reader.ReadToEnd().Split(sp1, StringSplitOptions.RemoveEmptyEntries);
+                }
+            });
+        }
+
+        static private void ApplyLines(Dictionary<string, string> values, string[] lines)
+        {
             foreach (string line in lines)
             {
                 if (line.Length == 0) continue;
@@ -143,14 +198,40 @@ namespace TypeSunny
                         {
                             string key = line_p.Substring(0, pos);
                             string value = line_p.Substring(pos + 1);
-                            dicts[key] = value;
+                            values[key] = value;
                             break;
                         }
                     }
                 }
             }
+        }
 
-            WriteConfig();
+        static private void ExecuteWithFileAccessRetry(Action action)
+        {
+            ExecuteWithFileAccessRetry<object>(() =>
+            {
+                action();
+                return null;
+            });
+        }
+
+        static private T ExecuteWithFileAccessRetry<T>(Func<T> action)
+        {
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    return action();
+                }
+                catch (IOException) when (attempt < FileAccessRetryCount)
+                {
+                    Thread.Sleep(FileAccessRetryDelayMs);
+                }
+                catch (UnauthorizedAccessException) when (attempt < FileAccessRetryCount)
+                {
+                    Thread.Sleep(FileAccessRetryDelayMs);
+                }
+            }
         }
 
         static public bool GetBool(string key)

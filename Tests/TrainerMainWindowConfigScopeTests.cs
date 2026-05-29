@@ -30,6 +30,12 @@ namespace TypeSunny.Tests
                 "练单主窗口单独记忆", "是",
                 "窗口宽度", "966.4",
                 "练单场景_窗口宽度", "620",
+                "发文区字体大小", "40",
+                "练单场景_发文区字体大小", "36",
+                "跟打区字体大小", "40",
+                "练单场景_跟打区字体大小", "38",
+                "成绩区字体大小", "15",
+                "练单场景_成绩区字体大小", "17",
                 "练单场景_其它设置", "保留",
                 "一键极简", "否",
                 "练单场景_一键极简", "是",
@@ -45,17 +51,29 @@ namespace TypeSunny.Tests
                 TrainerMainWindowConfigScope.GetString("窗口宽度"));
             AssertEqual("trainer scoped bool", true,
                 TrainerMainWindowConfigScope.GetBool("一键极简"));
+            AssertEqual("trainer display font size key", "练单场景_发文区字体大小",
+                TrainerMainWindowConfigScope.ResolveKey("发文区字体大小"));
+            AssertEqual("trainer display font size value", 36d,
+                TrainerMainWindowConfigScope.GetDouble("发文区字体大小"));
+            AssertEqual("trainer input font size value", 38d,
+                TrainerMainWindowConfigScope.GetDouble("跟打区字体大小"));
+            AssertEqual("trainer results font size value", 17d,
+                TrainerMainWindowConfigScope.GetDouble("成绩区字体大小"));
 
             Config.dicts["练单主窗口单独记忆"] = "否";
             AssertEqual("disabled maps normal key", "窗口宽度",
                 TrainerMainWindowConfigScope.ResolveKey("窗口宽度"));
             AssertEqual("disabled reads normal value", "966.4",
                 TrainerMainWindowConfigScope.GetString("窗口宽度"));
+            AssertEqual("disabled reads normal display font size", 40d,
+                TrainerMainWindowConfigScope.GetDouble("发文区字体大小"));
 
             Config.dicts["练单主窗口单独记忆"] = "是";
             TrainerMainWindowConfigScope.ResetTrainerScopedValues();
             AssertEqual("reset removes trainer value", false,
                 Config.dicts.ContainsKey("练单场景_窗口宽度"));
+            AssertEqual("reset removes trainer display font size", false,
+                Config.dicts.ContainsKey("练单场景_发文区字体大小"));
             AssertEqual("reset keeps switch", "是",
                 Config.GetString("练单主窗口单独记忆"));
             AssertEqual("reset keeps unrelated trainer prefix value", "保留",
@@ -83,11 +101,14 @@ namespace TypeSunny.Tests
                 Config.SetDefault(
                     "练单主窗口单独记忆", "是",
                     "窗口宽度", "966.4",
+                    "发文区字体大小", "40",
+                    "跟打区字体大小", "40",
+                    "成绩区字体大小", "15",
                     "一键极简", "否");
 
                 System.IO.File.WriteAllText(
                     configPath,
-                    "练单主窗口单独记忆\t是\n练单场景_窗口宽度\t620\n练单场景_一键极简\t是\n练单场景_其它设置\t保留\n");
+                    "练单主窗口单独记忆\t是\n练单场景_窗口宽度\t620\n练单场景_发文区字体大小\t36\n练单场景_跟打区字体大小\t38\n练单场景_成绩区字体大小\t17\n练单场景_一键极简\t是\n练单场景_其它设置\t保留\n");
 
                 Config.Path = configPath;
                 Config.ReadConfig();
@@ -96,6 +117,12 @@ namespace TypeSunny.Tests
                     Config.GetString("练单场景_窗口宽度"));
                 AssertEqual("read another known trainer scoped value", "是",
                     Config.GetString("练单场景_一键极简"));
+                AssertEqual("read trainer display font size", "36",
+                    Config.GetString("练单场景_发文区字体大小"));
+                AssertEqual("read trainer input font size", "38",
+                    Config.GetString("练单场景_跟打区字体大小"));
+                AssertEqual("read trainer results font size", "17",
+                    Config.GetString("练单场景_成绩区字体大小"));
                 AssertEqual("does not import unrelated trainer prefix value", "",
                     Config.GetString("练单场景_其它设置"));
             }

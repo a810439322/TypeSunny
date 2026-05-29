@@ -165,3 +165,46 @@ Assert-Contains 'copybook should compare previous state before queueing backgrou
 $copybookRefreshTypedStateBody = Get-MethodBody 'CopybookMode.RefreshTypedStateFromInputBuffer' $copybook 'private void RefreshTypedStateFromInputBuffer()' 'private static WordStates ToWordState'
 Assert-NotContains 'copybook refresh should preserve already queued typed background changes' $copybookRefreshTypedStateBody '_pendingBackgroundChanges.Clear();'
 Assert-Contains 'tracing should set typed state background by global index' $tracing 'SetDisplayBlockStateBackgroundByGlobalIndex(_currentIndex'
+$copybookResetBody = Get-MethodBody 'CopybookMode.Reset' $copybook 'public void Reset()' '/// <summary>'
+Assert-Contains 'copybook reset should discard stale pending typed backgrounds before next loaded text' $copybookResetBody '_pendingBackgroundChanges.Clear();'
+$copybookProcessInputBody = Get-MethodBody 'CopybookMode.ProcessInputText' $copybook 'private void ProcessInputText(string inputText, string committedComposition = null)' 'private void ScheduleInputCaptureTrim()'
+if (-not ($copybookProcessInputBody.Contains('ScheduleAdvanceVisuals();') -and $copybookProcessInputBody.Contains('FlushPendingBackgroundChanges();'))) {
+    throw 'copybook last-character wrong input should flush queued typed backgrounds even though the caret cannot advance'
+}
+Assert-NotContains 'copybook should not move the caret back to overwrite a wrong final character' $copybookProcessInputBody '_inputBuffer.MoveCaret(_currentIndex);'
+$copybookEndGuardIndex = $copybookProcessInputBody.IndexOf('if (_currentIndex >= TextInfo.Words.Count', [System.StringComparison]::Ordinal)
+$copybookWordRecordIndex = $copybookProcessInputBody.IndexOf('_main.ResolveTypedWordCountDelta', [System.StringComparison]::Ordinal)
+if ($copybookEndGuardIndex -lt 0 -or $copybookEndGuardIndex -gt $copybookWordRecordIndex) {
+    throw 'copybook should discard input past the final character before recording actual typed words'
+}
+$tracingProcessInputBody = Get-MethodBody 'TracingMode.ProcessInputText' $tracing 'private void ProcessInputText(string inputText, string committedComposition = null)' 'private void QueueDisplayBlockStateBackground'
+Assert-NotContains 'tracing should not rewind to overwrite a wrong final character' $tracingProcessInputBody '_currentIndex = TextInfo.Words.Count - 1;'
+$tracingEndGuardIndex = $tracingProcessInputBody.IndexOf('if (_currentIndex >= TextInfo.Words.Count', [System.StringComparison]::Ordinal)
+$tracingWordRecordIndex = $tracingProcessInputBody.IndexOf('_main.ResolveTypedWordCountDelta', [System.StringComparison]::Ordinal)
+if ($tracingEndGuardIndex -lt 0 -or $tracingEndGuardIndex -gt $tracingWordRecordIndex) {
+    throw 'tracing should discard input past the final character before recording actual typed words'
+}
+$copybookUpdatePositionBody = Get-MethodBody 'CopybookMode.UpdatePosition' $copybook 'private void UpdatePosition(bool animated = false)' 'private void UpdateCompositionPosition()'
+Assert-NotContains 'copybook end caret should not skip positioning when current index is at text end' $copybookUpdatePositionBody '_inputCapture == null || _currentIndex >= TextInfo.Blocks.Count || TextInfo.Blocks.Count == 0'
+Assert-Contains 'copybook end caret should anchor to last visible block' $copybookUpdatePositionBody 'visualIndex = Math.Min(_currentIndex, TextInfo.Blocks.Count - 1)'
+Assert-Contains 'copybook end caret should move to the right side of the final block' $copybookUpdatePositionBody 'x += block.ActualWidth;'
+$tracingUpdatePositionBody = Get-MethodBody 'TracingMode.UpdatePosition' $tracing 'private void UpdatePosition(bool animated = false)' 'private void UpdateCompositionPosition()'
+Assert-NotContains 'tracing end caret should not skip positioning when current index is at text end' $tracingUpdatePositionBody '_inputCapture == null || _currentIndex >= _mirrorBlocks.Count || _mirrorBlocks.Count == 0'
+Assert-Contains 'tracing end caret should anchor to last mirror block' $tracingUpdatePositionBody 'visualIndex = Math.Min(_currentIndex, _mirrorBlocks.Count - 1)'
+Assert-Contains 'tracing end caret should move to the right side of the final mirror block' $tracingUpdatePositionBody 'x += mirrorBlock.ActualWidth;'
+Assert-Contains 'code display should repair stale full-height textblock state backgrounds after overlay rebuild' $mainCode 'EnsureCodeDisplayStateBackgrounds();'
+$ensureCodeDisplayBackgroundsBody = Get-MethodBody 'MainWindow.EnsureCodeDisplayStateBackgrounds' $mainCode 'private void EnsureCodeDisplayStateBackgrounds()' 'private Brush GetDisplayBlockStateBackground'
+Assert-Contains 'code display repair clears stale full-height block backgrounds' $ensureCodeDisplayBackgroundsBody 'SmoothBackground.Apply(block, null, 0);'
+Assert-Contains 'code display repair restores missing overlay backgrounds for already typed states' $ensureCodeDisplayBackgroundsBody 'stateBackground.Background == null'
+$tracingRebuildBody = Get-MethodBody 'MainWindow.RebuildCurrentPageDisplayElementsForTracingMeasurement' $mainCode 'internal void RebuildCurrentPageDisplayElementsForTracingMeasurement()' 'private void AddCiTiNoSplitLineDisplayElements()'
+Assert-Contains 'tracing grouped measurement rebuild should repair code display backgrounds before returning' $tracingRebuildBody 'EnsureCodeDisplayStateBackgrounds();'
+if (-not [regex]::IsMatch($tracingRebuildBody, 'if\s*\(\s*IsCiTiNoSplitLineEnabled\(\)\s*\)\s*\{(?<body>.*?)\n\s*\}', [System.Text.RegularExpressions.RegexOptions]::Singleline)) {
+    throw 'Unable to find grouped tracing measurement rebuild branch.'
+}
+$tracingGroupedRebuildBody = [regex]::Match($tracingRebuildBody, 'if\s*\(\s*IsCiTiNoSplitLineEnabled\(\)\s*\)\s*\{(?<body>.*?)\n\s*\}', [System.Text.RegularExpressions.RegexOptions]::Singleline).Groups['body'].Value
+if (-not ($tracingGroupedRebuildBody.Contains('AddCiTiNoSplitLineDisplayElements();') -and $tracingGroupedRebuildBody.Contains('EnsureCodeDisplayStateBackgrounds();'))) {
+    throw 'tracing grouped measurement rebuild should repair code display backgrounds after grouped display elements are rebuilt'
+}
+if ($tracingGroupedRebuildBody.IndexOf('EnsureCodeDisplayStateBackgrounds();') -gt $tracingGroupedRebuildBody.IndexOf('return;')) {
+    throw 'tracing grouped measurement rebuild should repair code display backgrounds before returning'
+}

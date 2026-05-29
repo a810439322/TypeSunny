@@ -32,6 +32,10 @@ function Get-Block($text, $startNeedle, $endNeedle) {
     return $text.Substring($start, $end - $start)
 }
 
+$displayFontSizeKey = -join @([char]0x53D1, [char]0x6587, [char]0x533A, [char]0x5B57, [char]0x4F53, [char]0x5927, [char]0x5C0F)
+$inputFontSizeKey = -join @([char]0x8DDF, [char]0x6253, [char]0x533A, [char]0x5B57, [char]0x4F53, [char]0x5927, [char]0x5C0F)
+$resultsFontSizeKey = -join @([char]0x6210, [char]0x7EE9, [char]0x533A, [char]0x5B57, [char]0x4F53, [char]0x5927, [char]0x5C0F)
+
 $loadTextBlock = Get-Block $mainCode 'public void LoadText' 'if (retypeType == RetypeType.wrongRetype)'
 Assert-Contains 'LoadText syncs trainer main-window scope after source assignment' $loadTextBlock 'SyncTrainerMainWindowConfigScope(source);'
 
@@ -50,6 +54,27 @@ Assert-Contains 'home toolbar only writes normalized feature order when value ch
 
 Assert-Contains 'super compact reads scoped bool' $mainCode 'TrainerMainWindowConfigScope.GetBool(SuperCompactModeConfigKey)'
 Assert-Contains 'main exposes reset trainer memory' $mainCode 'public void ResetTrainerMainWindowMemory()'
+
+$initDisplayBlock = Get-Block $mainCode 'private void InitDisplay()' 'private void ReadBlindType()'
+Assert-Contains 'display font size reads scoped config' $mainCode ('GetScopedFontSize("' + $displayFontSizeKey + '"')
+Assert-Contains 'font size helper reads scoped input font size' $mainCode ('GetScopedFontSize("' + $inputFontSizeKey + '"')
+Assert-Contains 'font size helper reads scoped results font size' $mainCode ('GetScopedFontSize("' + $resultsFontSizeKey + '"')
+Assert-Contains 'init display applies scoped font sizes' $initDisplayBlock 'ApplyScopedFontSizes();'
+
+$reloadCfgBlock = Get-Block $mainCode 'private void ReloadCfg()' 'private bool ShouldLoadCiTiSegments'
+Assert-Contains 'reload applies scoped font sizes' $reloadCfgBlock 'ApplyScopedFontSizes();'
+
+$windowWheelBlock = Get-Block $mainCode 'private void Window_PreviewMouseWheel' 'private void MainWin_PreviewMouseInteraction'
+Assert-Contains 'window ctrl wheel writes scoped display font size' $windowWheelBlock ('TrainerMainWindowConfigScope.Set("' + $displayFontSizeKey + '"')
+Assert-Contains 'window ctrl wheel writes scoped input font size' $windowWheelBlock ('TrainerMainWindowConfigScope.Set("' + $inputFontSizeKey + '"')
+Assert-Contains 'window ctrl wheel writes scoped results font size' $windowWheelBlock ('TrainerMainWindowConfigScope.Set("' + $resultsFontSizeKey + '"')
+
+$controlWheelBlock = Get-Block $mainCode 'private void Control_PreviewMouseWheel' 'private void win_size_change'
+Assert-Contains 'control ctrl wheel reads scoped input font size' $controlWheelBlock ('GetScopedFontSize("' + $inputFontSizeKey + '"')
+Assert-Contains 'control ctrl wheel reads scoped results font size' $controlWheelBlock ('GetScopedFontSize("' + $resultsFontSizeKey + '"')
+Assert-Contains 'control ctrl wheel writes scoped display font size' $controlWheelBlock ('TrainerMainWindowConfigScope.Set("' + $displayFontSizeKey + '"')
+Assert-Contains 'control ctrl wheel writes scoped input font size' $controlWheelBlock ('TrainerMainWindowConfigScope.Set("' + $inputFontSizeKey + '"')
+Assert-Contains 'control ctrl wheel writes scoped results font size' $controlWheelBlock ('TrainerMainWindowConfigScope.Set("' + $resultsFontSizeKey + '"')
 
 $applyScopedBlock = Get-Block $mainCode 'private void ApplyScopedMainWindowState()' 'private void ResetSuperCompactLayoutForScopedStateChange()'
 Assert-Contains 'scoped apply clears previous compact layout without persisting old snapshot' $applyScopedBlock 'ResetSuperCompactLayoutForScopedStateChange();'

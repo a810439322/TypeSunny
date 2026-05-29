@@ -62,7 +62,7 @@ namespace TypeSunny.UI
         /// <summary>
         /// 获取配置的字体大小，如果未配置则返回默认值40
         /// </summary>
-        internal static double DisplayFontSize => Config.GetDouble("发文区字体大小") > 0 ? Config.GetDouble("发文区字体大小") : 40.0;
+        internal static double DisplayFontSize => GetScopedFontSize("发文区字体大小", 40.0);
 
         private readonly SnakeMode _snakeMode;
         internal CopybookMode _copybookMode;
@@ -107,6 +107,12 @@ namespace TypeSunny.UI
         private static double ScopedConfigDouble(string key)
         {
             return TrainerMainWindowConfigScope.GetDouble(key);
+        }
+
+        private static double GetScopedFontSize(string key, double fallback)
+        {
+            double fontSize = ScopedConfigDouble(key);
+            return fontSize > 0 ? fontSize : fallback;
         }
 
         private static void SetScopedConfig(string key, bool value)
@@ -222,8 +228,16 @@ namespace TypeSunny.UI
                     this.Height = compactHeight;
             }
 
+            ApplyScopedFontSizes();
             UpdateMainContextMenuVisibility();
             ScheduleModeLayoutRefresh();
+        }
+
+        private void ApplyScopedFontSizes()
+        {
+            TbxInput.FontSize = GetScopedFontSize("跟打区字体大小", 40.0);
+            TbxResults.FontSize = GetScopedFontSize("成绩区字体大小", 15.0);
+            RenderResultsDisplayOverlay();
         }
 
         private void ResetSuperCompactLayoutForScopedStateChange()
@@ -511,6 +525,9 @@ namespace TypeSunny.UI
 
             if (updateLevel >= UpdateLevel.Progress)
                 PageProgressUpdate();
+
+            if (codeDisplayEnabled)
+                EnsureCodeDisplayStateBackgrounds();
 
             if (codeDisplayEnabled)
                 RefreshCodeLabelProgress();
@@ -1222,6 +1239,52 @@ namespace TypeSunny.UI
             SmoothBackground.Apply(stateBackground, background, GetStateBackgroundAnimationDurationMilliseconds());
         }
 
+        private void EnsureCodeDisplayStateBackgrounds()
+        {
+            if (!IsCodeDisplayEnabled())
+                return;
+
+            for (int localIndex = 0; localIndex < TextInfo.Blocks.Count; localIndex++)
+            {
+                var block = TextInfo.Blocks[localIndex];
+                SmoothBackground.Apply(block, null, 0);
+
+                if (localIndex >= TextInfo.StateBackgrounds.Count)
+                    continue;
+
+                var stateBackground = TextInfo.StateBackgrounds[localIndex];
+                if (stateBackground == null)
+                    continue;
+
+                Brush expectedBackground = GetDisplayBlockStateBackground(TextInfo.PageStartIndex + localIndex);
+                if (expectedBackground == null)
+                {
+                    if (stateBackground.Background != null)
+                        SmoothBackground.Apply(stateBackground, null, 0);
+                    continue;
+                }
+
+                if (stateBackground.Background == null)
+                    SmoothBackground.Apply(stateBackground, expectedBackground, GetStateBackgroundAnimationDurationMilliseconds());
+            }
+        }
+
+        private Brush GetDisplayBlockStateBackground(int globalIndex)
+        {
+            if (IsBlindType || globalIndex < 0 || globalIndex >= TextInfo.wordStates.Count)
+                return null;
+
+            switch (TextInfo.wordStates[globalIndex])
+            {
+                case WordStates.RIGHT:
+                    return Colors.CorrectBackground;
+                case WordStates.WRONG:
+                    return Colors.IncorrectBackground;
+                default:
+                    return null;
+            }
+        }
+
         internal FrameworkElement CreateDisplayElement(TextBlock textBlock, int globalIndex)
         {
             bool hasBadge = TryGetSelectionNumberBadgeDisplay(globalIndex, out string badgeText, out Brush badgeBrush);
@@ -1467,6 +1530,7 @@ namespace TypeSunny.UI
             if (IsCiTiNoSplitLineEnabled())
             {
                 AddCiTiNoSplitLineDisplayElements();
+                EnsureCodeDisplayStateBackgrounds();
                 return;
             }
 
@@ -1476,6 +1540,8 @@ namespace TypeSunny.UI
                 AddVisualLineBreakIfNeeded(globalIdx);
                 TbDispay.Children.Add(CreateDisplayElement(TextInfo.Blocks[i], globalIdx));
             }
+
+            EnsureCodeDisplayStateBackgrounds();
         }
 
         private void AddCiTiNoSplitLineDisplayElements()
@@ -2426,9 +2492,7 @@ namespace TypeSunny.UI
             ApplyButtonMenuColors();
 
             // 应用字体大小
-            TbxInput.FontSize = Config.GetDouble("跟打区字体大小") > 0 ? Config.GetDouble("跟打区字体大小") : 40.0;
-            TbxResults.FontSize = Config.GetDouble("成绩区字体大小") > 0 ? Config.GetDouble("成绩区字体大小") : 15.0;
-            RenderResultsDisplayOverlay();
+            ApplyScopedFontSizes();
 
             // 应用发文框和跟打框的比例
             ApplyDisplayInputRatio();
@@ -2666,9 +2730,7 @@ namespace TypeSunny.UI
             ApplyButtonMenuColors();
 
             // 应用字体大小
-            TbxInput.FontSize = Config.GetDouble("跟打区字体大小") > 0 ? Config.GetDouble("跟打区字体大小") : 40.0;
-            TbxResults.FontSize = Config.GetDouble("成绩区字体大小") > 0 ? Config.GetDouble("成绩区字体大小") : 15.0;
-            RenderResultsDisplayOverlay();
+            ApplyScopedFontSizes();
 
             var trainer = GetCurrentTrainerWindow();
             if (trainer != null)
@@ -3743,7 +3805,7 @@ namespace TypeSunny.UI
             double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
 
             // 保存新的字体大小到配置
-            Config.Set("发文区字体大小", newSize, 1);
+            TrainerMainWindowConfigScope.Set("发文区字体大小", newSize, 1);
 
             // 获取鼠标相对于窗口的位置，判断要调整哪个区域的字体
             Point mousePos = e.GetPosition(this);
@@ -3780,7 +3842,7 @@ namespace TypeSunny.UI
             {
                 // 调整输入区字体
                 TbxInput.FontSize = newSize;
-                Config.Set("跟打区字体大小", newSize, 1);
+                TrainerMainWindowConfigScope.Set("跟打区字体大小", newSize, 1);
                 System.Diagnostics.Debug.WriteLine($"输入区字体大小调整: {currentSize} -> {newSize}");
                 return;
             }
@@ -3789,7 +3851,7 @@ namespace TypeSunny.UI
             {
                 // 调整成绩区字体
                 TbxResults.FontSize = newSize;
-                Config.Set("成绩区字体大小", newSize, 1);
+                TrainerMainWindowConfigScope.Set("成绩区字体大小", newSize, 1);
                 RefreshTypingStatDisplay();
                 ScheduleResultsRelayout();
                 System.Diagnostics.Debug.WriteLine($"成绩区字体大小调整: {currentSize} -> {newSize}");
@@ -3854,7 +3916,7 @@ namespace TypeSunny.UI
                 // 在发文区 - 更新字体大小配置并刷新显示
                 double currentSize = DisplayFontSize;
                 double newSize = Math.Max(10, Math.Min(100, currentSize + delta));
-                Config.Set("发文区字体大小", newSize, 1);
+                TrainerMainWindowConfigScope.Set("发文区字体大小", newSize, 1);
                 UpdateDisplay(UpdateLevel.PageArrange);
                 System.Diagnostics.Debug.WriteLine($"发文区字体大小调整: {currentSize} -> {newSize}");
                 return;
@@ -3881,9 +3943,9 @@ namespace TypeSunny.UI
                 // 从配置读取当前字体大小，而不是从控件读取（避免控件值与配置不一致）
                 double currentSize;
                 if (targetControl == TbxInput)
-                    currentSize = Config.GetDouble("跟打区字体大小") > 0 ? Config.GetDouble("跟打区字体大小") : 40.0;
+                    currentSize = GetScopedFontSize("跟打区字体大小", 40.0);
                 else if (targetControl == TbxResults)
-                    currentSize = Config.GetDouble("成绩区字体大小") > 0 ? Config.GetDouble("成绩区字体大小") : 15.0;
+                    currentSize = GetScopedFontSize("成绩区字体大小", 15.0);
                 else
                     currentSize = targetControl.FontSize;
 
@@ -3894,10 +3956,10 @@ namespace TypeSunny.UI
 
                 // 保存到配置
                 if (targetControl == TbxInput)
-                    Config.Set("跟打区字体大小", newSize, 1);
+                    TrainerMainWindowConfigScope.Set("跟打区字体大小", newSize, 1);
                 else if (targetControl == TbxResults)
                 {
-                    Config.Set("成绩区字体大小", newSize, 1);
+                    TrainerMainWindowConfigScope.Set("成绩区字体大小", newSize, 1);
                     RefreshTypingStatDisplay();
                     ScheduleResultsRelayout();
                 }
@@ -8106,12 +8168,21 @@ public async Task SendArticle()
         WinConfig winConfig;
         private void Tbk_PreviewMouseUp_1(object sender, MouseButtonEventArgs e)
         {
+            OpenConfigWindow();
+        }
+
+        private void OpenConfigWindow()
+        {
             foreach (Window item in Application.Current.Windows)
             {
-                if (item is WinConfig)
+                if (item is WinConfig existingConfig)
                 {
-                    item.Focus();
-                    item.Activate();
+                    if (existingConfig.Visibility != Visibility.Visible)
+                        existingConfig.Show();
+                    if (existingConfig.WindowState == WindowState.Minimized)
+                        existingConfig.WindowState = WindowState.Normal;
+                    existingConfig.Focus();
+                    existingConfig.Activate();
                     return;
                 }
 
@@ -9994,7 +10065,7 @@ public async Task SendArticle()
 
         private void MenuItemOpenConfig_Click(object sender, RoutedEventArgs e)
         {
-            Tbk_PreviewMouseUp_1(sender, null);
+            OpenConfigWindow();
         }
 
         private void MenuHomeSuperCompact_Click(object sender, RoutedEventArgs e)

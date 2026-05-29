@@ -16,8 +16,8 @@ if ($scrollCode -notmatch 'Action\s+completed\s*=\s*null') {
     throw 'SmoothScrollHelper should accept a completed callback.'
 }
 
-if ($scrollCode -notmatch ('Config\.GetBool\("' + [regex]::Escape($smoothLineWrapKey) + '"\)')) {
-    throw 'SmoothScrollHelper should honor the smooth line wrap setting.'
+if ($scrollCode -match ('Config\.GetBool\("' + [regex]::Escape($smoothLineWrapKey) + '"\)')) {
+    throw 'SmoothScrollHelper should not expose smooth line wrap as a user-facing off switch.'
 }
 
 if ($scrollCode -notmatch 'BeginAnimation\s*\(\s*VerticalOffsetProperty\s*,\s*null\s*\)') {

@@ -2217,27 +2217,7 @@ namespace TypeSunny
 
         private void InitCfg()
         {
-            char[] s2 = { '\t', '\r', '\n' };
-            if (File.Exists(TrainerConfig.Path))
-            {
-                StreamReader sr = new StreamReader(TrainerConfig.Path);
-                string[] lines = sr.ReadToEnd().Split(new char[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (string line in lines)
-                {
-                    string[] ls = line.Split(s2, StringSplitOptions.RemoveEmptyEntries);
-
-                    if (ls.Length < 2)
-                        continue;
-
-                    cfg[ls[0]] = ls[1];
-                }
-                sr.Close();
-
-            }
-            else
-            {
-                WriteCfg();
-            }
+            TrainerConfig.ReadInto(cfg);
 
 
             for (int i = 0; i < FileSelector.Items.Count; i++)
@@ -2311,19 +2291,12 @@ namespace TypeSunny
             try
             {
                 string configPath = TrainerConfig.Path;
-                StreamWriter sr = new StreamWriter(configPath);
-                foreach (var item in cfg)
-                {
-                    sr.WriteLine(item.Key + "\t" + item.Value);
-                }
-                sr.Flush();
-                sr.Close();
+                TrainerConfig.WriteValues(cfg);
                 System.Diagnostics.Debug.WriteLine($"晴练单配置已保存到: {Path.GetFullPath(configPath)}");
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"保存晴练单配置失败: {ex.Message}");
-                MessageBox.Show($"保存晴练单配置失败: {ex.Message}\n\n请检查程序目录是否有写入权限。\n\n当前目录: {Environment.CurrentDirectory}", "配置保存错误", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
 
         }

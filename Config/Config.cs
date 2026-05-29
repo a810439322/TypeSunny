@@ -399,6 +399,9 @@ namespace TypeSunny
                 case "展开窗口高度":
                 case "发文区跟打区比例":
                 case "成绩区高度比例":
+                case "发文区字体大小":
+                case "跟打区字体大小":
+                case "成绩区字体大小":
                 case "首页功能按钮顺序":
                 case "显示首页文来":
                 case "显示首页练单":

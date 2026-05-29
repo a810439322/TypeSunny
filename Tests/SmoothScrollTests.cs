@@ -27,7 +27,7 @@ namespace TypeSunny.Tests
         private static int Main()
         {
             Run("animation reaches target offset", AnimationReachesTargetOffset);
-            Run("disabled config scrolls immediately", DisabledConfigScrollsImmediately);
+            Run("legacy disabled config still animates", LegacyDisabledConfigStillAnimates);
             Run("second animation continues from current visual offset", SecondAnimationContinuesFromCurrentVisualOffset);
 
             if (_failures == 0)
@@ -71,7 +71,7 @@ namespace TypeSunny.Tests
             }
         }
 
-        private static void DisabledConfigScrollsImmediately()
+        private static void LegacyDisabledConfigStillAnimates()
         {
             SetConfig("平滑换行", "否");
             Window window;
@@ -89,8 +89,11 @@ namespace TypeSunny.Tests
                     () => completed = true);
 
                 AssertTrue(scrolled, "Expected disabled smooth scroll path to still perform the scroll.");
-                AssertTrue(completed, "Expected disabled path to complete synchronously.");
+                AssertTrue(!completed, "Expected legacy disabled value to keep the animated path.");
                 PumpFor(20);
+                AssertTrue(sv.VerticalOffset > 0 && sv.VerticalOffset < 90, "Expected smooth scroll animation to be in flight.");
+                PumpFor(180);
+                AssertTrue(completed, "Expected animated path to complete.");
                 AssertNear(90, sv.VerticalOffset, 0.5, "VerticalOffset");
             }
             finally

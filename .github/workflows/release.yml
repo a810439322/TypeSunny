@@ -187,7 +187,7 @@ jobs:
           # 更新包：必须成功，重试10次
           Upload-Asset "TypeSunny-${ver}-update.zip" $releaseId $token 10 $true
 
-          # 全量包：可选，重试3次
-          Upload-Asset "TypeSunny-${ver}-full.zip" $releaseId $token 3 $false
+          # 全量包：可选，重试10次
+          Upload-Asset "TypeSunny-${ver}-full.zip" $releaseId $token 10 $false
 
           echo "=== Gitee Release Done ==="

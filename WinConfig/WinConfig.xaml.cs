@@ -168,13 +168,6 @@ namespace TypeSunny
                         "  贪吃蛇前显字数",
                         "  贪吃蛇后显字数",
                         "字帖模式",
-                        "  平滑光标",
-                        "  平滑光标模式",
-                        "  平滑光标固定时长",
-                        "  平滑光标快",
-                        "  平滑光标中",
-                        "  平滑光标慢",
-                        "平滑换行",
                         "临摹模式",
                         "速度跟随提示",
                         "  练单下显示击键",
@@ -584,22 +577,6 @@ namespace TypeSunny
                 {
                     tbk.ToolTip = "开启后，练单场景下速度跟随提示变为击键跟随提示，其他场景此开关不生效。";
                 }
-                if (IsSmoothCaretDurationItem(itemKey))
-                {
-                    tbk.ToolTip = GetSmoothCaretDurationTooltip(itemKey);
-                }
-                if (itemKey == "平滑光标")
-                {
-                    tbk.ToolTip = "开启后，字帖/临摹模式中的竖线光标和打对/打错背景会平滑过渡；关闭后直接跳到结果。";
-                }
-                if (itemKey == "平滑光标模式")
-                {
-                    tbk.ToolTip = "动态：按你当前输入节奏自动调整动画时长。固定：始终使用“固定动画时长”。";
-                }
-                if (itemKey == "平滑换行")
-                {
-                    tbk.ToolTip = "开启后，打到下一行时显示区平滑滚动到新行；关闭后直接跳到新行。";
-                }
 
                 FrameworkElement labelControl = CreateLabelControl(tbk);
                 Grid.SetRow(labelControl, currentRow);
@@ -636,11 +613,6 @@ namespace TypeSunny
             {
                 AppendHomeToolbarSettings(currentRow);
                 currentRow += 2;
-            }
-
-            if (category.Title == "跟打")
-            {
-                UpdateSmoothCaretOptionVisibility();
             }
 
             // 如果是"过滤"分类，构建自定义过滤设置UI
@@ -785,43 +757,6 @@ namespace TypeSunny
                 };
                 valueControl = cb;
             }
-            else if (itemKey == "平滑光标模式")
-            {
-                var options = new[] { "动态", "固定" };
-                var cb = new ComboBox
-                {
-                    Width = 200,
-                    Margin = new Thickness(0, 8, 0, 8),
-                    HorizontalAlignment = HorizontalAlignment.Left,
-                    Foreground = this.Foreground,
-                    Background = this.Background,
-                    Tag = "SmoothCaretMode"
-                };
-
-                foreach (var opt in options)
-                    cb.Items.Add(opt);
-
-                int idx = Array.IndexOf(options, itemValue);
-                cb.SelectedIndex = idx >= 0 ? idx : 0;
-                cb.SelectionChanged += (s, e) =>
-                {
-                    Dispatcher.BeginInvoke(new Action(UpdateSmoothCaretOptionVisibility), System.Windows.Threading.DispatcherPriority.Loaded);
-                };
-                valueControl = cb;
-            }
-            else if (IsSmoothCaretDurationItem(itemKey))
-            {
-                var tb = new TextBox
-                {
-                    Text = NormalizeSmoothCaretDuration(itemValue, GetDefaultSmoothCaretDuration(itemKey)),
-                    Width = 200,
-                    Margin = new Thickness(0, 8, 0, 8),
-                    HorizontalAlignment = HorizontalAlignment.Left,
-                    ToolTip = "单位：毫秒，建议 80-600。"
-                };
-
-                valueControl = tb;
-            }
             // 根据配置项类型创建对应的控件
             else if (itemValue == "是" || itemValue == "否")
             {
@@ -857,11 +792,6 @@ namespace TypeSunny
                         if (_tracingCheckBox != null && _tracingCheckBox.IsChecked == true)
                             _tracingCheckBox.IsChecked = false;
                     };
-                }
-                if (itemKey == "平滑光标")
-                {
-                    chk.Checked += (obj, evt) => UpdateSmoothCaretOptionVisibility();
-                    chk.Unchecked += (obj, evt) => UpdateSmoothCaretOptionVisibility();
                 }
                 if (itemKey == "临摹模式")
                 {
@@ -1651,63 +1581,9 @@ namespace TypeSunny
             }
         }
 
-        private static bool IsSmoothCaretDurationItem(string itemKey)
-        {
-            return itemKey == "平滑光标固定时长" || itemKey == "平滑光标快" || itemKey == "平滑光标中" || itemKey == "平滑光标慢";
-        }
-
         private static string GetConfigDisplayName(string itemKey)
         {
-            if (itemKey == "平滑光标模式")
-                return "光标动画模式";
-            if (itemKey == "平滑光标固定时长")
-                return "固定动画时长";
-            if (itemKey == "平滑光标快")
-                return "连打时动画时长";
-            if (itemKey == "平滑光标中")
-                return "正常输入动画时长";
-            if (itemKey == "平滑光标慢")
-                return "停顿后动画时长";
-            if (itemKey == "平滑换行")
-                return "平滑换行";
-
             return itemKey;
-        }
-
-        private static int GetDefaultSmoothCaretDuration(string itemKey)
-        {
-            if (itemKey == "平滑光标快")
-                return 140;
-            if (itemKey == "平滑光标慢")
-                return 280;
-
-            return 200;
-        }
-
-        private static string GetSmoothCaretDurationTooltip(string itemKey)
-        {
-            if (itemKey == "平滑光标固定时长")
-                return "单位：毫秒。仅在“光标动画模式=固定”时使用；数值越小，光标和背景动画越快。";
-            if (itemKey == "平滑光标快")
-                return "单位：毫秒。仅在“光标动画模式=动态”时使用；连续快速输入时采用，约等于两次输入间隔 90ms 以内。数值越小，动画越快。";
-            if (itemKey == "平滑光标慢")
-                return "单位：毫秒。仅在“光标动画模式=动态”时使用；停顿后再输入时采用，约等于两次输入间隔 600ms 以上。数值越小，动画越快。";
-
-            return "单位：毫秒。仅在“光标动画模式=动态”时使用；正常输入节奏时采用，约等于两次输入间隔 250ms。数值越小，动画越快。";
-        }
-
-        private static string NormalizeSmoothCaretDuration(string value, int fallback)
-        {
-            int duration;
-            if (!int.TryParse(value, out duration))
-                duration = fallback;
-
-            if (duration < 0)
-                duration = 0;
-            if (duration > 2000)
-                duration = 2000;
-
-            return duration.ToString();
         }
 
         /// <summary>
@@ -4002,9 +3878,6 @@ namespace TypeSunny
                     return;
 
                 string value = normalize != null ? normalize(text) : text;
-                if (IsSmoothCaretDurationItem(itemKey))
-                    value = NormalizeSmoothCaretDuration(value, GetDefaultSmoothCaretDuration(itemKey));
-
                 SaveConfigValue(itemKey, value);
             };
 
@@ -4334,13 +4207,6 @@ namespace TypeSunny
                         ? comboBox.Items[comboBox.SelectedIndex].ToString()
                         : "sunny");
                 }
-                else if (labelText == "平滑光标模式")
-                {
-                    key.Add(labelText);
-                    value.Add(comboBox.SelectedIndex >= 0 && comboBox.SelectedIndex < comboBox.Items.Count
-                        ? comboBox.Items[comboBox.SelectedIndex].ToString()
-                        : "动态");
-                }
                 else if (labelText == "字提字体")
                 {
                     if (comboBox.SelectedIndex >= 0 && comboBox.SelectedIndex < comboBox.Items.Count)
@@ -4542,30 +4408,6 @@ namespace TypeSunny
             }
 
             return string.Empty;
-        }
-
-        private void UpdateSmoothCaretOptionVisibility()
-        {
-            if (ContentPanel == null)
-                return;
-
-            bool enabled = true;
-            var smoothCaretCheckBox = FindCheckBoxByLabel("平滑光标");
-            if (smoothCaretCheckBox != null)
-                enabled = smoothCaretCheckBox.IsChecked == true;
-
-            string mode = Config.GetString("平滑光标模式");
-            var modeComboBox = FindComboBoxByLabel("平滑光标模式");
-            if (modeComboBox != null && modeComboBox.SelectedIndex >= 0 && modeComboBox.SelectedIndex < modeComboBox.Items.Count)
-                mode = modeComboBox.Items[modeComboBox.SelectedIndex].ToString();
-            if (mode != "固定")
-                mode = "动态";
-
-            SetConfigRowVisibility("平滑光标模式", enabled);
-            SetConfigRowVisibility("平滑光标固定时长", enabled && mode == "固定");
-            SetConfigRowVisibility("平滑光标快", enabled && mode == "动态");
-            SetConfigRowVisibility("平滑光标中", enabled && mode == "动态");
-            SetConfigRowVisibility("平滑光标慢", enabled && mode == "动态");
         }
 
         private void SetConfigRowVisibility(string label, bool visible)

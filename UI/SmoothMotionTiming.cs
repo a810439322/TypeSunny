@@ -17,9 +17,6 @@ namespace TypeSunny.UI
 
         public static int GetDurationMilliseconds()
         {
-            if (!IsEnabled())
-                return OffDurationMilliseconds;
-
             return GetConfiguredDuration("平滑光标固定时长", MediumDurationMilliseconds);
         }
 
@@ -69,9 +66,6 @@ namespace TypeSunny.UI
 
         public int GetCurrentDurationMilliseconds()
         {
-            if (!IsEnabled())
-                return OffDurationMilliseconds;
-
             string modeValue = GetConfigString("平滑光标模式");
             if (IsDynamic(modeValue))
                 return GetDynamicDurationMilliseconds();
@@ -129,12 +123,6 @@ namespace TypeSunny.UI
                 return null;
 
             return getString.Invoke(null, new object[] { key }) as string;
-        }
-
-        private static bool IsEnabled()
-        {
-            string enabled = GetConfigString("平滑光标");
-            return string.IsNullOrEmpty(enabled) || enabled == "是";
         }
 
         private static int GetConfiguredDuration(string key, int fallback)
