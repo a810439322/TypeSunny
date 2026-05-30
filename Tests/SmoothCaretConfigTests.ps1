@@ -11,6 +11,8 @@ function Join-Chars {
 
 $followTitle = Join-Chars @(0x8ddf, 0x6253)
 $copybookMode = Join-Chars @(0x5b57, 0x5e16, 0x6a21, 0x5f0f)
+$tracingMode = Join-Chars @(0x4e34, 0x6479, 0x6a21, 0x5f0f)
+$blindMode = Join-Chars @(0x76f2, 0x6253, 0x6a21, 0x5f0f)
 $smoothCaret = Join-Chars @(0x5e73, 0x6ed1, 0x5149, 0x6807)
 $smoothCaretMode = Join-Chars @(0x5e73, 0x6ed1, 0x5149, 0x6807, 0x6a21, 0x5f0f)
 $smoothCaretFixedDuration = Join-Chars @(0x5e73, 0x6ed1, 0x5149, 0x6807, 0x56fa, 0x5b9a, 0x65f6, 0x957f)
@@ -81,20 +83,25 @@ Assert-Match 'Smooth caret fast duration should default to 140ms.' $configCode "
 Assert-Match 'Smooth caret medium duration should default to 200ms.' $configCode "`"$(Quote-Regex $smoothMedium)`"\s*,\s*`"200`""
 Assert-Match 'Smooth caret slow duration should default to 280ms.' $configCode "`"$(Quote-Regex $smoothSlow)`"\s*,\s*`"280`""
 
-Assert-Match 'Follow typing category should keep copybook mode while removing user-facing smooth controls.' $followItems "`"$(Quote-Regex $copybookMode)`""
-Assert-NotMatch 'Follow typing category should not expose the smooth caret switch.' $followItems "`"\s*$(Quote-Regex $smoothCaret)\s*`""
-Assert-NotMatch 'Follow typing category should not expose smooth caret mode.' $followItems "`"\s*$(Quote-Regex $smoothCaretMode)\s*`""
-Assert-NotMatch 'Follow typing category should not expose smooth caret fixed duration.' $followItems "`"\s*$(Quote-Regex $smoothCaretFixedDuration)\s*`""
-Assert-NotMatch 'Follow typing category should not expose smooth caret fast duration.' $followItems "`"\s*$(Quote-Regex $smoothFast)\s*`""
-Assert-NotMatch 'Follow typing category should not expose smooth caret medium duration.' $followItems "`"\s*$(Quote-Regex $smoothMedium)\s*`""
-Assert-NotMatch 'Follow typing category should not expose smooth caret slow duration.' $followItems "`"\s*$(Quote-Regex $smoothSlow)\s*`""
-Assert-NotMatch 'Follow typing category should not expose smooth line wrap.' $followItems "`"\s*$(Quote-Regex $smoothLineWrap)\s*`""
+Assert-Match 'Follow typing category should keep copybook and tracing mode separated from smooth settings.' $followItems (
+    "`"$(Quote-Regex $copybookMode)`"[\s\S]*" +
+    "`"$(Quote-Regex $tracingMode)`"[\s\S]*" +
+    "`"$(Quote-Regex $blindMode)`"[\s\S]*" +
+    "`"$(Quote-Regex $smoothCaret)`"[\s\S]*" +
+    "`"  $(Quote-Regex $smoothCaretMode)`"[\s\S]*" +
+    "`"  $(Quote-Regex $smoothCaretFixedDuration)`"[\s\S]*" +
+    "`"  $(Quote-Regex $smoothFast)`"[\s\S]*" +
+    "`"  $(Quote-Regex $smoothMedium)`"[\s\S]*" +
+    "`"  $(Quote-Regex $smoothSlow)`"[\s\S]*" +
+    "`"$(Quote-Regex $smoothLineWrap)`"")
 
-Assert-NotMatch 'WinConfig should not create a dedicated smooth caret toggle.' $configWindowCode "itemKey\s*==\s*`"$(Quote-Regex $smoothCaret)`"[\s\S]*CheckBox"
-Assert-NotMatch 'WinConfig should not create a smooth caret mode dropdown.' $configWindowCode "itemKey\s*==\s*`"$(Quote-Regex $smoothCaretMode)`"[\s\S]*`"$(Quote-Regex $dynamic)`"[\s\S]*`"$(Quote-Regex $fixed)`""
-Assert-NotMatch 'WinConfig should not save a selected smooth caret mode from the settings UI.' $configWindowCode "labelText\s*==\s*`"$(Quote-Regex $smoothCaretMode)`"[\s\S]*comboBox\.Items\[comboBox\.SelectedIndex\]\.ToString\(\)"
-Assert-NotMatch 'WinConfig should not create smooth caret duration text boxes.' $configWindowCode "IsSmoothCaretDurationItem\(itemKey\)[\s\S]*TextBox"
-Assert-NotMatch 'WinConfig should not carry smooth caret option visibility code.' $configWindowCode "UpdateSmoothCaretOptionVisibility"
+Assert-Match 'WinConfig should create a toggle for smooth caret.' $configWindowCode "itemKey\s*==\s*`"$(Quote-Regex $smoothCaret)`"[\s\S]*CheckBox"
+Assert-Match 'WinConfig should create a mode dropdown for dynamic or fixed smooth caret.' $configWindowCode "itemKey\s*==\s*`"$(Quote-Regex $smoothCaretMode)`"[\s\S]*`"$(Quote-Regex $dynamic)`"[\s\S]*`"$(Quote-Regex $fixed)`""
+Assert-Match 'WinConfig should save the selected smooth caret mode as text.' $configWindowCode "labelText\s*==\s*`"$(Quote-Regex $smoothCaretMode)`"[\s\S]*comboBox\.Items\[comboBox\.SelectedIndex\]\.ToString\(\)"
+Assert-Match 'WinConfig should create numeric text boxes for smooth caret durations.' $configWindowCode "IsSmoothCaretDurationItem\(itemKey\)[\s\S]*TextBox"
+Assert-Match 'WinConfig should show clear labels for smooth caret durations.' $configWindowCode "$(Quote-Regex $smoothCaretLabel)[\s\S]*$(Quote-Regex $smoothCaretModeLabel)[\s\S]*$(Quote-Regex $fixedDurationLabel)[\s\S]*$(Quote-Regex $rapidTypingDurationLabel)[\s\S]*$(Quote-Regex $normalTypingDurationLabel)[\s\S]*$(Quote-Regex $pauseDurationLabel)"
+Assert-Match 'WinConfig should hide fixed duration unless fixed mode is selected.' $configWindowCode "UpdateSmoothCaretOptionVisibility[\s\S]*$(Quote-Regex $smoothCaretFixedDuration)[\s\S]*mode\s*==\s*`"$(Quote-Regex $fixed)`""
+Assert-Match 'WinConfig should hide dynamic duration anchors unless dynamic mode is selected.' $configWindowCode "UpdateSmoothCaretOptionVisibility[\s\S]*$(Quote-Regex $smoothFast)[\s\S]*mode\s*==\s*`"$(Quote-Regex $dynamic)`""
 Assert-Match 'Config should migrate old smooth caret off value to the new switch.' $configCode "MigrateSmoothCaretLegacyValue[\s\S]*$(Quote-Regex $off)[\s\S]*$(Quote-Regex $no)"
 Assert-Match 'Config should migrate old fixed speed values to fixed mode.' $configCode "MigrateSmoothCaretLegacyValue[\s\S]*$(Quote-Regex $fast)[\s\S]*$(Quote-Regex $fixed)[\s\S]*$(Quote-Regex $medium)[\s\S]*$(Quote-Regex $fixed)[\s\S]*$(Quote-Regex $slow)[\s\S]*$(Quote-Regex $fixed)"
 Assert-Match 'Config should migrate old dynamic value to dynamic mode.' $configCode "MigrateSmoothCaretLegacyValue[\s\S]*$(Quote-Regex $dynamic)"

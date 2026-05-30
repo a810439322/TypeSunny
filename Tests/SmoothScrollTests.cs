@@ -27,7 +27,7 @@ namespace TypeSunny.Tests
         private static int Main()
         {
             Run("animation reaches target offset", AnimationReachesTargetOffset);
-            Run("legacy disabled config still animates", LegacyDisabledConfigStillAnimates);
+            Run("disabled config scrolls immediately", DisabledConfigScrollsImmediately);
             Run("second animation continues from current visual offset", SecondAnimationContinuesFromCurrentVisualOffset);
 
             if (_failures == 0)
@@ -71,7 +71,7 @@ namespace TypeSunny.Tests
             }
         }
 
-        private static void LegacyDisabledConfigStillAnimates()
+        private static void DisabledConfigScrollsImmediately()
         {
             SetConfig("平滑换行", "否");
             Window window;
@@ -89,11 +89,8 @@ namespace TypeSunny.Tests
                     () => completed = true);
 
                 AssertTrue(scrolled, "Expected disabled smooth scroll path to still perform the scroll.");
-                AssertTrue(!completed, "Expected legacy disabled value to keep the animated path.");
+                AssertTrue(completed, "Expected disabled path to complete synchronously.");
                 PumpFor(20);
-                AssertTrue(sv.VerticalOffset > 0 && sv.VerticalOffset < 90, "Expected smooth scroll animation to be in flight.");
-                PumpFor(180);
-                AssertTrue(completed, "Expected animated path to complete.");
                 AssertNear(90, sv.VerticalOffset, 0.5, "VerticalOffset");
             }
             finally
@@ -114,23 +111,23 @@ namespace TypeSunny.Tests
                 SmoothScrollHelper.AnimateScrollTo(
                     sv,
                     200,
-                    125,
+                    500,
                     new CubicEase { EasingMode = EasingMode.EaseInOut });
 
                 PumpFor(60);
                 double inFlightOffset = sv.VerticalOffset;
-                AssertTrue(inFlightOffset > 0 && inFlightOffset < 200, "Expected the first scroll animation to be in flight.");
+                AssertTrue(inFlightOffset > 0 && inFlightOffset < 200, "Expected the first scroll animation to be in flight. Actual offset: " + inFlightOffset + ".");
 
                 SmoothScrollHelper.AnimateScrollTo(
                     sv,
                     320,
-                    125,
+                    500,
                     new CubicEase { EasingMode = EasingMode.EaseInOut });
 
                 double pinnedOffset = SmoothScrollHelper.GetVerticalOffset(sv);
                 AssertTrue(pinnedOffset > 0, "Expected the second animation to pin the current visual offset instead of jumping to base.");
 
-                PumpFor(180);
+                PumpFor(600);
                 AssertNear(320, sv.VerticalOffset, 0.5, "VerticalOffset");
             }
             finally

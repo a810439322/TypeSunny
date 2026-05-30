@@ -37,7 +37,7 @@ namespace TypeSunny.Tests
 
         private static int Main()
         {
-            Run("legacy off value still keeps smooth caret enabled", LegacyOffValueStillKeepsSmoothCaretEnabled);
+            Run("switch disables smooth caret", SwitchDisablesSmoothCaret);
             Run("fixed mode uses fixed duration", FixedModeUsesFixedDuration);
             Run("dynamic timing adapts to typing cadence", DynamicTimingAdaptsToTypingCadence);
             Run("dynamic timing is smoothed between samples", DynamicTimingIsSmoothedBetweenSamples);
@@ -63,7 +63,7 @@ namespace TypeSunny.Tests
             return 1;
         }
 
-        private static void LegacyOffValueStillKeepsSmoothCaretEnabled()
+        private static void SwitchDisablesSmoothCaret()
         {
             SetConfig("平滑光标", "否");
 
@@ -73,7 +73,7 @@ namespace TypeSunny.Tests
                 timing.RecordInput(TimeSpan.FromMilliseconds(0));
                 timing.RecordInput(TimeSpan.FromMilliseconds(90));
 
-                AssertEqual(140, timing.GetCurrentDurationMilliseconds());
+                AssertEqual(0, timing.GetCurrentDurationMilliseconds());
             }
             finally
             {

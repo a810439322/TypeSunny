@@ -36,7 +36,7 @@ namespace TypeSunny.Utils
             if (sv == null)
                 return false;
 
-            if (durationMs <= 0)
+            if (!Config.GetBool("平滑换行") || durationMs <= 0)
             {
                 sv.BeginAnimation(VerticalOffsetProperty, null);
                 sv.SetValue(VerticalOffsetProperty, target);
