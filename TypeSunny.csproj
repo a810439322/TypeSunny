@@ -123,6 +123,8 @@
     <Reference Include="System" />
     <Reference Include="System.Data" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Numerics" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
@@ -144,7 +146,9 @@
       <SubType>Designer</SubType>
     </ApplicationDefinition>
     <Compile Include="Version\GeneratedVersion.cs" />
+    <Compile Include="Version\CompiledReleaseIdentity.cs" />
     <Compile Include="Version\ReleaseIdentity.cs" />
+    <Compile Include="Version\ReleasePackageIdentity.cs" />
     <Compile Include="Version\VersionCheckPolicy.cs" />
     <Compile Include="Version\VersionManager.cs" />
     <Compile Include="Article\ArticleConfig.cs" />
@@ -228,6 +232,7 @@
     <Compile Include="Utils\ZiTiHelper.cs" />
     <Compile Include="Utils\ShuangToolLauncher.cs" />
     <Compile Include="Utils\UpdatePackageDownloader.cs" />
+    <Compile Include="Utils\UpdatePackageStager.cs" />
     <Compile Include="Utils\StringToFontFamily.cs" />
     <Compile Include="Core\TextInfo.cs" />
     <Compile Include="Utils\Win32.cs" />
@@ -467,6 +472,20 @@
     <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="$([System.String]::Format('        public const string CurrentVersion = &quot;{0}&quot;;', '$(VersionNumber.Trim())'))" />
     <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="    }" />
     <WriteLinesToFile File="Version\GeneratedVersion.cs" Overwrite="false" Lines="}" />
+    <PropertyGroup>
+      <ReleasePackagePublishedUtcTicks Condition="'$(ReleasePackagePublishedUtcTicks)' == ''">0</ReleasePackagePublishedUtcTicks>
+    </PropertyGroup>
+    <WriteLinesToFile File="Version\CompiledReleaseIdentity.cs" Overwrite="true" Lines="// &lt;auto-generated/&gt;" />
+    <WriteLinesToFile File="Version\CompiledReleaseIdentity.cs" Overwrite="false" Lines="namespace TypeSunny" />
+    <WriteLinesToFile File="Version\CompiledReleaseIdentity.cs" Overwrite="false" Lines="{" />
+    <WriteLinesToFile File="Version\CompiledReleaseIdentity.cs" Overwrite="false" Lines="    internal static class CompiledReleaseIdentity" />
+    <WriteLinesToFile File="Version\CompiledReleaseIdentity.cs" Overwrite="false" Lines="    {" />
+    <WriteLinesToFile File="Version\CompiledReleaseIdentity.cs" Overwrite="false" Lines="$([System.String]::Format('        public const string Version = &quot;{0}&quot;;', '$(VersionNumber.Trim())'))" />
+    <WriteLinesToFile File="Version\CompiledReleaseIdentity.cs" Overwrite="false" Lines="$([System.String]::Format('        public static readonly long PackagePublishedUtcTicks = {0}L;', '$(ReleasePackagePublishedUtcTicks.Trim())'))" />
+    <WriteLinesToFile File="Version\CompiledReleaseIdentity.cs" Overwrite="false" Lines="" />
+    <WriteLinesToFile File="Version\CompiledReleaseIdentity.cs" Overwrite="false" Lines="$([System.String]::Format('        public static System.DateTime PackagePublishedUtc =&gt; ReleaseIdentity.FromUtcTicks(PackagePublishedUtcTicks){0}', ';'))" />
+    <WriteLinesToFile File="Version\CompiledReleaseIdentity.cs" Overwrite="false" Lines="    }" />
+    <WriteLinesToFile File="Version\CompiledReleaseIdentity.cs" Overwrite="false" Lines="}" />
   </Target>
 
   <Target Name="BuildUpdater" AfterTargets="Build">

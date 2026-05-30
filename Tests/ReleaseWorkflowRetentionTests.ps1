@@ -25,5 +25,15 @@ Assert-Contains 'gitee cleanup skips the newest releases' $workflow 'Select-Obje
 Assert-Match 'gitee cleanup deletes releases beyond the retention count' $workflow 'Invoke-RestMethod\s+-Uri\s+"https://gitee\.com/api/v5/repos/fuchuxuan/TypeSunny/releases/\$\(\$rel\.id\)\?access_token=\$\{token\}"\s+`\r?\n\s+-Method Delete'
 Assert-Contains 'gitee cleanup runs before uploading assets' $workflow '--- Step 2: Cleaning up old Gitee releases before upload ---'
 Assert-Contains 'gitee cleanup runs after uploading assets' $workflow '--- Step 3: Cleaning up old Gitee releases after upload ---'
+Assert-Contains 'release workflow writes package publish time manifest' $workflow 'package_published_at'
+Assert-Contains 'release workflow names package manifest by version' $workflow 'TypeSunny-${ver}-package.json'
+Assert-Contains 'release workflow computes package publish ticks before build' $workflow 'package_published_utc_ticks'
+Assert-Contains 'release workflow passes package publish ticks into release build' $workflow '/p:ReleasePackagePublishedUtcTicks='
+Assert-Contains 'github release uploads package manifest' $workflow 'TypeSunny-${VERSION}-package.json'
+Assert-Contains 'gitee release uploads package manifest as required identity data' $workflow 'Upload-Asset "TypeSunny-${ver}-package.json" $releaseId $token 10 $true'
+
+if ($workflow.Contains('release-identity.json')) {
+    throw 'release workflow should not embed release-identity.json into packages.'
+}
 
 Write-Host 'All release workflow retention tests passed.'

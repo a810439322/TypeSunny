@@ -5,6 +5,6 @@ namespace TypeSunny
 {
 internal static class GeneratedVersion
 {
-public const string CurrentVersion = "20260529";
+public const string CurrentVersion = "20260530";
 }
 }

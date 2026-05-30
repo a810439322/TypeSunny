@@ -43,7 +43,8 @@ Assert-FileExists 'UI\ShuangMissingDialog.xaml.cs'
 
 $downloader = Read-RepoFile 'Utils\UpdatePackageDownloader.cs'
 Assert-Contains 'shared downloader exposes download and apply API' $downloader 'DownloadAndApplyAsync'
-Assert-Contains 'shared downloader starts updater' $downloader 'Process.Start(updaterPath'
+Assert-Contains 'shared downloader stages updater from package' $downloader 'UpdatePackageStager.StageUpdater'
+Assert-Contains 'shared downloader starts staged updater' $downloader 'Process.Start(stagedUpdaterPath'
 Assert-Contains 'shared downloader shuts down app after updater starts' $downloader 'Application.Current.Shutdown();'
 
 $dialogXaml = Read-RepoFile 'UI\ShuangMissingDialog.xaml'
@@ -77,6 +78,7 @@ if ($applyThemeDefinitions -lt 2) {
 }
 
 Assert-Contains 'project includes shared downloader' $project 'Utils\UpdatePackageDownloader.cs'
+Assert-Contains 'project includes update package stager' $project 'Utils\UpdatePackageStager.cs'
 Assert-Contains 'project includes shared dialog theming' $project 'Utils\DialogTheming.cs'
 Assert-Contains 'project includes missing dialog code-behind' $project 'UI\ShuangMissingDialog.xaml.cs'
 Assert-Contains 'project includes missing dialog xaml' $project 'UI\ShuangMissingDialog.xaml'

@@ -42,11 +42,12 @@ namespace TypeSunny.Utils
 
             string appDir = AppDomain.CurrentDomain.BaseDirectory;
             string updaterPath = Path.Combine(appDir, "Updater.exe");
+            string stagedUpdaterPath = UpdatePackageStager.StageUpdater(zipPath, tempDir, updaterPath);
             int pid = Process.GetCurrentProcess().Id;
             string mainExe = Process.GetCurrentProcess().MainModule.FileName;
             string appDirClean = appDir.TrimEnd('\\');
 
-            Process.Start(updaterPath, $"\"{zipPath}\" \"{appDirClean}\" {pid} \"{mainExe}\" \"{installedVersion}\" \"{installedReleaseUtcTicks}\"");
+            Process.Start(stagedUpdaterPath, $"\"{zipPath}\" \"{appDirClean}\" {pid} \"{mainExe}\" \"{installedVersion}\" \"{installedReleaseUtcTicks}\"");
             Application.Current.Shutdown();
         }
 

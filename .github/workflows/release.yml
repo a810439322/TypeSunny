@@ -29,8 +29,20 @@ jobs:
       - name: Restore NuGet packages
         run: nuget restore TypeSunny.sln
 
+      - name: Prepare package identity
+        id: package_identity
+        shell: pwsh
+        run: |
+          $packagePublishedUtc = (Get-Date).ToUniversalTime()
+          $packagePublishedAt = $packagePublishedUtc.ToString("yyyy-MM-ddTHH:mm:ssZ", [System.Globalization.CultureInfo]::InvariantCulture)
+          $packagePublishedUtcTicks = $packagePublishedUtc.Ticks
+          "package_published_at=$packagePublishedAt" >> $env:GITHUB_OUTPUT
+          "package_published_utc_ticks=$packagePublishedUtcTicks" >> $env:GITHUB_OUTPUT
+          echo "Package published at UTC: $packagePublishedAt"
+          echo "Package published UTC ticks: $packagePublishedUtcTicks"
+
       - name: Build Release
-        run: msbuild TypeSunny.sln /p:Configuration=Release /p:Platform="Any CPU" /m
+        run: msbuild TypeSunny.sln /p:Configuration=Release /p:Platform="Any CPU" /p:ReleasePackagePublishedUtcTicks="${{ steps.package_identity.outputs.package_published_utc_ticks }}" /m
 
       - name: Get version
         id: version
@@ -66,6 +78,19 @@ jobs:
           Compress-Archive -Path "$updateDir\*" -DestinationPath $updateZip -Force
           echo "Created $updateZip"
 
+          $packagePublishedAt = "${{ steps.package_identity.outputs.package_published_at }}"
+          $packagePublishedUtcTicks = "${{ steps.package_identity.outputs.package_published_utc_ticks }}"
+          $manifest = [ordered]@{
+            version = $ver
+            package_published_at = $packagePublishedAt
+            package_published_utc_ticks = $packagePublishedUtcTicks
+            update_package = $updateZip
+            full_package = $fullZip
+          }
+          $manifestPath = "TypeSunny-${ver}-package.json"
+          $manifest | ConvertTo-Json -Depth 3 | Set-Content -Path $manifestPath -Encoding UTF8
+          echo "Created $manifestPath with package_published_at=$packagePublishedAt"
+
       - name: Delete existing GitHub release
         shell: bash
         run: |
@@ -82,6 +107,7 @@ jobs:
             --title "晴跟打 v${VERSION}" \
             --notes-file commit_message.txt \
             --target master \
+            "TypeSunny-${VERSION}-package.json" \
             "TypeSunny-${VERSION}-full.zip" \
             "TypeSunny-${VERSION}-update.zip"
         env:
@@ -240,6 +266,9 @@ jobs:
 
           # 全量包：可选，重试10次
           Upload-Asset "TypeSunny-${ver}-full.zip" $releaseId $token 10 $false
+
+          # 包发布时间清单：必须成功；新客户端用它稳定判断同版本多次发布
+          Upload-Asset "TypeSunny-${ver}-package.json" $releaseId $token 10 $true
 
           echo "--- Step 3: Cleaning up old Gitee releases after upload ---"
           try {

@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -131,6 +130,7 @@ namespace TypeSunny
             {
                 try
                 {
+                    EnsureInstalledReleaseIdentity();
                     return ReleaseIdentity.HasUpdate(
                         LatestVersion,
                         CurrentVersion,
@@ -177,28 +177,6 @@ namespace TypeSunny
             return DateTime.MinValue;
         }
 
-        private static DateTime ParseReleasePublishedUtc(JObject json)
-        {
-            string[] fields = { "published_at", "created_at", "updated_at" };
-            foreach (string field in fields)
-            {
-                string value = json[field]?.ToString();
-                if (string.IsNullOrWhiteSpace(value))
-                    continue;
-
-                if (DateTimeOffset.TryParse(
-                    value,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                    out var dto))
-                {
-                    return dto.UtcDateTime;
-                }
-            }
-
-            return DateTime.MinValue;
-        }
-
         private static async Task<long> MeasureLatencyAsync(string url)
         {
             try
@@ -233,6 +211,48 @@ namespace TypeSunny
 
             PreferredSource = giteeMs <= githubMs ? UpdateSource.Gitee : UpdateSource.GitHub;
             Debug.WriteLine($"[VersionManager] 选择更新源: {PreferredSource} (Gitee={giteeMs}ms, GitHub={githubMs}ms)");
+        }
+
+        private static async Task<DateTime> ReadPackageManifestPublishedUtcAsync(HttpClient client, string manifestUrl)
+        {
+            if (string.IsNullOrWhiteSpace(manifestUrl))
+                return DateTime.MinValue;
+
+            try
+            {
+                string content = await client.GetStringAsync(manifestUrl);
+                if (string.IsNullOrWhiteSpace(content))
+                    return DateTime.MinValue;
+
+                return ReleasePackageIdentity.ParseManifestPublishedUtc(JObject.Parse(content));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[VersionManager] 读取包发布时间清单失败: {ex.Message}");
+                return DateTime.MinValue;
+            }
+        }
+
+        private static void EnsureInstalledReleaseIdentity()
+        {
+            if (!string.Equals(CompiledReleaseIdentity.Version, CurrentVersion, StringComparison.Ordinal))
+                return;
+
+            if (CompiledReleaseIdentity.PackagePublishedUtcTicks <= 0)
+                return;
+
+            DateTime publishedUtc = CompiledReleaseIdentity.PackagePublishedUtc;
+            if (publishedUtc == DateTime.MinValue)
+                return;
+
+            if (string.Equals(InstalledVersion, CurrentVersion, StringComparison.Ordinal) &&
+                InstalledReleasePublishedUtc >= publishedUtc)
+            {
+                return;
+            }
+
+            InstalledVersion = CompiledReleaseIdentity.Version;
+            InstalledReleasePublishedUtc = publishedUtc;
         }
 
         public static async Task<bool> CheckUpdateAsync(bool forceRefresh = false)
@@ -280,11 +300,14 @@ namespace TypeSunny
                     }
 
                     LatestVersion = latestVersion;
-                    LatestReleasePublishedUtc = ParseReleasePublishedUtc(json);
+                    DateTime releasePublishedUtc = ReleasePackageIdentity.ParseReleasePublishedUtc(json);
                     Changelog = json["body"]?.ToString() ?? "";
 
                     string updateUrl = "";
                     string fullUrl = "";
+                    string packageManifestUrl = "";
+                    DateTime updateAssetPublishedUtc = DateTime.MinValue;
+                    DateTime fullAssetPublishedUtc = DateTime.MinValue;
                     var assets = json["assets"] as JArray;
                     if (assets != null)
                     {
@@ -293,18 +316,30 @@ namespace TypeSunny
                             string name = asset["name"]?.ToString() ?? "";
                             string url = asset["browser_download_url"]?.ToString() ?? "";
                             long size = asset["size"]?.Value<long>() ?? 0;
-                            if (string.IsNullOrEmpty(fullUrl) && name.Contains("full"))
+                            if (string.IsNullOrEmpty(packageManifestUrl) && ReleasePackageIdentity.IsPackageManifestAsset(name))
+                            {
+                                packageManifestUrl = url;
+                            }
+                            else if (string.IsNullOrEmpty(fullUrl) && name.Contains("full"))
                             {
                                 fullUrl = url;
                                 FullPackageSize = size;
+                                fullAssetPublishedUtc = ReleasePackageIdentity.ParseAssetPublishedUtc((JObject)asset);
                             }
                             else if (string.IsNullOrEmpty(updateUrl) && name.Contains("update"))
                             {
                                 updateUrl = url;
                                 UpdatePackageSize = size;
+                                updateAssetPublishedUtc = ReleasePackageIdentity.ParseAssetPublishedUtc((JObject)asset);
                             }
                         }
                     }
+                    DateTime manifestPublishedUtc = await ReadPackageManifestPublishedUtcAsync(client, packageManifestUrl);
+                    LatestReleasePublishedUtc = ReleasePackageIdentity.ResolvePublishedUtc(
+                        manifestPublishedUtc,
+                        updateAssetPublishedUtc,
+                        fullAssetPublishedUtc,
+                        releasePublishedUtc);
                     UpdatePackageUrl = updateUrl;
                     FullPackageUrl = fullUrl;
                     LastCheckTime = DateTime.Now;

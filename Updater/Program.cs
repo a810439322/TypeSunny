@@ -38,6 +38,7 @@ namespace Updater
             string mainExePath = args[3];
             string installedVersion = args.Length >= 5 ? args[4] : "";
             string installedReleaseUtcTicks = args.Length >= 6 ? args[5] : "";
+            string updaterExePath = Process.GetCurrentProcess().MainModule.FileName;
 
             if (!int.TryParse(args[2], out int pid))
             {
@@ -96,8 +97,11 @@ namespace Updater
                         if (!Directory.Exists(destDir))
                             Directory.CreateDirectory(destDir);
 
-                        if (entry.Name.Equals("Updater.exe", StringComparison.OrdinalIgnoreCase))
+                        if (ShouldSkipUpdaterEntry(entry.Name, destPath, updaterExePath))
+                        {
+                            Log($"  跳过正在运行的更新器: {entry.FullName}");
                             continue;
+                        }
 
                         Log($"  更新: {entry.FullName}");
                         entry.ExtractToFile(destPath, true);
@@ -127,6 +131,17 @@ namespace Updater
                 try { Console.WriteLine("按任意键退出..."); Console.ReadKey(); } catch { }
                 return 1;
             }
+        }
+
+        internal static bool ShouldSkipUpdaterEntry(string entryName, string destinationPath, string runningUpdaterPath)
+        {
+            if (!entryName.Equals("Updater.exe", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return string.Equals(
+                Path.GetFullPath(destinationPath),
+                Path.GetFullPath(runningUpdaterPath),
+                StringComparison.OrdinalIgnoreCase);
         }
     }
 }
