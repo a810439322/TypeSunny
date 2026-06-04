@@ -32,11 +32,40 @@ namespace TypeSunny.ArticleSender
     public class ArticleFetcher
     {
         private static ApiClient apiClient;
-        private static List<DifficultyInfo> cachedDifficulties = null;
         private static List<CategoryInfo> cachedCategories = null;
-        private static DateTime cacheTime = DateTime.MinValue;
         private static DateTime categoryCacheTime = DateTime.MinValue;
+        private static readonly object difficultyCacheLock = new object();
+        private static readonly Dictionary<string, DifficultyCacheEntry> difficultyCacheByCategory =
+            new Dictionary<string, DifficultyCacheEntry>();
+        private static readonly Dictionary<string, Task<List<DifficultyInfo>>> difficultyRequestsByCategory =
+            new Dictionary<string, Task<List<DifficultyInfo>>>();
         private static readonly TimeSpan CACHE_EXPIRATION = TimeSpan.FromMinutes(5);
+
+        private class DifficultyCacheEntry
+        {
+            public List<DifficultyInfo> Difficulties { get; set; }
+            public DateTime CacheTime { get; set; }
+        }
+
+        public static List<DifficultyInfo> CreateDefaultDifficulties()
+        {
+            return new List<DifficultyInfo>
+            {
+                new DifficultyInfo { Id = 1, Name = "淼", Count = 0 },
+                new DifficultyInfo { Id = 2, Name = "水", Count = 0 },
+                new DifficultyInfo { Id = 3, Name = "易", Count = 0 },
+                new DifficultyInfo { Id = 4, Name = "普", Count = 0 },
+                new DifficultyInfo { Id = 5, Name = "难", Count = 0 },
+                new DifficultyInfo { Id = 6, Name = "虐", Count = 0 }
+            };
+        }
+
+        public static bool HasCachedDifficulties(string categoryOverride = null)
+        {
+            string configuredCategory = Config.GetString("文来分类");
+            string configCategory = ((categoryOverride ?? configuredCategory) ?? "").Trim();
+            return TryGetCachedDifficulties(configCategory, out _);
+        }
 
         // ========== 安全取值工具方法 ==========
         // JToken?.ToObject<int>() 对 JSON null 无效（JToken 不是 C# null，?.不会短路）
@@ -63,6 +92,218 @@ namespace TypeSunny.ArticleSender
             if (token == null || token.Type == JTokenType.Null)
                 return defaultValue;
             return token.ToString();
+        }
+
+        private static string ReadCategoryCode(JToken item)
+        {
+            foreach (var field in new[] { "code", "category", "value", "slug", "key", "categoryCode" })
+            {
+                string value = SafeString(item?[field]).Trim();
+                if (!string.IsNullOrWhiteSpace(value))
+                    return value;
+            }
+
+            return "";
+        }
+
+        private static string ReadCategoryName(JToken item, string fallback)
+        {
+            foreach (var field in new[] { "name", "label", "title" })
+            {
+                string value = SafeString(item?[field]).Trim();
+                if (!string.IsNullOrWhiteSpace(value))
+                    return value;
+            }
+
+            return fallback ?? "";
+        }
+
+        private static int ReadDifficultyLevel(string labelOrLevel, JToken item, Dictionary<string, int> labelToLevel)
+        {
+            string key = (labelOrLevel ?? "").Trim();
+            if (labelToLevel.ContainsKey(key))
+                return labelToLevel[key];
+
+            int parsed;
+            if (int.TryParse(key, out parsed))
+                return parsed;
+
+            if (item == null || item.Type != JTokenType.Object)
+                return 0;
+
+            foreach (var field in new[] { "difficultyLevel", "level", "id", "difficultyId", "levelId" })
+            {
+                int level = SafeInt(item?[field]);
+                if (level > 0)
+                    return level;
+            }
+
+            foreach (var field in new[] { "difficultyLabel", "label", "name", "levelName", "difficulty", "level" })
+            {
+                string label = SafeString(item?[field]).Trim();
+                if (labelToLevel.ContainsKey(label))
+                    return labelToLevel[label];
+            }
+
+            return 0;
+        }
+
+        private static string ReadDifficultyName(int level, string labelOrLevel, JToken item, Dictionary<int, string> levelToLabel)
+        {
+            string key = (labelOrLevel ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(key) && !int.TryParse(key, out _))
+                return key;
+
+            if (item == null || item.Type != JTokenType.Object)
+                return levelToLabel.ContainsKey(level) ? levelToLabel[level] : level.ToString();
+
+            foreach (var field in new[] { "difficultyLabel", "label", "name", "levelName", "difficulty" })
+            {
+                string value = SafeString(item?[field]).Trim();
+                if (!string.IsNullOrWhiteSpace(value))
+                    return value;
+            }
+
+            return levelToLabel.ContainsKey(level) ? levelToLabel[level] : level.ToString();
+        }
+
+        private static int ReadDifficultyCount(JToken token)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+                return 0;
+            if (token.Type != JTokenType.Object)
+                return SafeInt(token);
+
+            foreach (var field in new[] { "count", "segmentCount", "segments", "total", "totalSegments", "totalCount" })
+            {
+                int count = SafeInt(token[field]);
+                if (count > 0)
+                    return count;
+            }
+
+            return 0;
+        }
+
+        private static void AddDifficultyStat(List<DifficultyInfo> difficulties, string labelOrLevel, JToken statToken,
+            Dictionary<string, int> labelToLevel, Dictionary<int, string> levelToLabel)
+        {
+            int level = ReadDifficultyLevel(labelOrLevel, statToken, labelToLevel);
+            if (level <= 0)
+                return;
+
+            difficulties.Add(new DifficultyInfo
+            {
+                Id = level,
+                Name = ReadDifficultyName(level, labelOrLevel, statToken, levelToLabel),
+                Count = ReadDifficultyCount(statToken)
+            });
+        }
+
+        private static JToken UnwrapStatsData(JToken token)
+        {
+            if (token == null || token.Type != JTokenType.Object)
+                return token;
+
+            var data = token["data"];
+            if (LooksLikeDifficultyStats(data))
+                return data;
+
+            var msg = token["msg"];
+            if (LooksLikeDifficultyStats(msg))
+                return msg;
+
+            return token;
+        }
+
+        private static bool LooksLikeDifficultyStats(JToken token)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+                return false;
+
+            if (token.Type == JTokenType.Array)
+                return true;
+
+            if (token.Type != JTokenType.Object)
+                return false;
+
+            foreach (var field in new[] { "levelStats", "difficultyStats", "stats", "levels", "totalSegments", "totalCount" })
+            {
+                if (token[field] != null)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryGetCachedDifficulties(string category, out List<DifficultyInfo> difficulties)
+        {
+            category = (category ?? "").Trim();
+            lock (difficultyCacheLock)
+            {
+                if (difficultyCacheByCategory.TryGetValue(category, out var entry))
+                {
+                    if (DateTime.Now - entry.CacheTime <= CACHE_EXPIRATION)
+                    {
+                        difficulties = entry.Difficulties;
+                        return true;
+                    }
+
+                    difficultyCacheByCategory.Remove(category);
+                }
+            }
+
+            difficulties = null;
+            return false;
+        }
+
+        private static void StoreDifficulties(string category, List<DifficultyInfo> difficulties)
+        {
+            category = (category ?? "").Trim();
+            lock (difficultyCacheLock)
+            {
+                difficultyCacheByCategory[category] = new DifficultyCacheEntry
+                {
+                    Difficulties = difficulties ?? new List<DifficultyInfo>(),
+                    CacheTime = DateTime.Now
+                };
+            }
+        }
+
+        private static List<DifficultyInfo> CloneDifficulties(List<DifficultyInfo> difficulties)
+        {
+            return (difficulties ?? new List<DifficultyInfo>())
+                .Select(d => new DifficultyInfo { Id = d.Id, Name = d.Name, Count = d.Count })
+                .ToList();
+        }
+
+        private static List<DifficultyInfo> NormalizeDifficulties(List<DifficultyInfo> parsedDifficulties)
+        {
+            var normalized = CreateDefaultDifficulties()
+                .ToDictionary(d => d.Id, d => d);
+
+            foreach (var difficulty in parsedDifficulties ?? new List<DifficultyInfo>())
+            {
+                if (difficulty == null || difficulty.Id <= 0)
+                    continue;
+
+                if (normalized.TryGetValue(difficulty.Id, out var existing))
+                {
+                    if (!string.IsNullOrWhiteSpace(difficulty.Name))
+                        existing.Name = difficulty.Name;
+                    existing.Count = difficulty.Count;
+                }
+                else
+                {
+                    normalized[difficulty.Id] = new DifficultyInfo
+                    {
+                        Id = difficulty.Id,
+                        Name = string.IsNullOrWhiteSpace(difficulty.Name) ? difficulty.Id.ToString() : difficulty.Name,
+                        Count = difficulty.Count
+                    };
+                }
+            }
+
+            return normalized.Values.OrderBy(d => d.Id).ToList();
         }
 
         /// <summary>
@@ -141,94 +382,122 @@ namespace TypeSunny.ArticleSender
         /// <summary>
         /// 获取难度列表（只返回缓存，不会触发网络请求）
         /// </summary>
-        public static List<DifficultyInfo> GetDifficulties()
+        public static List<DifficultyInfo> GetDifficulties(string categoryOverride = null)
         {
-            if (cachedDifficulties != null && DateTime.Now - cacheTime > CACHE_EXPIRATION)
-            {
-                System.Diagnostics.Debug.WriteLine($"[难度] 缓存已过期（{(DateTime.Now - cacheTime).TotalMinutes:F1}分钟），清除缓存");
-                cachedDifficulties = null;
-                cacheTime = DateTime.MinValue;
-            }
+            string configuredCategory = Config.GetString("文来分类");
+            string configCategory = ((categoryOverride ?? configuredCategory) ?? "").Trim();
+            if (TryGetCachedDifficulties(configCategory, out var difficulties))
+                return CloneDifficulties(difficulties);
 
-            if (cachedDifficulties != null)
-                return cachedDifficulties;
-
-            return new List<DifficultyInfo>();
+            return CreateDefaultDifficulties();
         }
 
         /// <summary>
         /// 异步获取难度列表
         /// </summary>
-        public static async Task<List<DifficultyInfo>> GetDifficultiesAsync()
+        public static async Task<List<DifficultyInfo>> GetDifficultiesAsync(string categoryOverride = null, bool forceRefresh = false)
         {
-            if (cachedDifficulties != null)
-                return cachedDifficulties;
+            string configuredCategory = Config.GetString("文来分类");
+            string configCategory = ((categoryOverride ?? configuredCategory) ?? "").Trim();
+            if (!forceRefresh && TryGetCachedDifficulties(configCategory, out var cachedForCategory))
+                return CloneDifficulties(cachedForCategory);
 
+            Task<List<DifficultyInfo>> requestTask;
+            bool isOwnerRequest = false;
+            lock (difficultyCacheLock)
+            {
+                if (!difficultyRequestsByCategory.TryGetValue(configCategory, out requestTask))
+                {
+                    requestTask = FetchDifficultiesFromServerAsync(configCategory);
+                    difficultyRequestsByCategory[configCategory] = requestTask;
+                    isOwnerRequest = true;
+                }
+            }
+
+            try
+            {
+                return CloneDifficulties(await requestTask);
+            }
+            finally
+            {
+                if (isOwnerRequest)
+                {
+                    lock (difficultyCacheLock)
+                    {
+                        if (difficultyRequestsByCategory.TryGetValue(configCategory, out var currentTask) && currentTask == requestTask)
+                            difficultyRequestsByCategory.Remove(configCategory);
+                    }
+                }
+            }
+        }
+
+        private static async Task<List<DifficultyInfo>> FetchDifficultiesFromServerAsync(string configCategory)
+        {
             try
             {
                 var client = EnsureClient();
                 if (client == null)
-                    return new List<DifficultyInfo>();
+                    return CreateDefaultDifficulties();
+
+                var queryParams = new Dictionary<string, string>();
+                if (!string.IsNullOrWhiteSpace(configCategory))
+                    queryParams["category"] = configCategory;
 
                 // 新 API 路径：/api/segments/stats
-                var response = await client.GetAsync("/api/segments/stats");
+                var response = await client.GetAsync("/api/segments/stats", queryParams);
 
                 if (!response.IsSuccess || response.RawData == null)
-                    return new List<DifficultyInfo>();
+                    return CreateDefaultDifficulties();
 
                 var difficulties = new List<DifficultyInfo>();
+                var statsData = UnwrapStatsData(response.RawData);
 
                 // 难度标签 → 等级ID 映射（服务端 DifficultyConstant）
                 var labelToLevel = new Dictionary<string, int>
                 {
                     ["淼"] = 1, ["水"] = 2, ["易"] = 3,
-                    ["普"] = 4, ["难"] = 5, ["虐"] = 6
+                    ["普"] = 4, ["难"] = 5, ["虐"] = 6,
+                    ["一级"] = 1, ["二级"] = 2, ["三级"] = 3,
+                    ["四级"] = 4, ["五级"] = 5, ["六级"] = 6
+                };
+                var levelToLabel = new Dictionary<int, string>
+                {
+                    [1] = "淼", [2] = "水", [3] = "易",
+                    [4] = "普", [5] = "难", [6] = "虐"
                 };
 
                 // 新格式：data = { totalSegments, levelStats: { "淼": 10000, "水": 20000, ... }, totalChars }
-                var levelStats = response.RawData["levelStats"] as JObject;
-                if (levelStats != null)
+                var statsContainer = statsData as JObject;
+                var statsObject = statsContainer?["levelStats"] as JObject
+                    ?? statsContainer?["difficultyStats"] as JObject
+                    ?? statsContainer?["stats"] as JObject
+                    ?? statsContainer?["levels"] as JObject;
+                if (statsObject != null)
                 {
-                    foreach (var item in levelStats)
-                    {
-                        string label = item.Key;
-                        long count = item.Value?.Type == JTokenType.Integer ? (long)item.Value : 0;
-                        int level = labelToLevel.ContainsKey(label) ? labelToLevel[label] : 0;
-                        if (level > 0)
-                        {
-                            difficulties.Add(new DifficultyInfo
-                            {
-                                Id = level,
-                                Name = label,
-                                Count = (int)count
-                            });
-                        }
-                    }
-                }
-                // 旧格式兼容：data 是数组 [{ id, name, count }, ...]
-                else if (response.RawData.Type == JTokenType.Array)
-                {
-                    foreach (var item in response.RawData)
-                    {
-                        difficulties.Add(new DifficultyInfo
-                        {
-                            Id = SafeInt(item["id"]),
-                            Name = SafeString(item["name"]),
-                            Count = SafeInt(item["count"])
-                        });
-                    }
+                    foreach (var item in statsObject)
+                        AddDifficultyStat(difficulties, item.Key, item.Value, labelToLevel, levelToLabel);
                 }
 
-                difficulties.Sort((a, b) => a.Id.CompareTo(b.Id));
+                var statsArray = statsData.Type == JTokenType.Array
+                    ? statsData as JArray
+                    : statsContainer?["levelStats"] as JArray
+                        ?? statsContainer?["difficultyStats"] as JArray
+                        ?? statsContainer?["stats"] as JArray
+                        ?? statsContainer?["levels"] as JArray;
+                if (statsArray != null)
+                {
+                    foreach (var item in statsArray)
+                        AddDifficultyStat(difficulties, null, item, labelToLevel, levelToLabel);
+                }
 
-                cachedDifficulties = difficulties;
-                cacheTime = DateTime.Now;
-                System.Diagnostics.Debug.WriteLine($"[难度] 已更新难度缓存，共{difficulties.Count}个难度");
+                difficulties = NormalizeDifficulties(difficulties);
+
+                StoreDifficulties(configCategory, difficulties);
                 return difficulties;
             }
             catch (Exception)
             {
-                return new List<DifficultyInfo>();
+                return CreateDefaultDifficulties();
             }
         }
 
@@ -237,8 +506,10 @@ namespace TypeSunny.ArticleSender
         /// </summary>
         public static void ClearDifficultyCache()
         {
-            cachedDifficulties = null;
-            cacheTime = DateTime.MinValue;
+            lock (difficultyCacheLock)
+            {
+                difficultyCacheByCategory.Clear();
+            }
         }
 
         /// <summary>
@@ -279,10 +550,15 @@ namespace TypeSunny.ArticleSender
                     {
                         bool isActive = item["isActive"]?.ToObject<bool>() ?? true;
                         if (!isActive) continue;
+
+                        string code = ReadCategoryCode(item);
+                        if (string.IsNullOrWhiteSpace(code))
+                            continue;
+
                         categories.Add(new CategoryInfo
                         {
-                            Code = item["code"]?.ToString() ?? "",
-                            Name = item["name"]?.ToString() ?? ""
+                            Code = code,
+                            Name = ReadCategoryName(item, code)
                         });
                     }
                 }
@@ -395,9 +671,10 @@ namespace TypeSunny.ArticleSender
                 difficultyText = SafeString(dataObj["difficulty"]);
                 difficultyId = SafeInt(dataObj["custom_difficulty"]);
 
-                if (difficultyId > 0 && cachedDifficulties != null)
+                var difficulties = GetDifficulties();
+                if (difficultyId > 0 && difficulties.Count > 0)
                 {
-                    var diffInfo = cachedDifficulties.FirstOrDefault(d => d.Id == difficultyId);
+                    var diffInfo = difficulties.FirstOrDefault(d => d.Id == difficultyId);
                     if (diffInfo != null)
                         difficultyName = diffInfo.Name;
                 }

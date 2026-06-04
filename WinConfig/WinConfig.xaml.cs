@@ -1806,7 +1806,7 @@ namespace TypeSunny
         /// <summary>
         /// 重新加载文来难度配置项（公共方法，供外部调用）
         /// </summary>
-        public async Task ReloadWenlaiDifficultyConfig()
+        public async Task ReloadWenlaiDifficultyConfig(string categoryOverride = null, bool forceRefresh = false)
         {
             try
             {
@@ -1819,8 +1819,6 @@ namespace TypeSunny
                 var existingPanel = FindConfigItemControl(itemKey, labelText);
                 if (existingPanel is StackPanel panel)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[WinConfig] 找到文来难度控件，重新加载");
-
                     // 清空现有内容
                     panel.Children.Clear();
 
@@ -1829,7 +1827,7 @@ namespace TypeSunny
                     panel.Children.Add(loadingText);
 
                     // 异步加载难度数据
-                    await LoadDifficultyDataAsync(panel, itemValue);
+                    await LoadDifficultyDataAsync(panel, itemValue, categoryOverride, forceRefresh);
                 }
 
                 // 更新记录的登录状态为当前实际状态
@@ -1838,7 +1836,6 @@ namespace TypeSunny
                     var wenlaiHelper = new WenlaiHelper();
                     bool currentlyLoggedIn = wenlaiHelper.IsLoggedIn();
                     Tag = currentlyLoggedIn;
-                    System.Diagnostics.Debug.WriteLine($"[WinConfig] 重新加载后更新登录状态: {currentlyLoggedIn}");
                 }
                 catch { }
             }
@@ -1853,43 +1850,37 @@ namespace TypeSunny
         /// </summary>
         private Panel FindConfigItemControl(string itemKey, string labelText)
         {
-            // 遍历设置面板的所有子元素
-            var settingsPanel = FindName("panelSettings") as Panel;
-            if (settingsPanel == null) return null;
+            if (ContentPanel == null)
+                return null;
 
-            foreach (var child in settingsPanel.Children)
+            int row = FindConfigRowByLabel(itemKey);
+            if (row < 0 && itemKey != labelText)
+                row = FindConfigRowByLabel(labelText);
+            if (row < 0)
+                return null;
+
+            foreach (var child in ContentPanel.Children)
             {
-                if (child is Grid grid)
+                if (child is Panel panel &&
+                    Grid.GetRow(panel) == row &&
+                    Grid.GetColumn(panel) == 1)
                 {
-                    foreach (var gridChild in grid.Children)
-                    {
-                        if (gridChild is TextBlock tb && tb.Text == labelText)
-                        {
-                            // 找到对应的文本标签，获取其兄弟元素（值控件）
-                            var column = Grid.GetColumn(tb);
-                            foreach (UIElement sibling in grid.Children)
-                            {
-                                if (sibling is Panel panel && Grid.GetColumn(sibling) == 1)
-                                {
-                                    return panel;
-                                }
-                            }
-                        }
-                    }
+                    return panel;
                 }
             }
+
             return null;
         }
 
         /// <summary>
         /// 异步加载难度数据
         /// </summary>
-        private async Task LoadDifficultyDataAsync(Panel container, string currentValue)
+        private async Task LoadDifficultyDataAsync(Panel container, string currentValue, string categoryOverride = null, bool forceRefresh = false)
         {
             try
             {
                 // 使用真正的异步方法获取难度数据
-                var difficulties = await ArticleFetcher.GetDifficultiesAsync();
+                var difficulties = await ArticleFetcher.GetDifficultiesAsync(categoryOverride, forceRefresh);
 
                 // 构建难度统计字典
                 var difficultyStats = new Dictionary<int, int>();
@@ -1909,7 +1900,6 @@ namespace TypeSunny
                     {
                         var wenlaiHelper = new WenlaiHelper();
                         isLoggedIn = wenlaiHelper.IsLoggedIn();
-                        System.Diagnostics.Debug.WriteLine($"[WinConfig] 文来登录状态: {isLoggedIn}");
                     }
                     catch (Exception ex)
                     {
@@ -1945,7 +1935,6 @@ namespace TypeSunny
                                     {
                                         string serverUrl = Config.GetString("文来接口地址");
                                         ArticleFetcher.LoadCookiesFromString(serverUrl, account.Cookies);
-                                        System.Diagnostics.Debug.WriteLine($"[WinConfig] 已同步文来cookies到ArticleFetcher");
                                     }
                                 }
                                 catch (Exception ex)
@@ -1969,7 +1958,7 @@ namespace TypeSunny
                                         {
                                             var initMethod = mainWindow.GetType().GetMethod("InitializeWenlaiMenu",
                                                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                            initMethod?.Invoke(mainWindow, null);
+                                            initMethod?.Invoke(mainWindow, new object[] { null });
                                         }), System.Windows.Threading.DispatcherPriority.Normal);
                                     }
                                 }
@@ -2008,10 +1997,6 @@ namespace TypeSunny
                         {
                             int difficultyId = kvp.Key;
                             int count = kvp.Value;
-
-                            // 跳过文章数为0的难度
-                            if (count == 0)
-                                continue;
 
                             // 从难度列表获取难度名称
                             var diffInfo = difficulties.FirstOrDefault(d => d.Id == difficultyId);
@@ -2135,12 +2120,34 @@ namespace TypeSunny
             }
         }
 
-        private void SaveWenlaiCategorySelection(ComboBox comboBox)
+        private async void SaveWenlaiCategorySelection(ComboBox comboBox)
         {
             if (comboBox?.Tag is Dictionary<int, string> codeMapping &&
                 codeMapping.ContainsKey(comboBox.SelectedIndex))
             {
-                SaveConfigValue("文来分类", codeMapping[comboBox.SelectedIndex] ?? "");
+                string selectedCategory = codeMapping[comboBox.SelectedIndex] ?? "";
+                if (!SaveConfigValue("文来分类", selectedCategory))
+                    return;
+
+                await ReloadWenlaiDifficultyConfig(selectedCategory, true);
+
+                try
+                {
+                    var mainWindow = Application.Current.MainWindow as MainWindow;
+                    if (mainWindow != null)
+                    {
+                        _ = mainWindow.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            var initMethod = mainWindow.GetType().GetMethod("InitializeWenlaiMenu",
+                                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                            initMethod?.Invoke(mainWindow, new object[] { selectedCategory });
+                        }), System.Windows.Threading.DispatcherPriority.Normal);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"刷新文来菜单失败: {ex.Message}");
+                }
             }
         }
 

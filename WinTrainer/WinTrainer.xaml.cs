@@ -978,6 +978,55 @@ namespace TypeSunny
             MainWindow.Current.UpdateTopStatusText("乱序");
         }
 
+        public void LoadNextSegmentFromShortcut()
+        {
+            if (!MoveSegmentFromShortcut(1) || MainWindow.Current == null)
+                return;
+
+            string matchText = GetMatchText();
+            MainWindow.Current.LoadText(matchText, RetypeType.first, TxtSource.trainer, false, true);
+            MainWindow.Current.FocusInput();
+            MainWindow.Current.UpdateTopStatusText("下一段");
+            MainWindow.Current.SendContentToClipboardOrQQ(matchText, true, 150);
+        }
+
+        public void LoadPreviousSegmentFromShortcut()
+        {
+            if (!MoveSegmentFromShortcut(-1) || MainWindow.Current == null)
+                return;
+
+            string matchText = GetMatchText();
+            MainWindow.Current.LoadText(matchText, RetypeType.first, TxtSource.trainer, false, true);
+            MainWindow.Current.FocusInput();
+            MainWindow.Current.UpdateTopStatusText("上一段");
+            MainWindow.Current.SendContentToClipboardOrQQ(matchText, true, 150);
+        }
+
+        private bool MoveSegmentFromShortcut(int delta)
+        {
+            if (!Dispatcher.CheckAccess())
+                return Dispatcher.Invoke(() => MoveSegmentFromShortcut(delta));
+
+            if (DisplayRoot == null || DisplayRoot.Count == 0 || TotalGroup <= 0)
+                return false;
+
+            int currentSection = Convert.ToInt32(cfg["上次的段数"]);
+            int nextSection = Math.Max(0, Math.Min(TotalGroup - 1, currentSection + delta));
+            if (nextSection == currentSection)
+                return false;
+
+            cfg["上次的段数"] = nextSection.ToString();
+            RetypeCount = 0;
+            MaxHitRate = 0;
+
+            SliderInit = false;
+            sld.Value = nextSection + 1;
+            SliderInit = true;
+
+            InitGroup();
+            return true;
+        }
+
         private void InternalHotkeyCtrlL(object sender, ExecutedRoutedEventArgs e)
         {
             if (DisplayRoot == null || DisplayRoot.Count == 0)

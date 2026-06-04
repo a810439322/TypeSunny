@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:TypeSunny"
         xmlns:sys="clr-namespace:System;assembly=mscorlib"
         mc:Ignorable="d"
-      Title="晴跟打" Name="MainWin" Icon="/Resources/ico/sunny.ico" xml:lang="zh-CN" Loaded="Window_Loaded" Closing="Window_Closing" Deactivated="MainWin_Deactivated" WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResize" BorderThickness="0" Background="Transparent" Padding="0" PreviewMouseWheel="Window_PreviewMouseWheel" PreviewMouseMove="MainWin_PreviewMouseMove" PreviewMouseDown="MainWin_PreviewMouseInteraction">
+      Title="晴跟打" Name="MainWin" Icon="/Resources/ico/sunny.ico" xml:lang="zh-CN" Loaded="Window_Loaded" Closing="Window_Closing" Deactivated="MainWin_Deactivated" WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResize" BorderThickness="0" Background="Transparent" Padding="0" PreviewMouseWheel="Window_PreviewMouseWheel" PreviewKeyDown="MainWin_PreviewKeyDown" PreviewMouseMove="MainWin_PreviewMouseMove" PreviewMouseDown="MainWin_PreviewMouseInteraction">
 
     <Window.Resources>
 
@@ -531,7 +531,7 @@
             <DockPanel Grid.Row="1" x:Name="resultsButtonPanel" HorizontalAlignment="Stretch" Margin="15,5,15,0">
                 <Button x:Name="BtnRandomArticle" DockPanel.Dock="Left" Content="文来Ctrl+R" Width="auto" HorizontalAlignment="Left" Click="BtnRandomArticle_Click" VerticalAlignment="Center" Margin="0,0,0,0" Padding="6,3,6,3" Style="{StaticResource HomeFeatureButtonStyle}">
                     <Button.ContextMenu>
-                        <ContextMenu Name="MenuWenlai">
+                        <ContextMenu Name="MenuWenlai" Opened="MenuWenlai_Opened">
                             <ContextMenu.Resources>
                                 <!-- 与赛文菜单相同的模板 -->
                                 <Style TargetType="{x:Type MenuItem}">

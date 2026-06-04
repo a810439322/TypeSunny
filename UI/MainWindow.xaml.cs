@@ -7629,18 +7629,6 @@ public async Task SendArticle()
                         System.Diagnostics.Debug.WriteLine("[预加载]字体预加载完成");
                     }, System.Windows.Threading.DispatcherPriority.Background);
 
-                    // 预加载文来难度数据（避免首次载文时等待）
-                    System.Diagnostics.Debug.WriteLine("[预加载]开始预加载文来难度数据");
-                    try
-                    {
-                        var difficulties = Task.Run(async () => await ArticleFetcher.GetDifficultiesAsync()).GetAwaiter().GetResult();
-                        System.Diagnostics.Debug.WriteLine($"[预加载]文来难度数据预加载完成，共{difficulties.Count}个难度");
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[预加载]文来难度数据预加载失败: {ex.Message}");
-                    }
-
                     // 预加载Filter数据（避免首次载文时Filter.ProcFilter慢）
                     System.Diagnostics.Debug.WriteLine("[预加载]开始预加载Filter数据");
                     try
@@ -8088,6 +8076,29 @@ public async Task SendArticle()
             ShowWinTrainer();
         }
 
+        private void MainWin_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                if (IsCopyTargetFocused())
+                    return;
+
+                OpenWenlaiStatisticsWindow();
+                e.Handled = true;
+            }
+        }
+
+        private bool IsCopyTargetFocused()
+        {
+            var focused = Keyboard.FocusedElement;
+            if (focused is TextBox textBox)
+                return textBox.SelectionLength > 0;
+            if (focused is RichTextBox richTextBox)
+                return !richTextBox.Selection.IsEmpty;
+
+            return false;
+        }
+
         private void InternalHotkeyCtrlL(object sender, ExecutedRoutedEventArgs e)
         {
 
@@ -8111,6 +8122,14 @@ public async Task SendArticle()
 
         private async void InternalHotkeyCtrlP(object sender, ExecutedRoutedEventArgs e)
         {
+            var trainer = GetCurrentTrainerWindow();
+            if (StateManager.txtSource == TxtSource.trainer && trainer != null)
+            {
+                RecordTrainerPartialProgressIfNeeded();
+                trainer.LoadNextSegmentFromShortcut();
+                return;
+            }
+
             // 只有当前来源明确是文来时，才允许使用文来缓存翻页。
             if (StateManager.txtSource == TxtSource.articlesender)
             {
@@ -8131,6 +8150,14 @@ public async Task SendArticle()
 
         private async void InternalHotkeyCtrlO(object sender, ExecutedRoutedEventArgs e)
         {
+            var trainer = GetCurrentTrainerWindow();
+            if (StateManager.txtSource == TxtSource.trainer && trainer != null)
+            {
+                RecordTrainerPartialProgressIfNeeded();
+                trainer.LoadPreviousSegmentFromShortcut();
+                return;
+            }
+
             // 只有当前来源明确是文来时，才允许使用文来缓存翻页。
             if (StateManager.txtSource == TxtSource.articlesender)
             {
@@ -8858,15 +8885,16 @@ public async Task SendArticle()
             }
         }
 
+        private bool isLoadingWenlaiCategories = false;
+
         /// <summary>
         /// 初始化文来右键菜单
         /// </summary>
-        private void InitializeWenlaiMenu()
+        private void InitializeWenlaiMenu(string categoryOverride = null)
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("=== InitializeWenlaiMenu 开始 ===");
-
+                string selectedCategory = ((categoryOverride ?? Config.GetString("文来分类")) ?? "").Trim();
                 // 获取菜单颜色配置
                 var menuBg = Colors.FromString(Config.GetString("菜单背景色"));
                 var menuFg = Colors.FromString(Config.GetString("菜单字体色"));
@@ -8896,20 +8924,11 @@ public async Task SendArticle()
                 // 清空旧菜单
                 MenuWenlai.Items.Clear();
 
-                // 检查是否已登录
-                System.Diagnostics.Debug.WriteLine("  调用 IsLoggedIn()...");
                 bool isLoggedIn = wenlaiHelper.IsLoggedIn();
-                System.Diagnostics.Debug.WriteLine($"  IsLoggedIn() 返回: {isLoggedIn}");
-
-                System.Diagnostics.Debug.WriteLine("  调用 GetCurrentUsername()...");
                 string username = wenlaiHelper.GetCurrentUsername();
-                System.Diagnostics.Debug.WriteLine($"  GetCurrentUsername() 返回: '{username}'");
-                System.Diagnostics.Debug.WriteLine($"  string.IsNullOrWhiteSpace(username): {string.IsNullOrWhiteSpace(username)}");
-                System.Diagnostics.Debug.WriteLine($"  最终条件判断: isLoggedIn={isLoggedIn}, !IsNullOrWhiteSpace={!string.IsNullOrWhiteSpace(username)}, 结果={(isLoggedIn && !string.IsNullOrWhiteSpace(username))}");
 
                 if (isLoggedIn && !string.IsNullOrWhiteSpace(username))
                 {
-                    System.Diagnostics.Debug.WriteLine("  ✓ 进入已登录分支，显示用户名菜单");
                     // 已登录：显示用户名
                     MenuItem loginStatusItem = new MenuItem
                     {
@@ -8937,7 +8956,6 @@ public async Task SendArticle()
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("  ⚠ 进入未登录分支，显示登录/注册菜单");
                     // 未登录：显示登录和注册
                     MenuItem loginItem = new MenuItem
                     {
@@ -8985,8 +9003,9 @@ public async Task SendArticle()
 
                 if (isLoggedIn && !string.IsNullOrWhiteSpace(username))
                 {
-                    // 同步加载难度列表（使用缓存，没有缓存则返回空列表）
-                    var difficulties = ArticleFetcher.GetDifficulties();
+                    bool hasDifficultyCounts = ArticleFetcher.HasCachedDifficulties(selectedCategory);
+                    // 同步读取难度列表，不触发网络请求。没缓存时返回默认难度名。
+                    var difficulties = ArticleFetcher.GetDifficulties(selectedCategory);
 
                     // 获取当前选中的难度
                     string currentDifficulty = Config.GetString("文来难度") ?? "";
@@ -9020,87 +9039,48 @@ public async Task SendArticle()
                     };
                     refreshItem.Click += async (s, args) =>
                     {
-                        ArticleFetcher.ClearDifficultyCache();
-                        // 异步加载最新数据
-                        var newDifficulties = await ArticleFetcher.GetDifficultiesAsync();
-                        InitializeWenlaiMenu();  // 重新加载菜单
+                        await ArticleFetcher.GetDifficultiesAsync(selectedCategory, true);
+                        InitializeWenlaiMenu(selectedCategory);
+                        NotifyConfigWindowsRefreshWenlai(selectedCategory, false);
                     };
                     difficultyItem.Items.Add(refreshItem);
 
-                    // 如果有难度列表，添加难度选项
-                    if (difficulties.Count > 0)
+                    difficultyItem.Items.Add(CreateStyledSeparator(menuBg));
+
+                    int totalCount = difficulties.Sum(d => d.Count);
+                    string selectedMark = currentDifficultyId == 0 ? " ✓" : "";
+                    MenuItem randomItem = new MenuItem
                     {
-                        // 添加分隔线
-                        difficultyItem.Items.Add(CreateStyledSeparator(menuBg));
+                        Header = hasDifficultyCounts ? $"随机 ({totalCount}段){selectedMark}" : $"随机{selectedMark}",
+                        Background = menuBg,
+                        Foreground = menuFg,
+                        Style = menuItemStyle,
+                        Tag = 0
+                    };
+                    randomItem.Click += (s, args) =>
+                    {
+                        Config.Set("文来难度", "");
+                        InitializeWenlaiMenu(selectedCategory);
+                    };
+                    difficultyItem.Items.Add(randomItem);
 
-                        // 计算总段数
-                        int totalCount = difficulties.Sum(d => d.Count);
-
-                        // 添加"随机"选项
-                        MenuItem randomItem = new MenuItem
+                    foreach (var diff in difficulties.OrderBy(d => d.Id))
+                    {
+                        string diffMark = diff.Id == currentDifficultyId ? " ✓" : "";
+                        MenuItem diffMenuItem = new MenuItem
                         {
-                            Header = $"随机 ({totalCount}段){(currentDifficultyId == 0 ? " ✓" : "")}",
+                            Header = hasDifficultyCounts ? $"{diff.Name} ({diff.Count}段){diffMark}" : $"{diff.Name}{diffMark}",
                             Background = menuBg,
                             Foreground = menuFg,
                             Style = menuItemStyle,
-                            Tag = 0
+                            Tag = diff.Id
                         };
-                        randomItem.Click += (s, args) =>
+                        diffMenuItem.Click += (s, args) =>
                         {
-                            Config.Set("文来难度", "");
-                            InitializeWenlaiMenu();
+                            Config.Set("文来难度", diff.Id.ToString());
+                            InitializeWenlaiMenu(selectedCategory);
                         };
-                        difficultyItem.Items.Add(randomItem);
-
-                        // 按难度ID排序并添加
-                        foreach (var diff in difficulties.OrderBy(d => d.Id))
-                        {
-                            // 跳过文章数为0的难度
-                            if (diff.Count == 0)
-                                continue;
-
-                            MenuItem diffMenuItem = new MenuItem
-                            {
-                                Header = $"{diff.Name} ({diff.Count}段){(diff.Id == currentDifficultyId ? " ✓" : "")}",
-                                Background = menuBg,
-                                Foreground = menuFg,
-                                Style = menuItemStyle,
-                                Tag = diff.Id
-                            };
-                            diffMenuItem.Click += (s, args) =>
-                            {
-                                Config.Set("文来难度", diff.Id.ToString());
-                                InitializeWenlaiMenu();
-                            };
-                            difficultyItem.Items.Add(diffMenuItem);
-                        }
-                    }
-                    else
-                    {
-                        // 没有缓存数据，显示加载提示
-                        difficultyItem.Items.Add(CreateStyledSeparator(menuBg));
-                        MenuItem loadingItem = new MenuItem
-                        {
-                            Header = "⏳ 加载难度数据...",
-                            Background = menuBg,
-                            Foreground = menuFg,
-                            Style = menuItemStyle,
-                            IsEnabled = false
-                        };
-                        difficultyItem.Items.Add(loadingItem);
-
-                        // 后台异步加载
-                        _ = System.Threading.Tasks.Task.Run(async () =>
-                        {
-                            var loadedDifficulties = await ArticleFetcher.GetDifficultiesAsync();
-                            if (loadedDifficulties != null && loadedDifficulties.Count > 0)
-                            {
-                                _ = this.Dispatcher.BeginInvoke(new Action(() =>
-                                {
-                                    InitializeWenlaiMenu();  // 重新加载菜单
-                                }));
-                            }
-                        });
+                        difficultyItem.Items.Add(diffMenuItem);
                     }
                 }
                 MenuWenlai.Items.Add(difficultyItem);
@@ -9118,7 +9098,7 @@ public async Task SendArticle()
                 if (isLoggedIn && !string.IsNullOrWhiteSpace(username))
                 {
                     var categories = ArticleFetcher.GetCategories();
-                    string currentCategory = Config.GetString("文来分类") ?? "";
+                    string currentCategory = selectedCategory;
                     string currentCategoryName = "全部";
                     if (!string.IsNullOrEmpty(currentCategory) && categories.Count > 0)
                     {
@@ -9155,10 +9135,12 @@ public async Task SendArticle()
                             Foreground = menuFg,
                             Style = menuItemStyle
                         };
-                        allItem.Click += (s, args) =>
+                        allItem.Click += async (s, args) =>
                         {
                             Config.Set("文来分类", "");
-                            InitializeWenlaiMenu();
+                            await ArticleFetcher.GetDifficultiesAsync("", true);
+                            InitializeWenlaiMenu("");
+                            NotifyConfigWindowsRefreshWenlai("", false);
                         };
                         categoryItem.Items.Add(allItem);
 
@@ -9172,10 +9154,12 @@ public async Task SendArticle()
                                 Style = menuItemStyle,
                                 Tag = cat.Code
                             };
-                            catMenuItem.Click += (s, args) =>
+                            catMenuItem.Click += async (s, args) =>
                             {
                                 Config.Set("文来分类", cat.Code);
-                                InitializeWenlaiMenu();
+                                await ArticleFetcher.GetDifficultiesAsync(cat.Code, true);
+                                InitializeWenlaiMenu(cat.Code);
+                                NotifyConfigWindowsRefreshWenlai(cat.Code, false);
                             };
                             categoryItem.Items.Add(catMenuItem);
                         }
@@ -9185,25 +9169,13 @@ public async Task SendArticle()
                         categoryItem.Items.Add(CreateStyledSeparator(menuBg));
                         MenuItem loadingCatItem = new MenuItem
                         {
-                            Header = "⏳ 加载分类数据...",
+                            Header = isLoadingWenlaiCategories ? "⏳ 加载分类数据..." : "分类未加载",
                             Background = menuBg,
                             Foreground = menuFg,
                             Style = menuItemStyle,
                             IsEnabled = false
                         };
                         categoryItem.Items.Add(loadingCatItem);
-
-                        _ = System.Threading.Tasks.Task.Run(async () =>
-                        {
-                            var loaded = await ArticleFetcher.GetCategoriesAsync();
-                            if (loaded != null && loaded.Count > 0)
-                            {
-                                _ = this.Dispatcher.BeginInvoke(new Action(() =>
-                                {
-                                    InitializeWenlaiMenu();
-                                }));
-                            }
-                        });
                     }
                 }
                 MenuWenlai.Items.Add(categoryItem);
@@ -9219,32 +9191,41 @@ public async Task SendArticle()
                 };
                 statisticsItem.Click += MenuItemWenlaiStatistics_Click;
                 MenuWenlai.Items.Add(statisticsItem);
-
-                // 输出菜单项列表，验证菜单是否正确构建
-                System.Diagnostics.Debug.WriteLine($"  菜单项数量: {MenuWenlai.Items.Count}");
-                for (int i = 0; i < MenuWenlai.Items.Count; i++)
-                {
-                    var item = MenuWenlai.Items[i];
-                    if (item is MenuItem menuItem)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"    [{i}] MenuItem: Header='{menuItem.Header}', IsEnabled={menuItem.IsEnabled}");
-                    }
-                    else if (item is Separator)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"    [{i}] Separator");
-                    }
-                    else
-                    {
-                        System.Diagnostics.Debug.WriteLine($"    [{i}] {item.GetType().Name}");
-                    }
-                }
-
-                System.Diagnostics.Debug.WriteLine("=== InitializeWenlaiMenu 结束 ===");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ 初始化文来菜单失败: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                System.Diagnostics.Debug.WriteLine($"初始化文来菜单失败: {ex.Message}");
+            }
+        }
+
+        private async void MenuWenlai_Opened(object sender, RoutedEventArgs e)
+        {
+            if (isLoadingWenlaiCategories)
+                return;
+
+            try
+            {
+                if (!wenlaiHelper.IsLoggedIn() || string.IsNullOrWhiteSpace(wenlaiHelper.GetCurrentUsername()))
+                    return;
+
+                if (ArticleFetcher.GetCategories().Count > 0)
+                    return;
+
+                isLoadingWenlaiCategories = true;
+                InitializeWenlaiMenu();
+                await ArticleFetcher.GetCategoriesAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"文来分类加载失败: {ex.Message}");
+            }
+            finally
+            {
+                if (isLoadingWenlaiCategories)
+                {
+                    isLoadingWenlaiCategories = false;
+                    InitializeWenlaiMenu();
+                }
             }
         }
 
@@ -9253,77 +9234,56 @@ public async Task SendArticle()
         /// </summary>
         private void MenuItemWenlaiLogin_Click(object sender, RoutedEventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine(">>> MenuItemWenlaiLogin_Click 开始");
-            System.Diagnostics.Debug.WriteLine("  调用 ShowLoginDialog...");
             wenlaiHelper.ShowLoginDialog(this);
-            System.Diagnostics.Debug.WriteLine("  ShowLoginDialog 返回");
 
             // 重新初始化文来菜单以更新登录状态
-            System.Diagnostics.Debug.WriteLine("  调用 InitializeWenlaiMenu...");
             InitializeWenlaiMenu();
-            System.Diagnostics.Debug.WriteLine("  InitializeWenlaiMenu 完成");
 
             // 如果登录成功，且文来和赛文同域名，赛文也会自动同步登录状态
             // 需要刷新赛文菜单以显示最新状态
-            System.Diagnostics.Debug.WriteLine("  检查是否已登录...");
             if (wenlaiHelper.IsLoggedIn())
             {
-                System.Diagnostics.Debug.WriteLine("  已登录，同步等待难度数据加载...");
                 // 登录成功后，同步等待难度数据加载完成
                 Task.Run(async () =>
                 {
                     await ArticleFetcher.GetDifficultiesAsync();
                 }).GetAwaiter().GetResult();
 
-                System.Diagnostics.Debug.WriteLine("  调用 InitializeRaceMenu...");
                 InitializeRaceMenu();
-                System.Diagnostics.Debug.WriteLine("  InitializeRaceMenu 完成");
 
                 // 通知所有打开的设置窗口刷新文来难度数据
                 NotifyConfigWindowsRefreshWenlai();
             }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine("  未登录，跳过 InitializeRaceMenu");
-            }
-            System.Diagnostics.Debug.WriteLine("<<< MenuItemWenlaiLogin_Click 结束");
         }
 
         /// <summary>
         /// 通知所有打开的设置窗口刷新文来难度数据
         /// </summary>
-        private void NotifyConfigWindowsRefreshWenlai()
+        private void NotifyConfigWindowsRefreshWenlai(string categoryOverride = null, bool forceRefresh = false)
         {
             try
             {
-                // 使用 Task.Run 避免阻塞 UI 线程
-                Task.Run(async () =>
+                _ = Dispatcher.BeginInvoke(new Action(async () =>
                 {
                     foreach (Window window in Application.Current.Windows)
                     {
                         if (window is WinConfig configWindow)
                         {
-                            System.Diagnostics.Debug.WriteLine($"[MainWindow] 通知设置窗口刷新文来数据");
-
-                            // 在窗口的 Dispatcher 上执行
-                            await configWindow.Dispatcher.InvokeAsync(async () =>
+                            try
                             {
-                                try
-                                {
-                                    await configWindow.ReloadWenlaiDifficultyConfig();
-                                }
-                                catch (Exception ex)
-                                {
-                                    System.Diagnostics.Debug.WriteLine($"[MainWindow] 刷新设置窗口文来数据失败: {ex.Message}");
-                                }
-                            }, System.Windows.Threading.DispatcherPriority.Normal);
+                                await configWindow.ReloadWenlaiDifficultyConfig(categoryOverride, forceRefresh);
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"刷新设置窗口文来数据失败: {ex.Message}");
+                            }
                         }
                     }
-                });
+                }), System.Windows.Threading.DispatcherPriority.Normal);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[MainWindow] 通知设置窗口刷新失败: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"通知设置窗口刷新失败: {ex.Message}");
             }
         }
 
@@ -9412,6 +9372,11 @@ public async Task SendArticle()
         }
 
         private void MenuItemWenlaiStatistics_Click(object sender, RoutedEventArgs e)
+        {
+            OpenWenlaiStatisticsWindow();
+        }
+
+        private void OpenWenlaiStatisticsWindow()
         {
             try
             {
@@ -10372,18 +10337,13 @@ public async Task SendArticle()
                     return;
                 }
 
-                // ✅ 关键修复：在载文前加载登录Cookie
+                // 在载文前加载登录Cookie
                 string wenlaiServerUrl = Config.GetString("文来接口地址");
                 var wenlaiAccountManager = new TypeSunny.Net.AccountSystemManager();
                 var wenlaiAccount = wenlaiAccountManager.GetAccount("文来");
                 if (wenlaiAccount != null && !string.IsNullOrWhiteSpace(wenlaiAccount.Cookies))
                 {
-                    System.Diagnostics.Debug.WriteLine($"[载文] 加载文来登录Cookie: {wenlaiAccount.Cookies.Substring(0, Math.Min(50, wenlaiAccount.Cookies.Length))}...");
                     ArticleFetcher.LoadCookiesFromString(wenlaiServerUrl, wenlaiAccount.Cookies);
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine($"[载文] 警告：未找到文来登录Cookie，可能需要先登录");
                 }
 
                 // 在获取文章前先加载难度列表（确保难度名称缓存已加载）
