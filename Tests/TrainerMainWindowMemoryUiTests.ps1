@@ -35,6 +35,7 @@ function Get-Block($text, $startNeedle, $endNeedle) {
 $displayFontSizeKey = -join @([char]0x53D1, [char]0x6587, [char]0x533A, [char]0x5B57, [char]0x4F53, [char]0x5927, [char]0x5C0F)
 $inputFontSizeKey = -join @([char]0x8DDF, [char]0x6253, [char]0x533A, [char]0x5B57, [char]0x4F53, [char]0x5927, [char]0x5C0F)
 $resultsFontSizeKey = -join @([char]0x6210, [char]0x7EE9, [char]0x533A, [char]0x5B57, [char]0x4F53, [char]0x5927, [char]0x5C0F)
+$resultsPanelExpandedKey = -join @([char]0x6210, [char]0x7EE9, [char]0x9762, [char]0x677F, [char]0x5C55, [char]0x5F00)
 
 $loadTextBlock = Get-Block $mainCode 'public void LoadText' 'if (retypeType == RetypeType.wrongRetype)'
 Assert-Contains 'LoadText syncs trainer main-window scope after source assignment' $loadTextBlock 'SyncTrainerMainWindowConfigScope(source);'
@@ -79,12 +80,17 @@ Assert-Contains 'control ctrl wheel writes scoped results font size' $controlWhe
 $applyScopedBlock = Get-Block $mainCode 'private void ApplyScopedMainWindowState()' 'private void ResetSuperCompactLayoutForScopedStateChange()'
 Assert-Contains 'scoped apply clears previous compact layout without persisting old snapshot' $applyScopedBlock 'ResetSuperCompactLayoutForScopedStateChange();'
 Assert-Contains 'scoped apply defers compact layout until scoped results state is restored' $applyScopedBlock 'ApplyHomeToolbarSettings(false);'
+Assert-Contains 'scoped apply resolves target results state before toolbar layout' $applyScopedBlock ('bool shouldExpandResults = ScopedConfigBool("' + $resultsPanelExpandedKey + '");')
+Assert-Contains 'scoped apply syncs target results state before toolbar layout' $applyScopedBlock '_isResultsExpanded = shouldExpandResults;'
 Assert-Contains 'scoped apply uses target normal height when capturing compact snapshot' $applyScopedBlock 'ApplySuperCompactModeLayout(true, true, normalHeight);'
 if ($applyScopedBlock.IndexOf('ResetSuperCompactLayoutForScopedStateChange();') -gt $applyScopedBlock.IndexOf('ApplyHomeToolbarSettings(false);')) {
     throw 'scoped apply must clear old compact layout before applying scoped toolbar settings.'
 }
 if ($applyScopedBlock.IndexOf('ApplyHomeToolbarSettings(false);') -gt $applyScopedBlock.IndexOf('ApplySuperCompactModeLayout(true, true, normalHeight);')) {
     throw 'scoped apply must restore results state before applying target compact layout.'
+}
+if ($applyScopedBlock.IndexOf('_isResultsExpanded = shouldExpandResults;') -gt $applyScopedBlock.IndexOf('ApplyHomeToolbarSettings(false);')) {
+    throw 'scoped apply must sync target results state before refreshing bottom toolbar layout.'
 }
 
 Assert-Contains 'home toolbar can skip compact layout while switching scopes' $homeBlock 'public void ApplyHomeToolbarSettings(bool applySuperCompactMode = true)'

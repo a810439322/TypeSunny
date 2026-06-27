@@ -142,46 +142,6 @@
             </Setter>
         </Style>
 
-        <!-- 标题栏按钮样式 -->
-        <Style x:Key="TitleBarButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{DynamicResource TextForeground}"/>
-            <Setter Property="Width" Value="45"/>
-            <Setter Property="Height" Value="30"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" Background="{TemplateBinding Background}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#50FFFFFF"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- 关闭按钮样式（右上角圆角） -->
-        <Style x:Key="TitleBarCloseButtonStyle" TargetType="Button" BasedOn="{StaticResource TitleBarButtonStyle}">
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="0,4,0,0">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#E81123"/>
-                                <Setter Property="Foreground" Value="White"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
     </Window.Resources>
 
     <Window.InputBindings>
@@ -231,9 +191,9 @@
                             <TextBlock x:Name="TitleBarStats" FontSize="11" Foreground="{DynamicResource TextForeground}" Margin="12,0,0,0" Opacity="0.85"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
-                            <Button x:Name="BtnMinimize" Content="━" ToolTip="最小化" Click="BtnMinimize_Click" Style="{StaticResource TitleBarButtonStyle}"/>
-                            <Button x:Name="BtnMaximize" Content="◻" ToolTip="最大化 / 还原" Click="BtnMaximize_Click" Style="{StaticResource TitleBarButtonStyle}"/>
-                            <Button x:Name="BtnClose" Content="×" ToolTip="关闭（Esc）" Click="BtnClose_Click" Style="{StaticResource TitleBarCloseButtonStyle}"/>
+                            <Button x:Name="BtnMinimize" ToolTip="最小化" Click="BtnMinimize_Click" Style="{StaticResource SunnyTitleBarMinimizeButtonStyle}"/>
+                            <Button x:Name="BtnMaximize" ToolTip="最大化 / 还原" Click="BtnMaximize_Click" Style="{StaticResource SunnyTitleBarMaximizeButtonStyle}"/>
+                            <Button x:Name="BtnClose" ToolTip="关闭（Esc）" Click="BtnClose_Click" Style="{StaticResource SunnyTitleBarCloseIconButtonStyle}"/>
                         </StackPanel>
                     </Grid>
                 </Border>

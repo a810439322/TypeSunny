@@ -2509,15 +2509,16 @@ namespace TypeSunny
             });
             scopeRow.Children.Add(scopeHeader);
 
-            var scopeGrid = new UniformGrid { Rows = 1, Columns = 4 };
+            var scopeGrid = new UniformGrid { Rows = 1, Columns = 5 };
             scopeGrid.SizeChanged += (s, e) =>
             {
                 double w = e.NewSize.Width;
-                if (w >= 480) { scopeGrid.Columns = 4; scopeGrid.Rows = 1; }
-                else if (w >= 240) { scopeGrid.Columns = 2; scopeGrid.Rows = 2; }
-                else { scopeGrid.Columns = 1; scopeGrid.Rows = 4; }
+                if (w >= 600) { scopeGrid.Columns = 5; scopeGrid.Rows = 1; }
+                else if (w >= 360) { scopeGrid.Columns = 3; scopeGrid.Rows = 2; }
+                else if (w >= 240) { scopeGrid.Columns = 2; scopeGrid.Rows = 3; }
+                else { scopeGrid.Columns = 1; scopeGrid.Rows = 5; }
             };
-            string[] scopeNames = { "文来", "本地发文", "练单器", "剪贴板" };
+            string[] scopeNames = { "文来", "本地发文", "练单器", "剪贴板", "群载文" };
             foreach (var name in scopeNames)
             {
                 string configKey = "过滤_生效_" + name;
@@ -4765,7 +4766,6 @@ namespace TypeSunny
                 this.Width = _restoreBounds.Width;
                 this.Height = _restoreBounds.Height;
                 _isCustomMaximized = false;
-                BtnMaximize.Content = "◻";
             }
             else
             {
@@ -4779,8 +4779,8 @@ namespace TypeSunny
                 this.Width = workArea.Width;
                 this.Height = workArea.Height;
                 _isCustomMaximized = true;
-                BtnMaximize.Content = "◰";
             }
+            TitleBarButtonIcons.SetMaximizeButtonState(BtnMaximize, _isCustomMaximized);
         }
 
         // 关闭

@@ -200,6 +200,7 @@
     <Compile Include="Utils\DialogTheming.cs" />
     <Compile Include="Utils\WindowEscapeBehavior.cs" />
     <Compile Include="Net\AccountSystemManager.cs" />
+    <Compile Include="Net\DailyWordsModels.cs" />
     <Compile Include="Net\JBS.cs" />
     <Compile Include="Net\JbsHelper.cs" />
     <Compile Include="Net\JsRaceLoginState.cs" />
@@ -212,6 +213,7 @@
     <Compile Include="Net\RaceServerManager.cs" />
     <Compile Include="Net\Sender.cs" />
     <Compile Include="Net\Util.cs" />
+    <Compile Include="Net\WenlaiDailyWordsService.cs" />
     <Compile Include="Net\Http\ApiResponse.cs" />
     <Compile Include="Net\Http\IAuthProvider.cs" />
     <Compile Include="Net\Http\JwtAuthProvider.cs" />
@@ -222,6 +224,7 @@
     <Compile Include="Diff\PathNode.cs" />
     <Compile Include="Utils\QQHelper.cs" />
     <Compile Include="Core\RetypeCouner.cs" />
+    <Compile Include="Core\RetypeTextBuilder.cs" />
     <Compile Include="Core\Score.cs" />
     <Compile Include="Diff\Snake.cs" />
     <Compile Include="Diff\SplitedDiffRes.cs" />
@@ -247,6 +250,9 @@
     </Compile>
     <Compile Include="UI\WinDetailedWordCountStatistics.xaml.cs">
       <DependentUpon>WinDetailedWordCountStatistics.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="UI\WinDailyWordsLeaderboard.xaml.cs">
+      <DependentUpon>WinDailyWordsLeaderboard.xaml</DependentUpon>
     </Compile>
     <Compile Include="UI\UpdateDialog.xaml.cs">
       <DependentUpon>UpdateDialog.xaml</DependentUpon>
@@ -286,6 +292,9 @@
     </Compile>
     <Compile Include="UI\TrainerMainWindowConfigScope.cs" />
     <Compile Include="UI\HomeToolbarSettings.cs" />
+    <Compile Include="UI\HomeBottomToolbarLayoutPolicy.cs" />
+    <Compile Include="UI\LocalArticleContinuationPolicy.cs" />
+    <Compile Include="UI\TitleBarButtonIcons.cs" />
     <Compile Include="UI\ArticleSendKeyboardPolicy.cs" />
     <Compile Include="UI\ScoreLabelDisplayFormatter.cs" />
     <Compile Include="UI\ScorePanelLayoutPolicy.cs" />
@@ -318,6 +327,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="UI\WinDetailedWordCountStatistics.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="UI\WinDailyWordsLeaderboard.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

@@ -1000,7 +1000,7 @@ namespace TypeSunny.UI
                 Width = restoreBounds.Width;
                 Height = restoreBounds.Height;
                 isCustomMaximized = false;
-                BtnMaximize.Content = "◻";
+                TitleBarButtonIcons.SetMaximizeButtonState(BtnMaximize, isCustomMaximized);
                 return;
             }
 
@@ -1011,7 +1011,7 @@ namespace TypeSunny.UI
             Width = workArea.Width;
             Height = workArea.Height;
             isCustomMaximized = true;
-            BtnMaximize.Content = "◰";
+            TitleBarButtonIcons.SetMaximizeButtonState(BtnMaximize, isCustomMaximized);
         }
 
         private void ResizeBorder_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

@@ -11,6 +11,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using TypeSunny.Logs;
+using TypeSunny.UI;
 using TypeSunny.Utils;
 
 namespace TypeSunny
@@ -226,22 +227,25 @@ namespace TypeSunny
             Grid.SetColumn(btnPanel, 3);
             titleBarGrid.Children.Add(btnPanel);
 
-            btnMinimize = BuildChromeButton("━", false);
+            btnMinimize = new Button { Focusable = false };
+            TitleBarButtonIcons.ApplyMinimizeButtonStyle(btnMinimize);
             btnMinimize.Click += (_, _) => WindowState = WindowState.Minimized;
             btnPanel.Children.Add(btnMinimize);
 
-            btnMaximize = BuildChromeButton("◻", false);
+            btnMaximize = new Button { Focusable = false };
+            TitleBarButtonIcons.SetMaximizeButtonState(btnMaximize, WindowState == WindowState.Maximized);
             btnMaximize.Click += (_, _) =>
             {
                 WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
             };
             btnPanel.Children.Add(btnMaximize);
 
-            btnClose = BuildChromeButton("×", true);
+            btnClose = new Button { Focusable = false };
+            TitleBarButtonIcons.ApplyCloseButtonStyle(btnClose);
             btnClose.Click += (_, _) => Close();
             btnPanel.Children.Add(btnClose);
 
-            StateChanged += (_, _) => btnMaximize.Content = WindowState == WindowState.Maximized ? "◰" : "◻";
+            StateChanged += (_, _) => TitleBarButtonIcons.SetMaximizeButtonState(btnMaximize, WindowState == WindowState.Maximized);
 
             Grid.SetRow(root, 1);
             chromeGrid.Children.Add(root);
@@ -359,47 +363,6 @@ namespace TypeSunny
             _cachedThemedButtonTemplate = (ControlTemplate)System.Windows.Markup.XamlReader.Parse(xaml);
             _cachedThemedButtonTemplate.Seal();
             return _cachedThemedButtonTemplate;
-        }
-
-        private static Button BuildChromeButton(string content, bool isCloseButton)
-        {
-            var btn = new Button
-            {
-                Content = content,
-                Width = 45,
-                Height = 30,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                FontSize = 13,
-                Focusable = false,
-                Cursor = Cursors.Hand
-            };
-
-            // hover 模板
-            var xaml = isCloseButton
-                ? @"<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='Button'>
-                    <Border x:Name='b' Background='{TemplateBinding Background}' CornerRadius='0,5,0,0'>
-                        <ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center' TextBlock.Foreground='{TemplateBinding Foreground}'/>
-                    </Border>
-                    <ControlTemplate.Triggers>
-                        <Trigger Property='IsMouseOver' Value='True'>
-                            <Setter TargetName='b' Property='Background' Value='#E81123'/>
-                            <Setter Property='Foreground' Value='White'/>
-                        </Trigger>
-                    </ControlTemplate.Triggers>
-                </ControlTemplate>"
-                : @"<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='Button'>
-                    <Border x:Name='b' Background='{TemplateBinding Background}'>
-                        <ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center' TextBlock.Foreground='{TemplateBinding Foreground}'/>
-                    </Border>
-                    <ControlTemplate.Triggers>
-                        <Trigger Property='IsMouseOver' Value='True'>
-                            <Setter TargetName='b' Property='Background' Value='#50FFFFFF'/>
-                        </Trigger>
-                    </ControlTemplate.Triggers>
-                </ControlTemplate>";
-            btn.Template = (ControlTemplate)System.Windows.Markup.XamlReader.Parse(xaml);
-            return btn;
         }
 
         private void AddColumns()

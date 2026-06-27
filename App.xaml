@@ -8,6 +8,221 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Resources/ComboBoxStyle.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+
+            <Style x:Key="SunnyTitleBarButtonStyle" TargetType="{x:Type Button}">
+                <Setter Property="Width" Value="45"/>
+                <Setter Property="Height" Value="30"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type Button}">
+                            <Border x:Name="buttonBorder"
+                                    Background="{TemplateBinding Background}"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="buttonBorder" Property="Background" Value="#50FFFFFF"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="buttonBorder" Property="Opacity" Value="0.65"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="SunnyTitleBarCloseButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource SunnyTitleBarButtonStyle}">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type Button}">
+                            <Border x:Name="buttonBorder"
+                                    Background="{TemplateBinding Background}"
+                                    Padding="{TemplateBinding Padding}"
+                                    CornerRadius="0,5,0,0">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="buttonBorder" Property="Background" Value="#E81123"/>
+                                    <Setter Property="Foreground" Value="White"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="buttonBorder" Property="Background" Value="#C50B1D"/>
+                                    <Setter Property="Foreground" Value="White"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="SunnyTitleBarMinimizeButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource SunnyTitleBarButtonStyle}">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type Button}">
+                            <Border x:Name="buttonBorder" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                <Viewbox Width="14" Height="14" Stretch="Uniform">
+                                    <Canvas Width="24" Height="24">
+                                        <Path Data="M5 12h14"
+                                              Stroke="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Foreground}"
+                                              StrokeThickness="2"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"/>
+                                    </Canvas>
+                                </Viewbox>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="buttonBorder" Property="Background" Value="#50FFFFFF"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="buttonBorder" Property="Opacity" Value="0.65"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="SunnyTitleBarMaximizeButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource SunnyTitleBarButtonStyle}">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type Button}">
+                            <Border x:Name="buttonBorder" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                <Viewbox Width="14" Height="14" Stretch="Uniform">
+                                    <Canvas Width="24" Height="24">
+                                        <Path Data="M8 3H5a2 2 0 0 0-2 2v3"
+                                              Stroke="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Foreground}"
+                                              StrokeThickness="2"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              StrokeLineJoin="Round"/>
+                                        <Path Data="M21 8V5a2 2 0 0 0-2-2h-3"
+                                              Stroke="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Foreground}"
+                                              StrokeThickness="2"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              StrokeLineJoin="Round"/>
+                                        <Path Data="M3 16v3a2 2 0 0 0 2 2h3"
+                                              Stroke="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Foreground}"
+                                              StrokeThickness="2"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              StrokeLineJoin="Round"/>
+                                        <Path Data="M16 21h3a2 2 0 0 0 2-2v-3"
+                                              Stroke="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Foreground}"
+                                              StrokeThickness="2"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              StrokeLineJoin="Round"/>
+                                    </Canvas>
+                                </Viewbox>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="buttonBorder" Property="Background" Value="#50FFFFFF"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="buttonBorder" Property="Opacity" Value="0.65"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="SunnyTitleBarRestoreButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource SunnyTitleBarButtonStyle}">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type Button}">
+                            <Border x:Name="buttonBorder" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                <Viewbox Width="14" Height="14" Stretch="Uniform">
+                                    <Canvas Width="24" Height="24">
+                                        <Path Data="M8 3v3a2 2 0 0 1-2 2H3"
+                                              Stroke="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Foreground}"
+                                              StrokeThickness="2"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              StrokeLineJoin="Round"/>
+                                        <Path Data="M21 8h-3a2 2 0 0 1-2-2V3"
+                                              Stroke="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Foreground}"
+                                              StrokeThickness="2"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              StrokeLineJoin="Round"/>
+                                        <Path Data="M3 16h3a2 2 0 0 1 2 2v3"
+                                              Stroke="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Foreground}"
+                                              StrokeThickness="2"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              StrokeLineJoin="Round"/>
+                                        <Path Data="M16 21v-3a2 2 0 0 1 2-2h3"
+                                              Stroke="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Foreground}"
+                                              StrokeThickness="2"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              StrokeLineJoin="Round"/>
+                                    </Canvas>
+                                </Viewbox>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="buttonBorder" Property="Background" Value="#50FFFFFF"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="buttonBorder" Property="Opacity" Value="0.65"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="SunnyTitleBarCloseIconButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource SunnyTitleBarCloseButtonStyle}">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type Button}">
+                            <Border x:Name="buttonBorder"
+                                    Background="{TemplateBinding Background}"
+                                    Padding="{TemplateBinding Padding}"
+                                    CornerRadius="0,5,0,0">
+                                <Viewbox Width="14" Height="14" Stretch="Uniform">
+                                    <Canvas Width="24" Height="24">
+                                        <Path Data="M18 6 6 18"
+                                              Stroke="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Foreground}"
+                                              StrokeThickness="2"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"/>
+                                        <Path Data="M6 6 18 18"
+                                              Stroke="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Foreground}"
+                                              StrokeThickness="2"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"/>
+                                    </Canvas>
+                                </Viewbox>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="buttonBorder" Property="Background" Value="#E81123"/>
+                                    <Setter Property="Foreground" Value="White"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="buttonBorder" Property="Background" Value="#C50B1D"/>
+                                    <Setter Property="Foreground" Value="White"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

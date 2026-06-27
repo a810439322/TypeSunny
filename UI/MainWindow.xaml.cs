@@ -29,6 +29,7 @@ using System.Reflection;
 using Interop.UIAutomationClient;
 
 using Net;
+using TypeSunny.Net;
 using Colors = TypeSunny.Utils.Colors;
 using CorePage = TypeSunny.Core.Page;
 using TypeSunny.Core;
@@ -69,15 +70,49 @@ namespace TypeSunny.UI
         internal TracingMode _tracingMode;
         private readonly PendingRetypeRequest _pendingRetypeRequest = new PendingRetypeRequest();
         private readonly ArticleContinuationState _articleContinuationState = new ArticleContinuationState();
+        private bool _isLocalArticleContinuationInProgress;
+        private int _lastLocalArticleContinuationTargetParagraph;
+        private bool _lastLocalArticleContinuationNext;
+        private DateTime _lastLocalArticleContinuationAtUtc = DateTime.MinValue;
         private readonly DetailedWordCountContextBuilder _wordCountContextBuilder;
         private TypingWordCountContext currentWordCountContext;
         private readonly TrainerTypedWordCounter trainerTypedWordCounter = new TrainerTypedWordCounter();
+        private readonly DailyWordsTypedStatisticsAccumulator dailyWordsTypedStatistics = new DailyWordsTypedStatisticsAccumulator();
+        private readonly IDailyWordsService dailyWordsService = new WenlaiDailyWordsService();
+        private readonly object dailyWordsQueueLock = new object();
+        private Task dailyWordsQueue = Task.CompletedTask;
+        private const string DailyWordsPendingDateKey = "字数榜待上传日期";
+        private const string DailyWordsPendingCountKey = "字数榜待上传字数";
+        private const string DailyWordsPendingSingleCountKey = "字数榜待上传单字字数";
+        private const string DailyWordsPendingArticleCountKey = "字数榜待上传打文字数";
+        private const string DailyWordsPendingArticleAvgSpeedKey = "字数榜待上传打文均速";
+        private const string DailyWordsPendingSingleAvgKeystrokeKey = "字数榜待上传打单均击";
+        private string dailyWordsRankBadgeText = "未登录";
         private int pendingTrainerTitleWords;
         private bool _stopTypingPending;
         private readonly Dictionary<string, FrameworkElement> _homeFeatureControls = new Dictionary<string, FrameworkElement>();
         private static readonly Thickness TopButtonGroupMargin = new Thickness(15, 7, 5, 5);
+        private static readonly Thickness BottomToolbarNormalMargin = new Thickness(15, 5, 15, 0);
+        private static readonly Thickness BottomToolbarCompactMargin = new Thickness(15, 0, 15, 0);
+        private static readonly Thickness ResultsToggleNormalMargin = new Thickness(0);
+        private static readonly Thickness ResultsToggleCompactMargin = new Thickness(0);
+        private static readonly Thickness CompactResultsToggleMargin = new Thickness(0, 0, 15, 0);
+        private static readonly Thickness ResultsToggleNormalPadding = new Thickness(8, 2, 8, 2);
+        private static readonly Thickness ResultsToggleCompactPadding = new Thickness(0);
+        private const double ResultsToggleNormalWidth = 36;
+        private const double ResultsToggleNormalFontSize = 12;
+        private const double ResultsToggleNormalIconViewportSize = 24;
+        private const double ResultsToggleCompactHeight = 15;
+        private const double ResultsToggleCompactIconViewportSize = 15;
+        internal const string ResultsToggleChevronUpGeometry = "M18 15 L12 9 L6 15";
+        internal const string ResultsToggleChevronDownGeometry = "M6 9 L12 15 L18 9";
+        internal const string ResultsToggleCompactChevronUpGeometry = "M11.25 9.375 L7.5 5.625 L3.75 9.375";
+        internal const string ResultsToggleCompactChevronDownGeometry = "M3.75 5.625 L7.5 9.375 L11.25 5.625";
         private const double TopBarExpandedMinHeight = 40;
         private const double TopBarCompactMinHeight = 20;
+        private const double CompactCollapsedBottomToolbarHeight = 15;
+        private const double DefaultNormalBottomToolbarHeight = 31;
+        private const int LocalArticleContinuationSuppressMilliseconds = 700;
         private const double NormalCollapsedBottomBorderHeight = 10;
         private const string SuperCompactModeConfigKey = "一键极简";
         private const string ContinuationShortcutHint = "（Ctrl+O上一段 / Ctrl+P下一段）";
@@ -85,6 +120,8 @@ namespace TypeSunny.UI
         private const double MouseCursorRevealMovementThreshold = 2.0;
         private bool _isSuperCompactLayoutApplied;
         private SuperCompactLayoutSnapshot _superCompactLayoutSnapshot;
+        private bool? _lastTopBarHasVisibleButtons;
+        private double _lastNormalBottomToolbarHeight = DefaultNormalBottomToolbarHeight;
         private int _suppressWindowSizeChangeUpdatesDepth;
         private int _resultsLayoutVersion;
         private DispatcherTimer _resultsRelayoutTimer;
@@ -102,6 +139,24 @@ namespace TypeSunny.UI
         private static bool ScopedConfigBool(string key)
         {
             return TrainerMainWindowConfigScope.GetBool(key);
+        }
+
+        private static bool ShouldHideStartupUntilDeferredLayoutApplied()
+        {
+            return ScopedConfigBool(SuperCompactModeConfigKey) ||
+                   Config.GetBool("字帖模式") ||
+                   Config.GetBool("临摹模式");
+        }
+
+        private void RevealStartupAfterDeferredLayout()
+        {
+            if (this.Opacity >= 1)
+                return;
+
+            this.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                this.Opacity = 1;
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         private static double ScopedConfigDouble(string key)
@@ -206,17 +261,17 @@ namespace TypeSunny.UI
             }
 
             ApplyDisplayInputRatio();
+            bool shouldExpandResults = ScopedConfigBool("成绩面板展开");
+            _isResultsExpanded = shouldExpandResults;
             ApplyHomeToolbarSettings(false);
 
-            if (ScopedConfigBool("成绩面板展开"))
+            if (shouldExpandResults)
             {
-                _isResultsExpanded = true;
                 ExpandResultsPanelLayout(false);
             }
             else
             {
-                _isResultsExpanded = false;
-                CollapseResultsPanelLayout(false, false, NormalCollapsedBottomBorderHeight);
+                CollapseResultsPanelLayout(false, false, GetCollapsedResultsBottomBorderHeightForCurrentBottomToolbar());
             }
 
             if (ScopedConfigBool(SuperCompactModeConfigKey))
@@ -245,7 +300,6 @@ namespace TypeSunny.UI
             if (!_isSuperCompactLayoutApplied)
                 return;
 
-            RestoreSuperCompactBottomButtonRow();
             if (typingAreaAndButtonsGrid != null)
                 typingAreaAndButtonsGrid.Margin = new Thickness(0);
 
@@ -253,6 +307,7 @@ namespace TypeSunny.UI
             buttonArea1.ClearValue(RowDefinition.MinHeightProperty);
             _isSuperCompactLayoutApplied = false;
             _superCompactLayoutSnapshot = null;
+            RestoreSuperCompactBottomButtonRow();
             ApplyTopBarLayout();
         }
 
@@ -2198,9 +2253,9 @@ namespace TypeSunny.UI
                 () => raceHelperV2?.GetServerManager());
             InitializeComponent();
 
-            // 一键极简模式下：先透明，等 Window_Loaded 里布局套用完再恢复。
+            // 会重排主布局的启动模式先透明，等 Window_Loaded 里布局套用完再恢复。
             // 必须放在 ctor 同步早期（InitializeComponent 之后，任何 Show 发生之前）。
-            if (ScopedConfigBool(SuperCompactModeConfigKey))
+            if (ShouldHideStartupUntilDeferredLayoutApplied())
             {
                 this.Opacity = 0;
             }
@@ -2260,15 +2315,6 @@ namespace TypeSunny.UI
 
                     ApplyHomeToolbarSettings();
 
-                    // 一键极简模式下启动时窗口先透明，布局套用完成后恢复显示，避免闪"普通模式"
-                    if (this.Opacity < 1)
-                    {
-                        this.Dispatcher.BeginInvoke(new Action(() =>
-                        {
-                            this.Opacity = 1;
-                        }), System.Windows.Threading.DispatcherPriority.Loaded);
-                    }
-
                     // 菜单创建完成后，更新Helper中的菜单项引用
                     if (jbsHelper != null)
                     {
@@ -2314,6 +2360,10 @@ namespace TypeSunny.UI
                 {
                     System.Diagnostics.Debug.WriteLine($"延迟初始化菜单失败: {ex.Message}");
                     System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                }
+                finally
+                {
+                    RevealStartupAfterDeferredLayout();
                 }
             };
 
@@ -2593,7 +2643,7 @@ namespace TypeSunny.UI
                     // 成绩区高度已在ApplyDisplayInputRatio中设置
                     resultsTextBoxGrid.Visibility = Visibility.Visible;
                     gridSplitterResults.Visibility = Visibility.Visible;
-                    BtnToggleResults.Content = "▼";
+                    SetResultsToggleChevron(isResultsExpanded: true);
 
                     // 启用所有 GridSplitter
                     gridSplitterArticleTyping.IsEnabled = true;
@@ -2615,13 +2665,14 @@ namespace TypeSunny.UI
                     resultsTextBoxGrid.Visibility = Visibility.Collapsed;
                     gridSplitterResults.Visibility = Visibility.Collapsed;
                     gridSplitterResults.IsEnabled = false;
-                    BtnToggleResults.Content = "▲";
+                    SetResultsToggleChevron(isResultsExpanded: false);
 
                     var bottomBorder = this.FindName("bottomBorder") as Border;
                     if (bottomBorder != null)
                     {
-                        grid_a.RowDefinitions[7].Height = new GridLength(10, GridUnitType.Pixel);
-                        bottomBorder.Visibility = Visibility.Visible;
+                        double collapsedBottomBorderHeight = GetCollapsedResultsBottomBorderHeightForCurrentBottomToolbar();
+                        grid_a.RowDefinitions[7].Height = new GridLength(collapsedBottomBorderHeight, GridUnitType.Pixel);
+                        bottomBorder.Visibility = collapsedBottomBorderHeight > 0 ? Visibility.Visible : Visibility.Collapsed;
                     }
 
                     double expandedH = ScopedConfigDouble("展开窗口高度");
@@ -2695,6 +2746,10 @@ namespace TypeSunny.UI
             BtnF3.IsEnabled = !Config.GetBool("禁止F3重打");
             ApplyHomeToolbarSettings();
 
+            // 启动时检查字帖/临摹模式（此时可能还没有文章，Enable 会先隐藏跟打区）。
+            // 必须早于 ConfigLoaded=true，避免首帧先显示普通跟打区再闪到模式布局。
+            ApplyConfiguredCopybookOrTracingMode();
+
             IntStringDict.Load();
 
             StateManager.ConfigLoaded = true;
@@ -2718,8 +2773,6 @@ namespace TypeSunny.UI
                 }
             }), System.Windows.Threading.DispatcherPriority.Loaded);
 
-            // 启动时检查字帖/临摹模式（此时可能还没有文章，Enable 会先隐藏跟打区）
-            ApplyConfiguredCopybookOrTracingMode();
         }
 
         private void ReadBlindType()
@@ -2810,7 +2863,7 @@ namespace TypeSunny.UI
                     // 成绩区高度已在ApplyDisplayInputRatio中设置
                     resultsTextBoxGrid.Visibility = Visibility.Visible;
                     gridSplitterResults.Visibility = Visibility.Visible;
-                    BtnToggleResults.Content = "▼";
+                    SetResultsToggleChevron(isResultsExpanded: true);
 
                     // 启用所有 GridSplitter
                     gridSplitterArticleTyping.IsEnabled = true;
@@ -2845,7 +2898,7 @@ namespace TypeSunny.UI
                         grid_a.RowDefinitions[5].MinHeight = 0;
                         resultsTextBoxGrid.Visibility = Visibility.Collapsed;
                         gridSplitterResults.Visibility = Visibility.Collapsed;
-                        BtnToggleResults.Content = "▲";
+                        SetResultsToggleChevron(isResultsExpanded: false);
 
                         double currentWindowHeight = this.ActualHeight;
                         double gridSplitterHeight = 5;
@@ -2887,7 +2940,7 @@ namespace TypeSunny.UI
                         // 已经是收起状态，只确保 UI 状态一致
                         resultsTextBoxGrid.Visibility = Visibility.Collapsed;
                         gridSplitterResults.Visibility = Visibility.Collapsed;
-                        BtnToggleResults.Content = "▲";
+                        SetResultsToggleChevron(isResultsExpanded: false);
                     }
                 }
             }
@@ -3247,7 +3300,7 @@ namespace TypeSunny.UI
 
         public void ApplyHomeToolbarSettings(bool applySuperCompactMode = true)
         {
-            if (stack1 == null || resultsButtonPanel == null)
+            if (stack1 == null || resultsButtonPanel == null || FeatureToolbarPanel == null)
                 return;
 
             var isSuperCompact = TrainerMainWindowConfigScope.GetBool(SuperCompactModeConfigKey);
@@ -3275,8 +3328,8 @@ namespace TypeSunny.UI
 
             foreach (var control in _homeFeatureControls.Values)
             {
-                if (resultsButtonPanel.Children.Contains(control))
-                    resultsButtonPanel.Children.Remove(control);
+                if (FeatureToolbarPanel.Children.Contains(control))
+                    FeatureToolbarPanel.Children.Remove(control);
             }
 
             var visibility = HomeToolbarSettings.FeatureEntries.ToDictionary(
@@ -3295,7 +3348,7 @@ namespace TypeSunny.UI
 
                 control.Visibility = Visibility.Visible;
                 DockPanel.SetDock(control, Dock.Left);
-                resultsButtonPanel.Children.Insert(insertIndex, control);
+                FeatureToolbarPanel.Children.Insert(insertIndex, control);
                 insertIndex++;
             }
 
@@ -3320,11 +3373,29 @@ namespace TypeSunny.UI
                         normalizedFeatureOrder);
                 }
             }
+            ApplyHomeFeatureButtonMargins(orderedEntries);
             ApplyTopBarButtonCornerRadius();
             ApplyTopBarLayout();
+            if (!isSuperCompact || !applySuperCompactMode)
+                ApplyHomeBottomLayout("toolbar settings", adjustWindowHeight: true);
             if (isSuperCompact && applySuperCompactMode)
                 ApplySuperCompactModeLayout(true, true);
             UpdateMainContextMenuVisibility();
+        }
+
+        private void ApplyHomeFeatureButtonMargins(IList<HomeToolbarEntry> orderedEntries)
+        {
+            for (int i = 0; i < orderedEntries.Count; i++)
+            {
+                FrameworkElement control;
+                if (!_homeFeatureControls.TryGetValue(orderedEntries[i].Key, out control))
+                    continue;
+
+                if (i == 0)
+                    control.Margin = new Thickness(0, 0, 2, 0);
+                else
+                    control.Margin = new Thickness(5, 0, 2, 0);
+            }
         }
 
         private void BeginSuppressWindowSizeChangeUpdates()
@@ -3372,6 +3443,7 @@ namespace TypeSunny.UI
 
         private void ApplyTopBarLayout()
         {
+            bool? previousTopBarHasVisibleButtons = _lastTopBarHasVisibleButtons;
             var hasVisibleTopButtons = new[]
             {
                 BtnConfig,
@@ -3385,6 +3457,407 @@ namespace TypeSunny.UI
             stack1.Margin = hasVisibleTopButtons ? TopButtonGroupMargin : new Thickness(0);
             buttonArea1.Height = GridLength.Auto;
             buttonArea1.MinHeight = hasVisibleTopButtons ? TopBarExpandedMinHeight : TopBarCompactMinHeight;
+            _lastTopBarHasVisibleButtons = hasVisibleTopButtons;
+            ApplyTopBarHeightAdjustmentIfNeeded(previousTopBarHasVisibleButtons, hasVisibleTopButtons);
+        }
+
+        private void ApplyTopBarHeightAdjustmentIfNeeded(
+            bool? previousTopBarHasVisibleButtons,
+            bool hasVisibleTopButtons)
+        {
+            if (!previousTopBarHasVisibleButtons.HasValue ||
+                previousTopBarHasVisibleButtons.Value == hasVisibleTopButtons)
+                return;
+            if (_isSuperCompactLayoutApplied ||
+                _suppressWindowSizeChangeUpdatesDepth > 0 ||
+                TrainerMainWindowConfigScope.GetBool(SuperCompactModeConfigKey))
+                return;
+
+            double previousTopBarHeight = previousTopBarHasVisibleButtons.Value
+                ? TopBarExpandedMinHeight
+                : TopBarCompactMinHeight;
+            double currentTopBarHeight = hasVisibleTopButtons
+                ? TopBarExpandedMinHeight
+                : TopBarCompactMinHeight;
+            double heightDelta = currentTopBarHeight - previousTopBarHeight;
+            if (Math.Abs(heightDelta) > 0.5)
+                this.Height += heightDelta;
+        }
+
+        private void ApplyHomeBottomLayout(
+            string reason,
+            bool adjustWindowHeight,
+            bool allowHeightAdjustmentDuringInternalLayout = false)
+        {
+            if (resultsButtonPanel == null)
+                return;
+
+            double previousToolbarHeight = GetCurrentHomeBottomLayoutActualFooterHeight();
+            bool isSuperCompact = IsSuperCompactBottomLayoutActive();
+            int visibleFeatureButtonCount = GetVisibleBottomFeatureButtonCount();
+            bool hasVisibleLocalArticleModule = HasVisibleBottomCommandButtons();
+            var layoutMode = GetCurrentHomeBottomLayoutMode(
+                isSuperCompact,
+                visibleFeatureButtonCount,
+                hasVisibleLocalArticleModule);
+            double normalToolbarHeight = layoutMode == HomeBottomToolbarLayoutMode.Normal
+                ? MeasureNormalBottomToolbarHeight()
+                : _lastNormalBottomToolbarHeight;
+            var plan = CreateCurrentHomeBottomLayoutPlan(
+                normalToolbarHeight,
+                isSuperCompact,
+                visibleFeatureButtonCount,
+                hasVisibleLocalArticleModule);
+
+            if (plan.Mode == HomeBottomToolbarLayoutMode.SuperCompact)
+                ApplySuperCompactBottomToolbarLayout(plan);
+            else if (plan.Mode == HomeBottomToolbarLayoutMode.Compact)
+                ApplyCompactBottomToolbarLayout(plan);
+            else
+                RestoreNormalBottomToolbarLayout(plan);
+
+            if (adjustWindowHeight)
+                ApplyBottomToolbarHeightAdjustmentIfNeeded(
+                    previousToolbarHeight,
+                    GetPlannedHomeBottomLayoutFooterHeight(plan),
+                    allowHeightAdjustmentDuringInternalLayout);
+        }
+
+        private HomeBottomToolbarLayoutPlan CreateCurrentHomeBottomLayoutPlan(
+            double normalToolbarHeight,
+            bool isSuperCompact,
+            int visibleFeatureButtonCount,
+            bool hasVisibleLocalArticleModule)
+        {
+            return CreateHomeBottomLayoutPlan(
+                _isResultsExpanded,
+                normalToolbarHeight,
+                isSuperCompact,
+                visibleFeatureButtonCount,
+                hasVisibleLocalArticleModule);
+        }
+
+        private static HomeBottomToolbarLayoutMode GetCurrentHomeBottomLayoutMode(
+            bool isSuperCompact,
+            int visibleFeatureButtonCount,
+            bool hasVisibleLocalArticleModule)
+        {
+            if (isSuperCompact)
+                return HomeBottomToolbarLayoutMode.SuperCompact;
+
+            return HomeBottomToolbarLayoutPolicy.GetLayoutMode(
+                visibleFeatureButtonCount,
+                hasVisibleLocalArticleModule);
+        }
+
+        private HomeBottomToolbarLayoutPlan CreateHomeBottomLayoutPlan(
+            bool isResultsExpanded,
+            double normalToolbarHeight)
+        {
+            return CreateHomeBottomLayoutPlan(
+                isResultsExpanded,
+                normalToolbarHeight,
+                IsSuperCompactBottomLayoutActive(),
+                GetVisibleBottomFeatureButtonCount(),
+                HasVisibleBottomCommandButtons());
+        }
+
+        private static HomeBottomToolbarLayoutPlan CreateHomeBottomLayoutPlan(
+            bool isResultsExpanded,
+            double normalToolbarHeight,
+            bool isSuperCompact,
+            int visibleFeatureButtonCount,
+            bool hasVisibleLocalArticleModule)
+        {
+            return HomeBottomToolbarLayoutPolicy.CreatePlan(
+                isSuperCompact: isSuperCompact,
+                isResultsExpanded: isResultsExpanded,
+                visibleFeatureButtonCount: visibleFeatureButtonCount,
+                hasVisibleLocalArticleModule: hasVisibleLocalArticleModule,
+                normalToolbarHeight: normalToolbarHeight,
+                compactCollapsedToolbarHeight: CompactCollapsedBottomToolbarHeight,
+                normalCollapsedBottomBorderHeight: NormalCollapsedBottomBorderHeight);
+        }
+
+        private bool IsSuperCompactBottomLayoutActive()
+        {
+            return _isSuperCompactLayoutApplied &&
+                   TrainerMainWindowConfigScope.GetBool(SuperCompactModeConfigKey);
+        }
+
+        private double MeasureNormalBottomToolbarHeight()
+        {
+            RestoreResultsToggleToBottomToolbar();
+
+            if (typingAreaAndButtonsGrid != null && typingAreaAndButtonsGrid.RowDefinitions.Count > 1)
+            {
+                var bottomButtonRow = typingAreaAndButtonsGrid.RowDefinitions[1];
+                bottomButtonRow.ClearValue(RowDefinition.MinHeightProperty);
+                bottomButtonRow.Height = GridLength.Auto;
+            }
+
+            resultsButtonPanel.Visibility = Visibility.Visible;
+            resultsButtonPanel.Margin = BottomToolbarNormalMargin;
+            resultsButtonPanel.ClearValue(FrameworkElement.MinHeightProperty);
+            resultsButtonPanel.ClearValue(FrameworkElement.HeightProperty);
+            resultsButtonPanel.ClipToBounds = false;
+
+            BtnToggleResults.Visibility = Visibility.Visible;
+            BtnToggleResults.Width = ResultsToggleNormalWidth;
+            BtnToggleResults.ClearValue(FrameworkElement.HeightProperty);
+            BtnToggleResults.Margin = ResultsToggleNormalMargin;
+            BtnToggleResults.Padding = ResultsToggleNormalPadding;
+            BtnToggleResults.FontSize = ResultsToggleNormalFontSize;
+            ResultsToggleChevronViewport.Width = ResultsToggleNormalIconViewportSize;
+            ResultsToggleChevronViewport.Height = ResultsToggleNormalIconViewportSize;
+            SetResultsToggleChevron(_isResultsExpanded);
+
+            resultsButtonPanel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double measuredHeight = resultsButtonPanel.DesiredSize.Height;
+            if (measuredHeight <= 0)
+                measuredHeight = _lastNormalBottomToolbarHeight > 0
+                    ? _lastNormalBottomToolbarHeight
+                    : DefaultNormalBottomToolbarHeight;
+
+            measuredHeight = Math.Max(DefaultNormalBottomToolbarHeight, measuredHeight);
+            _lastNormalBottomToolbarHeight = measuredHeight;
+            return measuredHeight;
+        }
+
+        private double GetCurrentBottomToolbarActualReservedHeight()
+        {
+            if (typingAreaAndButtonsGrid != null && typingAreaAndButtonsGrid.RowDefinitions.Count > 1)
+            {
+                var bottomButtonRow = typingAreaAndButtonsGrid.RowDefinitions[1];
+                if (bottomButtonRow.Height.GridUnitType == GridUnitType.Pixel)
+                    return bottomButtonRow.Height.Value;
+                if (bottomButtonRow.ActualHeight > 0.5)
+                    return bottomButtonRow.ActualHeight;
+            }
+
+            return resultsButtonPanel != null && resultsButtonPanel.ActualHeight > 0.5
+                ? resultsButtonPanel.ActualHeight
+                : _lastNormalBottomToolbarHeight;
+        }
+
+        private double GetCurrentHomeBottomLayoutActualFooterHeight()
+        {
+            return GetCurrentBottomToolbarActualReservedHeight() + GetCurrentCollapsedBottomBorderActualHeight();
+        }
+
+        private double GetCurrentCollapsedBottomBorderActualHeight()
+        {
+            var mainGrid = this.FindName("grid_a") as Grid;
+            if (mainGrid == null || mainGrid.RowDefinitions.Count <= 7)
+                return 0;
+
+            var bottomBorderRow = mainGrid.RowDefinitions[7];
+            if (bottomBorderRow.Height.GridUnitType == GridUnitType.Pixel)
+                return bottomBorderRow.Height.Value;
+            return bottomBorderRow.ActualHeight > 0.5 ? bottomBorderRow.ActualHeight : 0;
+        }
+
+        private static double GetPlannedHomeBottomLayoutFooterHeight(HomeBottomToolbarLayoutPlan plan)
+        {
+            return plan.ToolbarReservedHeight + plan.CollapsedBottomBorderHeight;
+        }
+
+        private void ApplyBottomToolbarHeightAdjustmentIfNeeded(
+            double previousToolbarHeight,
+            double currentToolbarHeight,
+            bool allowDuringInternalLayout = false)
+        {
+            if (!allowDuringInternalLayout &&
+                (_isSuperCompactLayoutApplied ||
+                 _suppressWindowSizeChangeUpdatesDepth > 0 ||
+                 TrainerMainWindowConfigScope.GetBool(SuperCompactModeConfigKey)))
+                return;
+
+            double heightDelta = currentToolbarHeight - previousToolbarHeight;
+            if (Math.Abs(heightDelta) > 0.5)
+                this.Height += heightDelta;
+        }
+
+        private int GetVisibleBottomFeatureButtonCount()
+        {
+            if (FeatureToolbarPanel == null)
+                return 0;
+
+            return FeatureToolbarPanel.Children.OfType<UIElement>()
+                .Count(control => control.Visibility == Visibility.Visible);
+        }
+
+        private bool HasVisibleBottomCommandButtons()
+        {
+            return TrainerMainWindowConfigScope.GetBool(HomeToolbarSettings.ShowLocalArticleConfigKey);
+        }
+
+        private double GetCollapsedResultsBottomBorderHeightForCurrentBottomToolbar()
+        {
+            return CreateHomeBottomLayoutPlan(
+                isResultsExpanded: false,
+                normalToolbarHeight: _lastNormalBottomToolbarHeight).CollapsedBottomBorderHeight;
+        }
+
+        private double GetCollapsedResultsWindowFooterHeightForCurrentBottomToolbar()
+        {
+            return CreateHomeBottomLayoutPlan(
+                isResultsExpanded: false,
+                normalToolbarHeight: _lastNormalBottomToolbarHeight).CollapsedWindowFooterHeight;
+        }
+
+        private void ApplyBottomToolbarReservedHeight(double reservedHeight, bool clipToBounds)
+        {
+            if (typingAreaAndButtonsGrid != null && typingAreaAndButtonsGrid.RowDefinitions.Count > 1)
+            {
+                var bottomButtonRow = typingAreaAndButtonsGrid.RowDefinitions[1];
+                bottomButtonRow.MinHeight = reservedHeight;
+                bottomButtonRow.Height = new GridLength(reservedHeight, GridUnitType.Pixel);
+            }
+
+            if (resultsButtonPanel != null)
+            {
+                resultsButtonPanel.MinHeight = reservedHeight;
+                resultsButtonPanel.Height = reservedHeight;
+                resultsButtonPanel.ClipToBounds = clipToBounds;
+            }
+        }
+
+        private void ApplyCollapsedResultsBottomBorderHeight(double height)
+        {
+            var mainGrid = this.FindName("grid_a") as Grid;
+            var bottomBorder = this.FindName("bottomBorder") as Border;
+            if (mainGrid == null || mainGrid.RowDefinitions.Count <= 7 || bottomBorder == null)
+                return;
+
+            mainGrid.RowDefinitions[7].Height = new GridLength(height, GridUnitType.Pixel);
+            bottomBorder.Visibility = height > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void MoveResultsToggleToCompactHost()
+        {
+            if (CompactResultsToggleHost == null || BtnToggleResults == null)
+                return;
+
+            Grid.SetColumn(BtnToggleResults, 0);
+
+            if (resultsButtonPanel.Children.Contains(BtnToggleResults))
+                resultsButtonPanel.Children.Remove(BtnToggleResults);
+
+            if (!CompactResultsToggleHost.Children.Contains(BtnToggleResults))
+                CompactResultsToggleHost.Children.Add(BtnToggleResults);
+
+            CompactResultsToggleHost.Visibility = Visibility.Visible;
+        }
+
+        private void RestoreResultsToggleToBottomToolbar()
+        {
+            if (BtnToggleResults == null || resultsButtonPanel == null)
+                return;
+
+            if (CompactResultsToggleHost != null)
+            {
+                if (CompactResultsToggleHost.Children.Contains(BtnToggleResults))
+                    CompactResultsToggleHost.Children.Remove(BtnToggleResults);
+
+                CompactResultsToggleHost.Visibility = Visibility.Collapsed;
+            }
+
+            if (!resultsButtonPanel.Children.Contains(BtnToggleResults))
+                resultsButtonPanel.Children.Add(BtnToggleResults);
+
+            Grid.SetColumn(BtnToggleResults, 3);
+        }
+
+        private void ApplyCompactBottomToolbarLayout(HomeBottomToolbarLayoutPlan plan)
+        {
+            if (plan.UseCompactToggleHost)
+                MoveResultsToggleToCompactHost();
+            else
+                RestoreResultsToggleToBottomToolbar();
+            ApplyCollapsedResultsBottomBorderHeight(plan.CollapsedBottomBorderHeight);
+            if (CompactResultsToggleHost != null)
+            {
+                CompactResultsToggleHost.Margin = CompactResultsToggleMargin;
+                CompactResultsToggleHost.Visibility = Visibility.Visible;
+            }
+
+            resultsButtonPanel.Visibility = Visibility.Collapsed;
+            resultsButtonPanel.Margin = BottomToolbarCompactMargin;
+            ApplyBottomToolbarReservedHeight(plan.ToolbarReservedHeight, true);
+
+            BtnToggleResults.Visibility = Visibility.Visible;
+            BtnToggleResults.Width = ResultsToggleCompactHeight;
+            BtnToggleResults.Height = ResultsToggleCompactHeight;
+            BtnToggleResults.Margin = ResultsToggleCompactMargin;
+            BtnToggleResults.Padding = ResultsToggleCompactPadding;
+            BtnToggleResults.FontSize = ResultsToggleNormalFontSize;
+            ResultsToggleChevronViewport.Width = ResultsToggleCompactIconViewportSize;
+            ResultsToggleChevronViewport.Height = ResultsToggleCompactIconViewportSize;
+            SetResultsToggleChevron(_isResultsExpanded);
+        }
+
+        private void RestoreNormalBottomToolbarLayout(HomeBottomToolbarLayoutPlan plan)
+        {
+            if (plan.UseCompactToggleHost)
+                MoveResultsToggleToCompactHost();
+            else
+                RestoreResultsToggleToBottomToolbar();
+            ApplyCollapsedResultsBottomBorderHeight(plan.CollapsedBottomBorderHeight);
+            if (CompactResultsToggleHost != null)
+            {
+                CompactResultsToggleHost.Margin = CompactResultsToggleMargin;
+            }
+
+            if (typingAreaAndButtonsGrid != null && typingAreaAndButtonsGrid.RowDefinitions.Count > 1)
+            {
+                typingAreaAndButtonsGrid.Margin = new Thickness(0);
+            }
+
+            resultsButtonPanel.Visibility = Visibility.Visible;
+            resultsButtonPanel.Margin = BottomToolbarNormalMargin;
+            ApplyBottomToolbarReservedHeight(plan.ToolbarReservedHeight, false);
+
+            BtnToggleResults.Visibility = Visibility.Visible;
+            BtnToggleResults.Width = ResultsToggleNormalWidth;
+            BtnToggleResults.ClearValue(FrameworkElement.HeightProperty);
+            BtnToggleResults.Margin = ResultsToggleNormalMargin;
+            BtnToggleResults.Padding = ResultsToggleNormalPadding;
+            BtnToggleResults.FontSize = ResultsToggleNormalFontSize;
+            ResultsToggleChevronViewport.Width = ResultsToggleNormalIconViewportSize;
+            ResultsToggleChevronViewport.Height = ResultsToggleNormalIconViewportSize;
+            SetResultsToggleChevron(_isResultsExpanded);
+        }
+
+        private void ApplySuperCompactBottomToolbarLayout(HomeBottomToolbarLayoutPlan plan)
+        {
+            if (plan.UseCompactToggleHost)
+                MoveResultsToggleToCompactHost();
+            else
+                RestoreResultsToggleToBottomToolbar();
+            ApplyCollapsedResultsBottomBorderHeight(plan.CollapsedBottomBorderHeight);
+
+            if (typingAreaAndButtonsGrid != null && typingAreaAndButtonsGrid.RowDefinitions.Count > 1)
+                ApplyBottomToolbarReservedHeight(plan.ToolbarReservedHeight, true);
+
+            if (CompactResultsToggleHost != null)
+            {
+                CompactResultsToggleHost.Margin = CompactResultsToggleMargin;
+                CompactResultsToggleHost.Visibility = Visibility.Visible;
+            }
+
+            resultsButtonPanel.Margin = new Thickness(0);
+            resultsButtonPanel.Visibility = plan.IsToolbarPanelVisible ? Visibility.Visible : Visibility.Collapsed;
+
+            BtnToggleResults.Visibility = Visibility.Visible;
+            BtnToggleResults.Width = ResultsToggleCompactHeight;
+            BtnToggleResults.Height = ResultsToggleCompactHeight;
+            BtnToggleResults.Margin = ResultsToggleCompactMargin;
+            BtnToggleResults.Padding = ResultsToggleCompactPadding;
+            BtnToggleResults.FontSize = ResultsToggleNormalFontSize;
+            ResultsToggleChevronViewport.Width = ResultsToggleCompactIconViewportSize;
+            ResultsToggleChevronViewport.Height = ResultsToggleCompactIconViewportSize;
+            SetResultsToggleChevron(_isResultsExpanded);
         }
 
         private int BeginResultsLayoutChange()
@@ -3413,22 +3886,21 @@ namespace TypeSunny.UI
                     var snapshot = CaptureSuperCompactLayoutSnapshot();
                     if (normalWindowHeightOverride > 100 && normalWindowHeightOverride < 4000)
                         snapshot.WindowHeight = normalWindowHeightOverride;
-                    TrimSuperCompactBottomButtonRow();
+                    bool adjustHeight = StateManager.ConfigLoaded && !_isSuperCompactLayoutApplied;
+                    _isSuperCompactLayoutApplied = true;
+                    _superCompactLayoutSnapshot = snapshot;
+                    TrimSuperCompactBottomButtonRow(adjustHeight);
                     stack1.Visibility = Visibility.Collapsed;
                     stack1.Margin = new Thickness(0);
                     buttonArea1.MinHeight = TopBarCompactMinHeight;
                     buttonArea1.Height = new GridLength(TopBarCompactMinHeight, GridUnitType.Pixel);
                     // 启动阶段 this.Height 已经是小尺寸（来自 Config 上次关闭保存），不再二次压缩，避免闪烁
                     // 同时：如果已经是一键极简布局状态（_isSCApplied=true），也不再压缩，避免 reapply 把用户拖大的窗口压回去
-                    bool adjustHeight = StateManager.ConfigLoaded && !_isSuperCompactLayoutApplied;
                     ApplySuperCompactCollapsedLayout(snapshot, adjustHeight);
-                    _isSuperCompactLayoutApplied = true;
-                    _superCompactLayoutSnapshot = snapshot;
                     return;
                 }
                 else
                 {
-                    RestoreSuperCompactBottomButtonRow();
                     // 退出一键极简时复位跟打区容器底部 margin
                     if (typingAreaAndButtonsGrid != null)
                         typingAreaAndButtonsGrid.Margin = new Thickness(0);
@@ -3453,14 +3925,15 @@ namespace TypeSunny.UI
                     if (shouldRestoreResultsExpanded)
                         ExpandResultsPanelLayout(false);
                     else
-                        CollapseResultsPanelLayout(false, false, NormalCollapsedBottomBorderHeight);
+                        CollapseResultsPanelLayout(false, false, GetCollapsedResultsBottomBorderHeightForCurrentBottomToolbar());
+                    RestoreSuperCompactBottomButtonRow();
                     return;
                 }
 
                 if (_isResultsExpanded)
                     ExpandResultsPanelLayout(false);
                 else
-                    CollapseResultsPanelLayout(false, false, NormalCollapsedBottomBorderHeight);
+                    CollapseResultsPanelLayout(false, false, GetCollapsedResultsBottomBorderHeightForCurrentBottomToolbar());
             }
             finally
             {
@@ -3533,19 +4006,16 @@ namespace TypeSunny.UI
             return snapshot;
         }
 
-        private void TrimSuperCompactBottomButtonRow()
+        private void TrimSuperCompactBottomButtonRow(bool adjustWindowHeight)
         {
             if (resultsButtonPanel == null)
                 return;
 
-            if (typingAreaAndButtonsGrid != null && typingAreaAndButtonsGrid.RowDefinitions.Count > 1)
-            {
-                typingAreaAndButtonsGrid.RowDefinitions[1].MinHeight = 0;
-                typingAreaAndButtonsGrid.RowDefinitions[1].Height = new GridLength(0, GridUnitType.Pixel);
-            }
-
-            resultsButtonPanel.Margin = new Thickness(0);
-            resultsButtonPanel.Visibility = Visibility.Collapsed;
+            MoveResultsToggleToCompactHost();
+            ApplyHomeBottomLayout(
+                "super compact enter",
+                adjustWindowHeight,
+                allowHeightAdjustmentDuringInternalLayout: true);
         }
 
         private void RestoreSuperCompactBottomButtonRow()
@@ -3553,17 +4023,7 @@ namespace TypeSunny.UI
             if (resultsButtonPanel == null)
                 return;
 
-            if (typingAreaAndButtonsGrid != null && typingAreaAndButtonsGrid.RowDefinitions.Count > 1)
-            {
-                var bottomButtonRow = typingAreaAndButtonsGrid.RowDefinitions[1];
-                bottomButtonRow.Height = GridLength.Auto;
-                bottomButtonRow.ClearValue(RowDefinition.MinHeightProperty);
-            }
-
-            resultsButtonPanel.ClearValue(FrameworkElement.HeightProperty);
-            resultsButtonPanel.ClearValue(FrameworkElement.MinHeightProperty);
-            resultsButtonPanel.Margin = new Thickness(15, 5, 15, 0);
-            resultsButtonPanel.Visibility = Visibility.Visible;
+            ApplyHomeBottomLayout("super compact restore", adjustWindowHeight: false);
         }
 
         private void ApplySuperCompactCollapsedLayout(SuperCompactLayoutSnapshot snapshot, bool adjustWindowHeight)
@@ -3604,7 +4064,7 @@ namespace TypeSunny.UI
 
             // 一键极简下跟打区贴到窗口底，给容器加底部 margin，让底边与左右侧视觉等宽
             if (typingAreaAndButtonsGrid != null)
-                typingAreaAndButtonsGrid.Margin = new Thickness(0, 0, 0, 10);
+                typingAreaAndButtonsGrid.Margin = new Thickness(0, 0, 0, CompactCollapsedBottomToolbarHeight);
 
             var tbxResults = this.FindName("TbxResults") as TextBox;
             if (tbxResults != null)
@@ -3616,7 +4076,7 @@ namespace TypeSunny.UI
                 tbxResults.Visibility = Visibility.Collapsed;
             }
 
-            BtnToggleResults.Content = "▲";
+            SetResultsToggleChevron(isResultsExpanded: false);
 
             if (adjustWindowHeight && snapshot.WindowHeight > 0)
             {
@@ -3626,14 +4086,13 @@ namespace TypeSunny.UI
                     removedHeight += snapshot.ResultsAreaHeight;
                     removedHeight += snapshot.ResultsSplitterHeight > 0 ? snapshot.ResultsSplitterHeight : 5;
                 }
-                removedHeight += Math.Max(0, snapshot.BottomBorderHeight);
-                removedHeight += Math.Max(0, snapshot.BottomButtonRowHeight);
                 removedHeight += Math.Max(0, snapshot.TopButtonAreaHeight - TopBarCompactMinHeight);
 
                 if (snapshot.ResultsExpanded && snapshot.WindowHeight > 300)
                     _expandedWindowHeight = snapshot.WindowHeight;
 
-                double targetHeight = snapshot.WindowHeight - removedHeight;
+                double baseHeight = this.Height > 0 ? this.Height : snapshot.WindowHeight;
+                double targetHeight = baseHeight - removedHeight;
                 double minimumHeight = titlebar.Height.Value + TopBarCompactMinHeight + 50 + 5 + 50 + MainBorder.Margin.Top + MainBorder.Margin.Bottom + 10 + 10;
                 if (targetHeight < minimumHeight)
                     targetHeight = minimumHeight;
@@ -3646,12 +4105,20 @@ namespace TypeSunny.UI
 
         private void ExpandResultsPanelLayout(bool adjustWindowHeight)
         {
+            ExpandResultsPanelLayout(adjustWindowHeight, NormalCollapsedBottomBorderHeight, NormalCollapsedBottomBorderHeight);
+        }
+
+        private void ExpandResultsPanelLayout(
+            bool adjustWindowHeight,
+            double collapsedBottomBorderHeight,
+            double collapsedWindowFooterHeight)
+        {
             var mainGrid = this.FindName("grid_a") as Grid;
             if (mainGrid == null)
                 return;
 
             int layoutVersion = BeginResultsLayoutChange();
-            BtnToggleResults.Content = "▼";
+            SetResultsToggleChevron(isResultsExpanded: true);
 
             var bottomBorder = this.FindName("bottomBorder") as Border;
             if (bottomBorder != null)
@@ -3693,7 +4160,14 @@ namespace TypeSunny.UI
                 if (!isCopybookOrTracing)
                     mainGrid.RowDefinitions[4].Height = new GridLength(currentTypingH > 0 ? currentTypingH : 1, GridUnitType.Pixel);
                 mainGrid.RowDefinitions[6].Height = new GridLength(resultsH, GridUnitType.Pixel);
-                this.Height = this.ActualHeight + resultsH + 5 - 10;
+                this.Height = this.ActualHeight + resultsH + 5 - collapsedWindowFooterHeight;
+
+                double articleStarHeight = currentArticleH > 0 ? currentArticleH : 1;
+                double typingStarHeight = currentTypingH > 0 ? currentTypingH : 1;
+                mainGrid.RowDefinitions[2].Height = new GridLength(articleStarHeight, GridUnitType.Star);
+                if (!isCopybookOrTracing)
+                    mainGrid.RowDefinitions[4].Height = new GridLength(typingStarHeight, GridUnitType.Star);
+                mainGrid.RowDefinitions[6].Height = new GridLength(resultsH, GridUnitType.Star);
             }
             else
             {
@@ -3710,19 +4184,6 @@ namespace TypeSunny.UI
                 if (IsStaleResultsLayoutChange(layoutVersion))
                     return;
 
-                double ah = mainGrid.RowDefinitions[2].ActualHeight;
-                double th = mainGrid.RowDefinitions[4].ActualHeight;
-                double rh = mainGrid.RowDefinitions[6].ActualHeight;
-                var r2u = mainGrid.RowDefinitions[2].Height.GridUnitType;
-                var r4u = mainGrid.RowDefinitions[4].Height.GridUnitType;
-                var r6u = mainGrid.RowDefinitions[6].Height.GridUnitType;
-                // 只把 Pixel 固定值转成 Star 权重，避免把 Auto 强制变成 Star（Auto 往往是跟打区/按钮区的语义）
-                if (r2u == GridUnitType.Pixel && ah > 0)
-                    mainGrid.RowDefinitions[2].Height = new GridLength(ah, GridUnitType.Star);
-                if (r4u == GridUnitType.Pixel && th > 0)
-                    mainGrid.RowDefinitions[4].Height = new GridLength(th, GridUnitType.Star);
-                if (r6u == GridUnitType.Pixel && rh > 0)
-                    mainGrid.RowDefinitions[6].Height = new GridLength(rh, GridUnitType.Star);
                 ScheduleModeLayoutRefresh();
             }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
@@ -3730,7 +4191,8 @@ namespace TypeSunny.UI
         private void CollapseResultsPanelLayout(
             bool adjustWindowHeight,
             bool saveExpandedHeight,
-            double collapsedBottomBorderHeight = NormalCollapsedBottomBorderHeight)
+            double collapsedBottomBorderHeight = NormalCollapsedBottomBorderHeight,
+            double collapsedWindowFooterHeight = NormalCollapsedBottomBorderHeight)
         {
             var mainGrid = this.FindName("grid_a") as Grid;
             if (mainGrid == null)
@@ -3799,21 +4261,15 @@ namespace TypeSunny.UI
 
             resultsTextBoxGrid.MinHeight = 0;
             resultsTextBoxGrid.Height = 0;
-            BtnToggleResults.Content = "▲";
+            SetResultsToggleChevron(isResultsExpanded: false);
 
             if (adjustWindowHeight && gridContentHeight > 0 && resultsAreaHeight > 0)
             {
                 double expandedHeight = saveExpandedHeight ? _expandedWindowHeight : this.ActualHeight;
-                double collapsedGridHeight = gridContentHeight - resultsAreaHeight - 5 + collapsedBottomBorderHeight;
+                double collapsedGridHeight = gridContentHeight - resultsAreaHeight - 5 + collapsedWindowFooterHeight;
                 double windowOffset = expandedHeight - gridContentHeight;
                 double collapsedHeight = collapsedGridHeight + windowOffset;
                 this.Height = collapsedHeight;
-            }
-
-            this.Dispatcher.BeginInvoke(new Action(() =>
-            {
-                if (IsStaleResultsLayoutChange(layoutVersion))
-                    return;
 
                 mainGrid.RowDefinitions[2].Height = new GridLength(_collapsedArticleHeight, GridUnitType.Star);
                 if ((_copybookMode == null || !_copybookMode.IsActive) &&
@@ -3821,8 +4277,30 @@ namespace TypeSunny.UI
                 {
                     mainGrid.RowDefinitions[4].Height = new GridLength(_collapsedTypingHeight, GridUnitType.Star);
                 }
+            }
+
+            this.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (IsStaleResultsLayoutChange(layoutVersion))
+                    return;
+
                 ScheduleModeLayoutRefresh();
             }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+
+        private void SetResultsToggleChevron(bool isResultsExpanded)
+        {
+            if (ResultsToggleChevronIcon == null)
+                return;
+
+            bool isCompactViewport = ResultsToggleChevronViewport != null &&
+                                     Math.Abs(ResultsToggleChevronViewport.Width - ResultsToggleCompactIconViewportSize) < 0.1 &&
+                                     Math.Abs(ResultsToggleChevronViewport.Height - ResultsToggleCompactIconViewportSize) < 0.1;
+
+            ResultsToggleChevronIcon.Data = Geometry.Parse(
+                isCompactViewport
+                    ? (isResultsExpanded ? ResultsToggleCompactChevronUpGeometry : ResultsToggleCompactChevronDownGeometry)
+                    : (isResultsExpanded ? ResultsToggleChevronUpGeometry : ResultsToggleChevronDownGeometry));
         }
 
         private void ScheduleModeLayoutRefresh()
@@ -4079,9 +4557,9 @@ namespace TypeSunny.UI
         {
             try
             {
-                WriteDebugLog($"[NextArticle] 开始调用 NextSection");
-                ArticleManager.NextSection();
-                WriteDebugLog($"[NextArticle] NextSection 完成");
+                WriteDebugLog($"[NextArticle] 开始移动本地文章进度");
+                MoveLocalArticleContinuation(next: true);
+                WriteDebugLog($"[NextArticle] 本地文章进度移动完成");
             }
             catch (Exception ex)
             {
@@ -4187,6 +4665,8 @@ namespace TypeSunny.UI
 
         public void UpdateTypingStat(List<string> newReportItems = null)
         {
+            if (StateManager.txtSource != TxtSource.trainer)
+                FlushPendingDailyWordsTypedStatistics();
             UpdateTypingStatCore(newReportItems, true);
         }
 
@@ -4467,7 +4947,301 @@ namespace TypeSunny.UI
 
             CounterLog.Buffer[0] += words;
             RecordDetailedTypedWords(words);
+            AddPendingDailyWordsTypedStatistics(words);
             QueueTrainerTitleTypedWords(words);
+        }
+
+        private void AddPendingDailyWordsTypedStatistics(int words)
+        {
+            DailyWordsTypingKind kind = StateManager.txtSource == TxtSource.trainer
+                ? DailyWordsTypingKind.Single
+                : DailyWordsTypingKind.Article;
+
+            dailyWordsTypedStatistics.Add(
+                words,
+                DateTime.Now.Date,
+                kind,
+                CalculateCurrentDailyWordsArticleSpeed(),
+                0);
+        }
+
+        public void RecordDailyWordsTrainerGroupStatistics(int sourceWords, double hitrate)
+        {
+            dailyWordsTypedStatistics.AddSingleKeystrokeMetric(
+                sourceWords,
+                DateTime.Now.Date,
+                hitrate);
+        }
+
+        private void FlushPendingDailyWordsTypedStatistics()
+        {
+            DailyWordsReport report = dailyWordsTypedStatistics.Flush(
+                CalculateCurrentDailyWordsArticleSpeed(),
+                0);
+            QueueDailyWordsCompletionReport(report);
+        }
+
+        private double CalculateCurrentDailyWordsArticleSpeed()
+        {
+            if (sw == null || sw.Elapsed.TotalMinutes <= 0 || Score.InputWordCount <= 0)
+                return 0;
+
+            double value = Score.InputWordCount / sw.Elapsed.TotalMinutes;
+            return double.IsNaN(value) || double.IsInfinity(value) || value < 0 ? 0 : value;
+        }
+
+        private void QueueDailyWordsCompletionReport(DailyWordsReport report)
+        {
+            if (report == null || report.Count <= 0 || dailyWordsService == null)
+                return;
+
+            if (!IsWenlaiDailyWordsLoggedIn())
+            {
+                StorePendingDailyWords(report);
+                RefreshDailyWordsRankBadgeLoginState();
+                return;
+            }
+
+            QueueDailyWordsWork(async () =>
+            {
+                DailyWordsReportResult result = await dailyWordsService
+                    .ReportAsync(report, CancellationToken.None)
+                    .ConfigureAwait(false);
+
+                if (result == null || !result.IsSuccess)
+                    StorePendingDailyWords(report);
+
+                await RefreshDailyWordsRankAsync().ConfigureAwait(false);
+            });
+        }
+
+        private void QueueFlushPendingDailyWords()
+        {
+            if (dailyWordsService == null)
+                return;
+
+            QueueDailyWordsWork(async () =>
+            {
+                if (!IsWenlaiDailyWordsLoggedIn())
+                {
+                    RefreshDailyWordsRankBadgeLoginState();
+                    return;
+                }
+
+                PendingDailyWords pending = ReadPendingDailyWords();
+                if (pending.Count <= 0)
+                    return;
+
+                if (pending.Date != DateTime.Now.Date)
+                {
+                    ClearPendingDailyWords();
+                    return;
+                }
+
+                DailyWordsReportResult result = await dailyWordsService
+                    .ReportAsync(pending.Report, CancellationToken.None)
+                    .ConfigureAwait(false);
+
+                if (result != null && result.IsSuccess)
+                    ClearPendingDailyWords();
+
+                await RefreshDailyWordsRankAsync().ConfigureAwait(false);
+            });
+        }
+
+        private void QueueDailyWordsRankRefresh()
+        {
+            if (dailyWordsService == null)
+                return;
+
+            QueueDailyWordsWork(async () => await RefreshDailyWordsRankAsync().ConfigureAwait(false));
+        }
+
+        private void QueueDailyWordsWork(Func<Task> work)
+        {
+            if (work == null)
+                return;
+
+            lock (dailyWordsQueueLock)
+            {
+                dailyWordsQueue = (dailyWordsQueue ?? Task.CompletedTask)
+                    .ContinueWith(_ => work(), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default)
+                    .Unwrap()
+                    .ContinueWith(t =>
+                    {
+                        if (t.IsFaulted)
+                        {
+                            Exception ignored = t.Exception;
+                        }
+                    }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+            }
+        }
+
+        private async Task RefreshDailyWordsRankAsync()
+        {
+            if (dailyWordsService == null)
+                return;
+
+            if (!IsWenlaiDailyWordsLoggedIn())
+            {
+                SetDailyWordsRankBadgeText("未登录");
+                return;
+            }
+
+            SetDailyWordsRankBadgeText("...");
+            DailyWordsRankResult result = await dailyWordsService
+                .GetCurrentRankAsync(DailyWordsLeaderboardType.Daily, DateTime.Now.Date, CancellationToken.None)
+                .ConfigureAwait(false);
+
+            if (result == null || !result.IsSuccess)
+            {
+                SetDailyWordsRankBadgeText("--");
+                return;
+            }
+
+            SetDailyWordsRankBadgeText(result.Rank == null ? "未上榜" : result.Rank.Rank.ToString());
+        }
+
+        private void StorePendingDailyWords(DailyWordsReport report)
+        {
+            if (report == null || report.Count <= 0)
+                return;
+
+            PendingDailyWords pending = ReadPendingDailyWords();
+            DailyWordsReport nextReport = pending.Count > 0 && pending.Date == report.Date
+                ? DailyWordsReport.Combine(pending.Report, report)
+                : report;
+
+            Config.Set(DailyWordsPendingDateKey, nextReport.Date.ToString("yyyy-MM-dd"));
+            Config.Set(DailyWordsPendingCountKey, nextReport.Count);
+            Config.Set(DailyWordsPendingSingleCountKey, nextReport.SingleWordCount);
+            Config.Set(DailyWordsPendingArticleCountKey, nextReport.ArticleWordCount);
+            Config.Set(DailyWordsPendingArticleAvgSpeedKey, nextReport.ArticleAvgSpeed, 4);
+            Config.Set(DailyWordsPendingSingleAvgKeystrokeKey, nextReport.SingleAvgKeystroke, 4);
+            Config.WriteConfig(0);
+        }
+
+        private PendingDailyWords ReadPendingDailyWords()
+        {
+            string rawDate = Config.GetString(DailyWordsPendingDateKey);
+            int count = Config.GetInt(DailyWordsPendingCountKey);
+            int singleWordCount = Config.GetInt(DailyWordsPendingSingleCountKey);
+            int articleWordCount = Config.GetInt(DailyWordsPendingArticleCountKey);
+            double articleAvgSpeed = Config.GetDouble(DailyWordsPendingArticleAvgSpeedKey);
+            double singleAvgKeystroke = Config.GetDouble(DailyWordsPendingSingleAvgKeystrokeKey);
+
+            if (count <= 0 || !DateTime.TryParseExact(
+                    rawDate,
+                    "yyyy-MM-dd",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None,
+                    out DateTime date))
+                return PendingDailyWords.Empty;
+
+            return new PendingDailyWords(new DailyWordsReport(
+                count,
+                date.Date,
+                singleWordCount,
+                articleWordCount,
+                articleAvgSpeed,
+                singleAvgKeystroke));
+        }
+
+        private void ClearPendingDailyWords()
+        {
+            Config.Set(DailyWordsPendingDateKey, "");
+            Config.Set(DailyWordsPendingCountKey, 0);
+            Config.Set(DailyWordsPendingSingleCountKey, 0);
+            Config.Set(DailyWordsPendingArticleCountKey, 0);
+            Config.Set(DailyWordsPendingArticleAvgSpeedKey, "");
+            Config.Set(DailyWordsPendingSingleAvgKeystrokeKey, "");
+            Config.WriteConfig(0);
+        }
+
+        private bool IsWenlaiDailyWordsLoggedIn()
+        {
+            try
+            {
+                return wenlaiHelper != null && wenlaiHelper.IsLoggedIn();
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void RefreshDailyWordsRankBadgeLoginState()
+        {
+            SetDailyWordsRankBadgeText(IsWenlaiDailyWordsLoggedIn() ? "..." : "未登录");
+        }
+
+        private void SetDailyWordsRankBadgeText(string value)
+        {
+            string next = string.IsNullOrWhiteSpace(value) ? "" : value;
+            if (string.Equals(dailyWordsRankBadgeText, next, StringComparison.Ordinal))
+                return;
+
+            dailyWordsRankBadgeText = next;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (DailyWordsRankBadgeText != null)
+                    DailyWordsRankBadgeText.Text = dailyWordsRankBadgeText;
+            }));
+        }
+
+        private void OnWenlaiDailyWordsLoginStateChanged()
+        {
+            RefreshDailyWordsRankBadgeLoginState();
+            if (IsWenlaiDailyWordsLoggedIn())
+            {
+                QueueFlushPendingDailyWords();
+                QueueDailyWordsRankRefresh();
+            }
+        }
+
+        private void OpenDailyWordsLeaderboard()
+        {
+            var window = new WinDailyWordsLeaderboard(dailyWordsService)
+            {
+                Owner = this
+            };
+            window.Show();
+            window.Activate();
+        }
+
+        private void OpenDailyWordsLeaderboardAfterLogin()
+        {
+            if (!IsWenlaiDailyWordsLoggedIn())
+            {
+                wenlaiHelper.ShowLoginDialog(this);
+                InitializeWenlaiMenu();
+                InitializeRaceMenu();
+
+                if (!IsWenlaiDailyWordsLoggedIn())
+                {
+                    RefreshDailyWordsRankBadgeLoginState();
+                    return;
+                }
+
+                OnWenlaiDailyWordsLoginStateChanged();
+            }
+
+            OpenDailyWordsLeaderboard();
+        }
+
+        private sealed class PendingDailyWords
+        {
+            public static readonly PendingDailyWords Empty =
+                new PendingDailyWords(new DailyWordsReport(0, DateTime.MinValue));
+
+            public PendingDailyWords(DailyWordsReport report)
+            {
+                Report = report ?? new DailyWordsReport(0, DateTime.MinValue);
+            }
+
+            public DailyWordsReport Report { get; private set; }
+            public DateTime Date { get { return Report.Date; } }
+            public int Count { get { return Report.Count; } }
         }
 
         private void QueueTrainerTitleTypedWords(int words)
@@ -4702,20 +5476,93 @@ namespace TypeSunny.UI
             }
         }
 
-        private async Task ContinueLocalArticleAsync(bool next)
+        private async Task ContinueLocalArticleAsync(bool next, bool showFilterBlockedHint = false)
         {
-            if (next)
-            {
-                RecordLocalArticleContinuation(next: true);
-                ArticleManager.NextSection();
-            }
-            else
-            {
-                RecordLocalArticleContinuation(next: false);
-                ArticleManager.PrevSection();
-            }
+            if (_isLocalArticleContinuationInProgress)
+                return;
 
-            await SendArticle();
+            if (ShouldSuppressRepeatedLocalArticleContinuation(next))
+                return;
+
+            _isLocalArticleContinuationInProgress = true;
+            int previousProgress = ResolveCurrentLocalArticleProgress();
+
+            try
+            {
+                RecordLocalArticleContinuation(next);
+                MoveLocalArticleContinuation(next);
+
+                string content = await ArticleManager.GetFormattedCurrentSection();
+                if (winArticle != null)
+                    winArticle.UpdateDisplay();
+
+                if (content == null || content.Length == 0)
+                {
+                    ArticleManager.Progress = previousProgress;
+                    if (content == null && showFilterBlockedHint)
+                        ShowFilterBlockedHint();
+                    FocusInput();
+                    return;
+                }
+
+                LoadText(content, RetypeType.first, TxtSource.book, false);
+                RecordLocalArticleContinuationSuccess(next);
+                FocusInput();
+                SendContentToClipboardOrQQ(content);
+            }
+            finally
+            {
+                _isLocalArticleContinuationInProgress = false;
+            }
+        }
+
+        private void MoveLocalArticleContinuation(bool next)
+        {
+            ArticleManager.Progress = LocalArticleContinuationPolicy.ResolveProgressForContinuation(
+                ArticleManager.Progress,
+                ArticleManager.SectionSize,
+                ArticleManager.TotalSize,
+                ResolveCurrentLocalArticleParagraph(),
+                next);
+        }
+
+        private int ResolveCurrentLocalArticleParagraph()
+        {
+            if (StateManager.txtSource != TxtSource.book)
+                return 0;
+
+            if (TextInfo.Paragraph > 0)
+                return TextInfo.Paragraph;
+
+            return Score.Paragraph > 0 ? Score.Paragraph : 0;
+        }
+
+        private int ResolveCurrentLocalArticleProgress()
+        {
+            return LocalArticleContinuationPolicy.ResolveProgressForParagraph(
+                ArticleManager.Progress,
+                ArticleManager.SectionSize,
+                ArticleManager.TotalSize,
+                ResolveCurrentLocalArticleParagraph());
+        }
+
+        private bool ShouldSuppressRepeatedLocalArticleContinuation(bool next)
+        {
+            return LocalArticleContinuationPolicy.ShouldSuppressRepeatedContinuation(
+                ResolveCurrentLocalArticleParagraph(),
+                next,
+                _lastLocalArticleContinuationTargetParagraph,
+                _lastLocalArticleContinuationNext,
+                _lastLocalArticleContinuationAtUtc,
+                DateTime.UtcNow,
+                LocalArticleContinuationSuppressMilliseconds);
+        }
+
+        private void RecordLocalArticleContinuationSuccess(bool next)
+        {
+            _lastLocalArticleContinuationTargetParagraph = ResolveCurrentLocalArticleParagraph();
+            _lastLocalArticleContinuationNext = next;
+            _lastLocalArticleContinuationAtUtc = DateTime.UtcNow;
         }
 
         internal void RecordLocalArticleContinuation(bool next)
@@ -4822,6 +5669,7 @@ namespace TypeSunny.UI
                 savedInputWords = Score.InputWordCount; // 更新保存的输入字数
 
                 //计算错字
+                var finalWrongRecords = new List<KeyValuePair<int, string>>();
 
                 if (IsLookingType)
                 {
@@ -4839,9 +5687,11 @@ namespace TypeSunny.UI
                         .Replace('’', '\'');
                     });
                     List<DiffRes> diffs = DiffTool.Diff(t1, t2);
+                    var lookTypingWrongRecords = RetypeTextBuilder.BuildLookTypingDeletedWordRecords(
+                        currentMatchText,
+                        diffs,
+                        TextInfo.WrongExclude);
 
-
-                    int counter = 0;
                     foreach (var df in diffs)
                     {
 
@@ -4854,19 +5704,12 @@ namespace TypeSunny.UI
                                 break;
                             case DiffType.Delete:
                                 Score.Less++;
-                                string w = currentMatchText.Substring(df.OrigIndex - 1, 1);
-
-
-                                LogWrong(df.OrigIndex - 1, w);
-
-
-                                counter--;
+                                int wrongPos = df.OrigIndex - 1;
+                                if (lookTypingWrongRecords.ContainsKey(wrongPos))
+                                    finalWrongRecords.Add(new KeyValuePair<int, string>(wrongPos, lookTypingWrongRecords[wrongPos]));
 
                                 break;
                             case DiffType.Add:
-
-
-                                counter++;
                                 Score.More++;
                                 break;
 
@@ -4889,10 +5732,15 @@ namespace TypeSunny.UI
                         {
                             Score.Wrong++;
                             string w = TextInfo.Words[i];
-                            LogWrong(i, w);
+                            finalWrongRecords.Add(new KeyValuePair<int, string>(i, w));
                         }
                     }
                 }
+
+                RetypeTextBuilder.ReplaceWithFinalWrongRecords(
+                    TextInfo.WrongRec,
+                    finalWrongRecords,
+                    TextInfo.WrongExclude);
 
                 await Dispatcher.InvokeAsync(() => { TbkStatusTop.Text = Score.Progress(); });
 
@@ -5336,36 +6184,20 @@ namespace TypeSunny.UI
 
                     if (hasWrong || hasSlow)
                     {
-                        StringBuilder sb = new StringBuilder();
-
-                        // 添加错字（如果有）
-                        if (hasWrong)
-                        {
-                            for (int i = 0; i < Config.GetInt("错字重复次数"); i++)
-                            {
-                                foreach (var s in TextInfo.WrongRec.Values)
-                                    sb.Append(s);
-                            }
-                        }
-
-                        // 添加慢字（如果有）
-                        if (hasSlow)
-                        {
-                            for (int i = 0; i < Config.GetInt("慢字重复次数"); i++)
-                            {
-                                foreach (var s in TextInfo.SlowRec.Values)
-                                    sb.Append(s);
-                            }
-                        }
+                        string retypeText = RetypeTextBuilder.BuildCombinedRetypeText(
+                            hasWrong ? TextInfo.WrongRec : null,
+                            Config.GetInt("错字重复次数"),
+                            hasSlow ? TextInfo.SlowRec : null,
+                            Config.GetInt("慢字重复次数"));
 
                         // 确定重打类型（优先错字重打）
                         RetypeType retypeType = hasWrong ? RetypeType.wrongRetype : RetypeType.slowRetype;
                         try
                         {
                             if (IsManualRetypeJumpMode())
-                                QueuePendingRetype(sb.ToString(), retypeType);
+                                QueuePendingRetype(retypeText, retypeType);
                             else
-                                await Dispatcher.InvokeAsync(() => LoadText(sb.ToString(), retypeType, TxtSource.unchange, true, true));
+                                await Dispatcher.InvokeAsync(() => LoadText(retypeText, retypeType, TxtSource.unchange, true, true));
                         }
                         catch (Exception ex)
                         {
@@ -6967,6 +7799,7 @@ public async Task SendArticle()
         }
         public void LoadText(string rawTxt, RetypeType retypeType, TxtSource source, bool switchBack = true, bool isAuto = false) //原文、来源、重打类型
         {
+            FlushPendingDailyWordsTypedStatistics();
             BdAcc.Visibility = Visibility.Hidden;
 
             if (Config.GetBool("禁止F3重打") && (retypeType == RetypeType.shuffle || retypeType == RetypeType.retype))
@@ -6976,13 +7809,28 @@ public async Task SendArticle()
 
             var rt = ExtractRawTxt(rawTxt);
 
-            // 正则过滤：剪贴板载文
-            if (source == TxtSource.clipboard && RegexFilter.IsEnabled("剪贴板") && !string.IsNullOrWhiteSpace(rt.Item1))
+            // 正则过滤：剪贴板载文 / 群载文
+            bool shouldApplyRegexFilter = false;
+            string filterBlockedSubject = "该文本";
+            if (source == TxtSource.clipboard && RegexFilter.IsEnabled("剪贴板"))
+            {
+                shouldApplyRegexFilter = true;
+            }
+            else if (source == TxtSource.qq && RegexFilter.IsEnabled("群载文"))
+            {
+                shouldApplyRegexFilter = true;
+                filterBlockedSubject = "该群载文";
+            }
+
+            if (shouldApplyRegexFilter && !string.IsNullOrWhiteSpace(rt.Item1))
             {
                 var filterResult = RegexFilter.Apply(rt.Item1);
                 if (filterResult.IsBlocked)
                 {
-                    MessageBox.Show($"该文本被过滤规则屏蔽：{filterResult.BlockReason}", "过滤提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    string blockedMessage = source == TxtSource.qq
+                        ? $"该群载文被过滤规则屏蔽：{filterResult.BlockReason}"
+                        : $"{filterBlockedSubject}被过滤规则屏蔽：{filterResult.BlockReason}";
+                    MessageBox.Show(blockedMessage, "过滤提示", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
                 if (filterResult.Text != rt.Item1)
@@ -7503,6 +8351,13 @@ public async Task SendArticle()
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            RefreshDailyWordsRankBadgeLoginState();
+            if (IsWenlaiDailyWordsLoggedIn())
+            {
+                QueueFlushPendingDailyWords();
+                QueueDailyWordsRankRefresh();
+            }
+
             // 应用当前选中的 Logo
             ApplyCurrentLogo();
 
@@ -8076,6 +8931,11 @@ public async Task SendArticle()
             ShowWinTrainer();
         }
 
+        private void InternalHotkeyCtrlJ(object sender, ExecutedRoutedEventArgs e)
+        {
+            BtnToggleResults_Click(sender, e);
+        }
+
         private void MainWin_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
@@ -8266,6 +9126,9 @@ public async Task SendArticle()
         
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            FlushPendingDailyWordsTypedStatistics();
+            try { dailyWordsQueue?.Wait(TimeSpan.FromSeconds(3)); } catch { }
+
             // 先关闭字帖模式，避免OnLostFocus抢焦点导致关闭卡死
             if (_copybookMode != null && _copybookMode.IsActive)
                 _copybookMode.Disable();
@@ -9243,6 +10106,8 @@ public async Task SendArticle()
             // 需要刷新赛文菜单以显示最新状态
             if (wenlaiHelper.IsLoggedIn())
             {
+                OnWenlaiDailyWordsLoginStateChanged();
+
                 // 登录成功后，同步等待难度数据加载完成
                 Task.Run(async () =>
                 {
@@ -9301,6 +10166,8 @@ public async Task SendArticle()
             // 需要刷新赛文菜单以显示最新状态
             if (wenlaiHelper.IsLoggedIn())
             {
+                OnWenlaiDailyWordsLoginStateChanged();
+
                 // 注册成功后，同步等待难度数据加载完成
                 Task.Run(async () =>
                 {
@@ -9344,6 +10211,7 @@ public async Task SendArticle()
                 // 刷新两个菜单
                 InitializeWenlaiMenu();
                 InitializeRaceMenu();
+                RefreshDailyWordsRankBadgeLoginState();
 
                 // 通知所有打开的设置窗口刷新文来难度数据
                 NotifyConfigWindowsRefreshWenlai();
@@ -9512,6 +10380,8 @@ public async Task SendArticle()
             InitializeWenlaiMenu();
             if (wenlaiHelper.IsLoggedIn())
             {
+                OnWenlaiDailyWordsLoginStateChanged();
+
                 Task.Run(async () =>
                 {
                     await ArticleFetcher.GetDifficultiesAsync();
@@ -9532,6 +10402,8 @@ public async Task SendArticle()
             InitializeWenlaiMenu();
             if (wenlaiHelper.IsLoggedIn())
             {
+                OnWenlaiDailyWordsLoginStateChanged();
+
                 Task.Run(async () =>
                 {
                     await ArticleFetcher.GetDifficultiesAsync();
@@ -9574,6 +10446,7 @@ public async Task SendArticle()
             InitializeWenlaiMenu();
             raceMenuLoaded = false;
             InitializeRaceMenu();
+            RefreshDailyWordsRankBadgeLoginState();
             NotifyConfigWindowsRefreshWenlai();
 
             MessageBox.Show("已退出登录", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -9604,6 +10477,8 @@ public async Task SendArticle()
             InitializeWenlaiMenu();
             if (wenlaiHelper.IsLoggedIn())
             {
+                OnWenlaiDailyWordsLoginStateChanged();
+
                 Task.Run(async () =>
                 {
                     await ArticleFetcher.GetDifficultiesAsync();
@@ -9622,6 +10497,8 @@ public async Task SendArticle()
             InitializeWenlaiMenu();
             if (wenlaiHelper.IsLoggedIn())
             {
+                OnWenlaiDailyWordsLoginStateChanged();
+
                 Task.Run(async () =>
                 {
                     await ArticleFetcher.GetDifficultiesAsync();
@@ -9658,6 +10535,7 @@ public async Task SendArticle()
 
             InitializeWenlaiMenu();
             InitializeRaceMenu();
+            RefreshDailyWordsRankBadgeLoginState();
             NotifyConfigWindowsRefreshWenlai();
 
             MessageBox.Show("已退出登录", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -10328,7 +11206,7 @@ public async Task SendArticle()
                 {
                     wenlaiHelper.ShowLoginDialog(this);
                     bool shouldRetry = wenlaiHelper.IsLoggedIn();
-                    if (shouldRetry) { InitializeWenlaiMenu(); InitializeRaceMenu(); }
+                    if (shouldRetry) { InitializeWenlaiMenu(); InitializeRaceMenu(); OnWenlaiDailyWordsLoginStateChanged(); }
 
                     if (shouldRetry)
                     {
@@ -10412,6 +11290,7 @@ public async Task SendArticle()
                         {
                             InitializeWenlaiMenu();
                             InitializeRaceMenu();
+                            OnWenlaiDailyWordsLoginStateChanged();
                         }
 
                         if (shouldRetry)
@@ -10657,38 +11536,12 @@ public async Task SendArticle()
 
         private async void BtnPrev_Click(object sender, RoutedEventArgs e)
         {
-            RecordLocalArticleContinuation(next: false);
-            int prevProgress = ArticleManager.Progress;
-            ArticleManager.PrevSection();
-            string content = await ArticleManager.GetFormattedCurrentSection();
-            if (content == null)
-            {
-                ArticleManager.Progress = prevProgress;
-                ShowFilterBlockedHint();
-                FocusInput();
-                return;
-            }
-            LoadText(content, RetypeType.first, TxtSource.book, false);
-            FocusInput();
-            SendContentToClipboardOrQQ(content);
+            await ContinueLocalArticleAsync(next: false, showFilterBlockedHint: true);
         }
 
         private async void BtnNext_Click(object sender, RoutedEventArgs e)
         {
-            RecordLocalArticleContinuation(next: true);
-            int prevProgress = ArticleManager.Progress;
-            ArticleManager.NextSection();
-            string content = await ArticleManager.GetFormattedCurrentSection();
-            if (content == null)
-            {
-                ArticleManager.Progress = prevProgress;
-                ShowFilterBlockedHint();
-                FocusInput();
-                return;
-            }
-            LoadText(content, RetypeType.first, TxtSource.book, false);
-            FocusInput();
-            SendContentToClipboardOrQQ(content);
+            await ContinueLocalArticleAsync(next: true, showFilterBlockedHint: true);
         }
 
         private void ShowFilterBlockedHint()
@@ -10773,7 +11626,7 @@ public async Task SendArticle()
             return pos;
         }
 
-        internal void LogBack() //记录回改的字
+        internal void LogBack() // 记录 IME 回退；盲打组合态退格不进入错字重打
         {
             if (TextInfo.Words.Count == 0)
                 return;
@@ -10785,10 +11638,16 @@ public async Task SendArticle()
             string w;
             if (!IsLookingType)
             {
-                pos = TextInfo.wordStates.IndexOf(WordStates.NO_TYPE);
-                if (pos == -1)
-                    pos = TextInfo.Words.Count - 1;
-                w = TextInfo.Words[pos];
+                int nextPendingWordIndex = TextInfo.wordStates.IndexOf(WordStates.NO_TYPE);
+                if (!RetypeTextBuilder.TryResolveBlindImeBackspaceWrongRecord(
+                    TextInfo.Words,
+                    nextPendingWordIndex,
+                    TextInfo.WrongExclude,
+                    out pos,
+                    out w))
+                {
+                    return;
+                }
             }
             else
             {
@@ -11333,18 +12192,25 @@ public async Task SendArticle()
         // 展开/收起按钮点击事件
         private void BtnToggleResults_Click(object sender, RoutedEventArgs e)
         {
+            if (TrainerMainWindowConfigScope.GetBool(SuperCompactModeConfigKey))
+                return;
+
+            double collapsedBottomBorderHeight = GetCollapsedResultsBottomBorderHeightForCurrentBottomToolbar();
+            double collapsedWindowFooterHeight = GetCollapsedResultsWindowFooterHeightForCurrentBottomToolbar();
+
             _isResultsExpanded = !_isResultsExpanded;
 
             if (_isResultsExpanded)
             {
                 SetScopedConfig("成绩面板展开", true);
-                ExpandResultsPanelLayout(true);
+                ExpandResultsPanelLayout(true, collapsedBottomBorderHeight, collapsedWindowFooterHeight);
             }
             else
             {
                 SetScopedConfig("成绩面板展开", false);
-                CollapseResultsPanelLayout(true, true);
+                CollapseResultsPanelLayout(true, true, collapsedBottomBorderHeight, collapsedWindowFooterHeight);
             }
+            ApplyHomeBottomLayout("results toggled", adjustWindowHeight: false);
         }
 
         // GridSplitter拖动完成事件：保存发文区和跟打区的比例
@@ -11802,7 +12668,6 @@ public async Task SendArticle()
                 this.Width = _restoreBounds.Width;
                 this.Height = _restoreBounds.Height;
                 _isCustomMaximized = false;
-                BtnMaximize.Content = "◻";
             }
             else
             {
@@ -11816,13 +12681,18 @@ public async Task SendArticle()
                 this.Width = workArea.Width;
                 this.Height = workArea.Height;
                 _isCustomMaximized = true;
-                BtnMaximize.Content = "◰";
             }
+            TitleBarButtonIcons.SetMaximizeButtonState(BtnMaximize, _isCustomMaximized);
         }
 
         private void BtnClose_Click(object sender, RoutedEventArgs e)
         {
             this.Close();
+        }
+
+        private void DailyWordsRankBadgeButton_Click(object sender, RoutedEventArgs e)
+        {
+            OpenDailyWordsLeaderboardAfterLogin();
         }
 
         // 窗口resize处理

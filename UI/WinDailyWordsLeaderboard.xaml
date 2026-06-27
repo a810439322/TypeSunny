@@ -1,0 +1,78 @@
+<Window x:Class="TypeSunny.UI.WinDailyWordsLeaderboard"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="字数排行榜" Height="640" Width="820" Icon="/Resources/ico/sunny.ico"
+        MinHeight="420" MinWidth="620"
+        WindowStartupLocation="CenterOwner"
+        Background="Transparent"
+        AllowsTransparency="True"
+        WindowStyle="None"
+        ResizeMode="CanResizeWithGrip">
+    <Border x:Name="mainBorder" CornerRadius="8" BorderThickness="1" Margin="5">
+        <Border.Effect>
+            <DropShadowEffect Color="Black" Opacity="0.24" BlurRadius="10" ShadowDepth="2"/>
+        </Border.Effect>
+        <Grid Margin="12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="30"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" x:Name="titleBarGrid" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="2,0,0,0">
+                    <Image Source="/Resources/ico/sunny.ico" Width="18" Height="18" Margin="0,0,8,0"/>
+                    <TextBlock x:Name="txtTitle" Text="字数排行榜" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button x:Name="BtnMinimize" Click="BtnMinimize_Click" Style="{StaticResource SunnyTitleBarMinimizeButtonStyle}"/>
+                    <Button x:Name="BtnMaximize" Click="BtnMaximize_Click" Style="{StaticResource SunnyTitleBarMaximizeButtonStyle}"/>
+                    <Button x:Name="BtnClose" Click="BtnClose_Click" Style="{StaticResource SunnyTitleBarCloseIconButtonStyle}"/>
+                </StackPanel>
+            </Grid>
+
+            <DockPanel Grid.Row="1" Margin="0,10,0,10">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="BtnRefresh" Content="刷新" Width="72" Height="28" Margin="0,0,8,0" Click="BtnRefresh_Click"/>
+                    <Button Content="关闭" Width="72" Height="28" Click="BtnClose_Click"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <RadioButton x:Name="RbDaily" Content="日榜" GroupName="DailyWordsType" IsChecked="True" Margin="0,0,16,0" Checked="LeaderboardType_Checked"/>
+                    <RadioButton x:Name="RbTotal" Content="总榜" GroupName="DailyWordsType" Checked="LeaderboardType_Checked"/>
+                </StackPanel>
+            </DockPanel>
+
+            <DataGrid x:Name="LeaderboardGrid"
+                      Grid.Row="2"
+                      AutoGenerateColumns="False"
+                      IsReadOnly="True"
+                      SelectionMode="Single"
+                      HeadersVisibility="Column"
+                      GridLinesVisibility="Horizontal"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      CanUserReorderColumns="False"
+                      CanUserSortColumns="False"
+                      EnableRowVirtualization="True"
+                      RowHeight="30"
+                      ColumnHeaderHeight="32">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="排名" Binding="{Binding RankText}" Width="70"/>
+                    <DataGridTextColumn Header="用户" Binding="{Binding Username}" Width="*"/>
+                    <DataGridTextColumn Header="字数" Binding="{Binding WordCountText}" Width="90"/>
+                    <DataGridTextColumn Header="单字" Binding="{Binding SingleWordCountText}" Width="90"/>
+                    <DataGridTextColumn Header="打文" Binding="{Binding ArticleWordCountText}" Width="90"/>
+                    <DataGridTextColumn Header="打文均速" Binding="{Binding ArticleAvgSpeedText}" Width="90"/>
+                    <DataGridTextColumn Header="打单均击" Binding="{Binding SingleAvgKeystrokeText}" Width="90"/>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <TextBlock x:Name="TxtStatus" Grid.Row="3" Margin="0,10,0,0" Text="就绪"/>
+        </Grid>
+    </Border>
+</Window>

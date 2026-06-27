@@ -42,7 +42,7 @@ namespace TypeSunny
             "标题栏进度条颜色", "007ACC",
             "显示进度条", "是",
             "禁止F3重打", "否",
-            "平滑光标", "是",
+            "平滑光标", "否",
             "平滑光标模式", "动态",
             "平滑光标固定时长", "200",
             "平滑光标快", "140",
@@ -69,7 +69,7 @@ namespace TypeSunny
             "禁用回改", "否",
             "自动发送成绩", "是",
             "鼠标中键载文", "否",
-            "错字重打", "是",
+            "错字重打", "否",
             "错字重复次数", "1",
             "慢字重打", "否",
             "慢字标准(单位:秒)", "2.0",
@@ -157,6 +157,12 @@ namespace TypeSunny
             "极速杯显示名称", "",
             "极速最后载文日期", "",
             "账号体系配置", "",  // 新增：账号体系配置（JSON格式）
+            "字数榜待上传日期", "",
+            "字数榜待上传字数", "0",
+            "字数榜待上传单字字数", "0",
+            "字数榜待上传打文字数", "0",
+            "字数榜待上传打文均速", "",
+            "字数榜待上传打单均击", "",
             "启用字提", "是",
             "字提字体", "#TumanPUA",
             "字提字体大小", "20",
@@ -193,6 +199,7 @@ namespace TypeSunny
             "过滤_生效_本地发文", "是",
             "过滤_生效_练单器", "否",
             "过滤_生效_剪贴板", "否",
+            "过滤_生效_群载文", "是",
             "过滤_文来最大重试", "5",
             "过滤_黑名单关键词", "",
             "过滤_替换关键词", "（求全订）\\n（校对版全本）\\n[四月天VIP完结]\\n[新浪vip完结]\\n　——晋江原创网[作品库]\\n（V文完结）\\n[潇湘vip完结]\\n[红袖vip完结]\\n[腾讯vip完结]\\n[起点vip完结]\\n（精校版全本）\\n（实体版全本）",
@@ -502,7 +509,13 @@ namespace TypeSunny
 
         static public double GetDouble(string key)
         {
-            if (dicts.ContainsKey(key) && Double.TryParse(dicts[key], out double num))
+            if (dicts.ContainsKey(key) && Double.TryParse(
+                    dicts[key],
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out double num))
+                return num;
+            if (dicts.ContainsKey(key) && Double.TryParse(dicts[key], out num))
                 return num;
             else
                 return 0;
@@ -533,9 +546,9 @@ namespace TypeSunny
         {
             string f = "F" + fraction.ToString();
             if (fraction > 0)
-                dicts[key] = value.ToString(f);
+                dicts[key] = value.ToString(f, System.Globalization.CultureInfo.InvariantCulture);
             else
-                dicts[key] = value.ToString();
+                dicts[key] = value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
             WriteConfig(3000);
 

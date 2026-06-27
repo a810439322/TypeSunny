@@ -33,10 +33,9 @@
                            Text="发现新版本"
                            FontSize="18" FontWeight="Bold"
                            VerticalAlignment="Center"/>
-                <Button Grid.Column="1" Content="✕" Width="28" Height="28"
-                        FontSize="14" Background="Transparent" BorderThickness="0"
-                        Cursor="Hand" Click="BtnClose_Click"
-                        VerticalAlignment="Center"/>
+                <Button Grid.Column="1" Click="BtnClose_Click"
+                        VerticalAlignment="Center"
+                        Style="{StaticResource SunnyTitleBarCloseIconButtonStyle}"/>
             </Grid>
 
             <!-- 更新说明 -->

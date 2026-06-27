@@ -6,6 +6,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Markup;
 using System.Windows.Media;
+using TypeSunny.UI;
 
 namespace TypeSunny.Utils
 {
@@ -149,7 +150,13 @@ namespace TypeSunny.Utils
                 Grid.SetColumn(titleTextBlock, 0);
                 titleBarGrid.Children.Add(titleTextBlock);
 
-                var closeButton = BuildCloseButton(menuFg, window);
+                var closeButton = new Button
+                {
+                    Foreground = menuFg,
+                    Focusable = false
+                };
+                TitleBarButtonIcons.ApplyCloseButtonStyle(closeButton);
+                closeButton.Click += (s, e) => window.Close();
                 Grid.SetColumn(closeButton, 1);
                 titleBarGrid.Children.Add(closeButton);
 
@@ -171,49 +178,6 @@ namespace TypeSunny.Utils
             {
                 Debug.WriteLine($"[DialogTheming] 无边框主题应用失败: {ex.Message}");
             }
-        }
-
-        private static Button BuildCloseButton(SolidColorBrush fg, Window window)
-        {
-            var btn = new Button
-            {
-                Content = "✕",
-                Width = 36,
-                Height = 30,
-                Background = Brushes.Transparent,
-                Foreground = fg,
-                BorderThickness = new Thickness(0),
-                FontSize = 13,
-                Cursor = Cursors.Hand,
-                Focusable = false,
-                Template = GetCloseButtonTemplate()
-            };
-            btn.Click += (s, e) => window.Close();
-            return btn;
-        }
-
-        private static ControlTemplate _cachedCloseButtonTemplate;
-
-        private static ControlTemplate GetCloseButtonTemplate()
-        {
-            if (_cachedCloseButtonTemplate != null)
-                return _cachedCloseButtonTemplate;
-
-            const string xaml = @"<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='Button'>
-    <Border x:Name='border' Background='{TemplateBinding Background}' CornerRadius='0,6,0,0'>
-        <ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center' TextBlock.Foreground='{TemplateBinding Foreground}'/>
-    </Border>
-    <ControlTemplate.Triggers>
-        <Trigger Property='IsMouseOver' Value='True'>
-            <Setter TargetName='border' Property='Background' Value='#E81123'/>
-            <Setter Property='Foreground' Value='White'/>
-        </Trigger>
-    </ControlTemplate.Triggers>
-</ControlTemplate>";
-
-            _cachedCloseButtonTemplate = (ControlTemplate)XamlReader.Parse(xaml);
-            _cachedCloseButtonTemplate.Seal();
-            return _cachedCloseButtonTemplate;
         }
 
         private static SolidColorBrush LoadMenuBg()

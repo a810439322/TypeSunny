@@ -40,7 +40,7 @@ Assert-Contains 'dialog button template controls pressed background' $dialogThem
 Assert-Contains 'dialog button template uses app hover color' $dialogThemingCode 'ButtonHoverBg'
 Assert-Contains 'dialog button template uses app pressed color' $dialogThemingCode 'ButtonPressedBg'
 Assert-Contains 'dialog accent button template uses accent hover color' $dialogThemingCode 'AccentHoverBg'
-Assert-Contains 'dialog button template binds text foreground' $dialogThemingCode 'TextBlock.Foreground=''{TemplateBinding Foreground}'''
+Assert-Contains 'dialog button template binds text foreground' $dialogThemingCode 'TextBlock.Foreground=''{{TemplateBinding Foreground}}'''
 Assert-Contains 'dialog button template removes native focus visual' $dialogThemingCode 'button.FocusVisualStyle = null;'
 Assert-NotContains 'chromeless generic buttons no longer auto-accent default buttons' $dialogThemingCode 'btn.Background = btn.IsDefault ? p.Accent : p.ButtonBg;'
 

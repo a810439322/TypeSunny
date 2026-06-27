@@ -758,6 +758,8 @@ namespace TypeSunny
                 WriteDebugLog("[GetNextRound] 调用 Dispatcher.Invoke 执行 UI 操作");
                 this.Dispatcher.Invoke(new Action(() =>
                 {
+                    RecordDailyWordsTrainerGroupStatisticsSafely(actualWordsDelta, hitrate);
+
                     WriteDebugLog("[GetNextRound] Dispatcher.Invoke 内部，调用 AutoNextGroup");
                     string roundRecord;
                     bool roundCompleted = AutoNextGroup(out roundRecord);
@@ -895,6 +897,18 @@ namespace TypeSunny
             }
 
             WriteDebugLog("[GetNextRound] 方法结束");
+        }
+
+        private void RecordDailyWordsTrainerGroupStatisticsSafely(int sourceWords, double hitrate)
+        {
+            try
+            {
+                MainWindow.Current?.RecordDailyWordsTrainerGroupStatistics(sourceWords, hitrate);
+            }
+            catch (Exception ex)
+            {
+                WriteDebugLog($"[GetNextRound] 记录每日练单均击失败: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -2321,7 +2335,7 @@ namespace TypeSunny
                 this.Width = workArea.Width;
                 this.Height = workArea.Height;
                 _isCustomMaximized = true;
-                BtnMaximize.Content = "◰";
+                TitleBarButtonIcons.SetMaximizeButtonState(BtnMaximize, _isCustomMaximized);
             }
 
             CfgInit = true;
@@ -2715,7 +2729,6 @@ namespace TypeSunny
                 this.Width = _restoreBounds.Width;
                 this.Height = _restoreBounds.Height;
                 _isCustomMaximized = false;
-                BtnMaximize.Content = "◻";
             }
             else
             {
@@ -2729,8 +2742,8 @@ namespace TypeSunny
                 this.Width = workArea.Width;
                 this.Height = workArea.Height;
                 _isCustomMaximized = true;
-                BtnMaximize.Content = "◰";
             }
+            TitleBarButtonIcons.SetMaximizeButtonState(BtnMaximize, _isCustomMaximized);
             // 保存最大化状态
             cfg["练单器最大化状态"] = _isCustomMaximized.ToString();
             WriteCfg();

@@ -75,7 +75,7 @@ if (-not $followCategoryMatch.Success) {
 
 $followItems = $followCategoryMatch.Groups['items'].Value
 
-Assert-Match 'Smooth caret should default to enabled.' $configCode "`"$(Quote-Regex $smoothCaret)`"\s*,\s*`"$(Quote-Regex $yes)`""
+Assert-Match 'Smooth caret should default to disabled.' $configCode "`"$(Quote-Regex $smoothCaret)`"\s*,\s*`"$(Quote-Regex $no)`""
 Assert-Match 'Smooth caret mode should default to dynamic.' $configCode "`"$(Quote-Regex $smoothCaretMode)`"\s*,\s*`"$(Quote-Regex $dynamic)`""
 Assert-Match 'Smooth caret fixed duration should default to 200ms.' $configCode "`"$(Quote-Regex $smoothCaretFixedDuration)`"\s*,\s*`"200`""
 Assert-Match 'Smooth line wrap should default to yes.' $configCode "`"$(Quote-Regex $smoothLineWrap)`"\s*,\s*`"$(Quote-Regex $yes)`""
