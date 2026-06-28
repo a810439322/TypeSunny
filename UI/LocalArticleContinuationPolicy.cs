@@ -61,6 +61,14 @@ namespace TypeSunny.UI
             return elapsed >= TimeSpan.Zero && elapsed.TotalMilliseconds < suppressMilliseconds;
         }
 
+        public static bool ShouldDeferCompletionForPendingSlowRetype(
+            bool slowRetypeEnabled,
+            bool isCurrentSlowRetype,
+            int slowRecordCount)
+        {
+            return slowRetypeEnabled && !isCurrentSlowRetype && slowRecordCount > 0;
+        }
+
         private static int Clamp(long value, int min, int max)
         {
             if (value < min)

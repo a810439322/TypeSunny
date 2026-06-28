@@ -5737,10 +5737,35 @@ namespace TypeSunny.UI
                     }
                 }
 
-                RetypeTextBuilder.ReplaceWithFinalWrongRecords(
+                RetypeTextBuilder.MergeFinalWrongRecords(
                     TextInfo.WrongRec,
                     finalWrongRecords,
                     TextInfo.WrongExclude);
+
+                // 慢字检测必须早于本地文章自动换段，否则“改正过的慢字”会在加载下一段时丢失。
+                if (Config.GetBool("慢字重打") && StateManager.txtSource != TxtSource.trainer &&
+                    StateManager.retypeType != RetypeType.slowRetype)
+                {
+                    TextInfo.SlowRec.Clear();
+                    double slowThreshold = Config.GetDouble("慢字标准(单位:秒)") * 1000; // 转换为毫秒
+
+                    var slowRecords = SlowRetypeDetector.BuildSlowRecords(
+                        TextInfo.Words,
+                        Score.CommitTime,
+                        Score.CommitText,
+                        Score.CommitTargetPosition,
+                        slowThreshold,
+                        Score.ExcludePuncts,
+                        TextInfo.WrongExclude);
+
+                    foreach (var record in slowRecords)
+                        TextInfo.SlowRec[record.Key] = record.Value;
+                }
+
+                bool hasPendingSlowRetype = LocalArticleContinuationPolicy.ShouldDeferCompletionForPendingSlowRetype(
+                    Config.GetBool("慢字重打"),
+                    StateManager.retypeType == RetypeType.slowRetype,
+                    TextInfo.SlowRec.Count);
 
                 await Dispatcher.InvokeAsync(() => { TbkStatusTop.Text = Score.Progress(); });
 
@@ -5933,9 +5958,15 @@ namespace TypeSunny.UI
                 if (StateManager.txtSource == TxtSource.book) //书籍
                 {
                     bool localManualMode = ArticleManager.IsManualSegmentMode;
-                    WriteDebugLog($"[本地文章] 进入分支，换段模式={ArticleManager.SegmentMode}, 错字重打配置={Config.GetBool("错字重打")}, retypeType={StateManager.retypeType}, 错字数={TextInfo.WrongRec.Count}");
+                    WriteDebugLog($"[本地文章] 进入分支，换段模式={ArticleManager.SegmentMode}, 错字重打配置={Config.GetBool("错字重打")}, 慢字重打配置={Config.GetBool("慢字重打")}, retypeType={StateManager.retypeType}, 错字数={TextInfo.WrongRec.Count}, 慢字数={TextInfo.SlowRec.Count}");
 
-                    if (!Config.GetBool("错字重打")) //没有错字，或没有错字重打
+                    if (hasPendingSlowRetype)
+                    {
+                        if (StateManager.retypeType != RetypeType.wrongRetype)
+                            SendLocalArticleResultOnly(result, qqGroupName, 250);
+                        WriteDebugLog($"[本地文章] 有慢字重打待处理，暂不换段");
+                    }
+                    else if (!Config.GetBool("错字重打")) //没有错字，或没有错字重打
                     {
                         if (localManualMode)
                         {
@@ -6096,65 +6127,6 @@ namespace TypeSunny.UI
 
 
 
-
-                // 慢字检测逻辑（排除打单器和慢字重打本身）
-                if (Config.GetBool("慢字重打") && StateManager.txtSource != TxtSource.trainer &&
-                    StateManager.retypeType != RetypeType.slowRetype)
-                {
-                    TextInfo.SlowRec.Clear();
-                    double slowThreshold = Config.GetDouble("慢字标准(单位:秒)") * 1000; // 转换为毫秒
-
-                    // === 新的检测逻辑 ===
-                    int textPos = 0; // 当前在 TextInfo.Words 中的位置
-
-                    for (int i = 0; i < Score.CommitTime.Count; i++)
-                    {
-                        if (i >= Score.CommitCharCount.Count || i >= Score.CommitText.Count)
-                            break;
-
-                        long timeDiff = i > 0 ? (Score.CommitTime[i] - Score.CommitTime[i - 1]) : Score.CommitTime[i];
-                        int charCount = Score.CommitCharCount[i];
-                        string groupText = Score.CommitText[i];
-
-                        // 计算有效字符数（排除符号）
-                        int validCharCount = 0;
-                        System.Globalization.StringInfo groupSi = new System.Globalization.StringInfo(groupText);
-                        for (int j = 0; j < groupSi.LengthInTextElements; j++)
-                        {
-                            string ch = groupSi.SubstringByTextElements(j, 1);
-                            if (!Score.ExcludePuncts.Contains(ch))
-                            {
-                                validCharCount++;
-                            }
-                        }
-
-                        // 用有效字符数计算平均速度
-                        double avgTimePerChar = validCharCount > 0 ? (double)timeDiff / validCharCount : 0;
-
-                        if (avgTimePerChar > slowThreshold && validCharCount > 0)
-                        {
-                            // 把这一组的所有字（包括符号）加入慢字队列
-                            for (int j = 0; j < groupSi.LengthInTextElements; j++)
-                            {
-                                if (textPos < TextInfo.Words.Count)
-                                {
-                                    string word = TextInfo.Words[textPos];
-                                    if (!TextInfo.WrongExclude.Contains(word))
-                                    {
-                                        TextInfo.SlowRec[textPos] = word;
-                                    }
-
-                                    textPos++;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            // 不慢，跳过这一组
-                            textPos += charCount;
-                        }
-                    }
-                }
 
                 // 晴发文模式：慢字检测完成后，如果有慢字且首打成绩未发过，补发成绩
                 if (savedTxtSource == TxtSource.articlesender && !articleSenderResultSent &&
@@ -6478,6 +6450,7 @@ namespace TypeSunny.UI
                     if (TextInfo.wordStates[i] == WordStates.WRONG)
                     {
                         Score.Wrong++;
+                        LogWrong(i, TextInfo.Words[i]);
                     }
                 }
             }
@@ -6903,18 +6876,19 @@ public async Task SendArticle()
                     int wasteHits = Score.Hit - Score.CompositionStartHit;
                     Score.Backs += wasteHits;
                     Score.WasteCodes++;
-                    Score.IsComposing = false;
+                    LogCompositionTargetWrong();
+                    ClearCompositionState();
                 }
-                LogBack();
                 return;
             }
 
             // 成功上屏，清除 composing 标记
-            if (Score.IsComposing)
-                Score.IsComposing = false;
+            bool clearCompositionAfterTextInput = Score.IsComposing;
 
             if (e.Text != "" && e.Text != "\r")
             {
+                RecordCompositionBackspaceWrongIfNeeded();
+
                 // 启动 - TextInput 事件中也需触发计时开始（兼容某些输入法）
                 if (StateManager.typingState == TypingState.pause || StateManager.typingState == TypingState.ready)
                 {
@@ -6932,6 +6906,7 @@ public async Task SendArticle()
                 Score.CommitStr.Add(last);
                 Score.CommitCharCount.Add(si.LengthInTextElements);
                 Score.CommitText.Add(e.Text);
+                Score.CommitTargetPosition.Add(ResolveCurrentCommitTargetPosition());
 
                 // 标顶提交记录
                 if (si.LengthInTextElements >= 2)
@@ -6953,6 +6928,9 @@ public async Task SendArticle()
 
                 StateManager.TextInput = true;
             }
+
+            if (clearCompositionAfterTextInput)
+                ClearCompositionState();
         }
 
         private void InputBox_TextInput(object sender, TextCompositionEventArgs e)
@@ -6971,7 +6949,7 @@ public async Task SendArticle()
                 return;
 
             if (Score.IsComposing)
-                Score.IsComposing = false;
+                RecordCompositionBackspaceWrongIfNeeded();
 
             if (StateManager.typingState == TypingState.pause || StateManager.typingState == TypingState.ready)
                 StartTypingSessionFromInput();
@@ -6986,9 +6964,39 @@ public async Task SendArticle()
                 Score.CommitStr.Add(last);
                 Score.CommitCharCount.Add(si.LengthInTextElements);
                 Score.CommitText.Add(text);
+                Score.CommitTargetPosition.Add(ResolveCurrentCommitTargetPosition());
             }
 
+            if (Score.IsComposing)
+                ClearCompositionState();
+
             StateManager.TextInput = true;
+        }
+
+        private int ResolveCurrentCommitTargetPosition()
+        {
+            if (_copybookMode != null && _copybookMode.IsActive)
+                return _copybookMode.CurrentIndex;
+
+            if (_tracingMode != null && _tracingMode.IsActive)
+                return _tracingMode.CurrentIndex;
+
+            string inputText = TbxInput.Text ?? "";
+            return new System.Globalization.StringInfo(inputText).LengthInTextElements;
+        }
+
+        private static void ClearCompositionState()
+        {
+            Score.IsComposing = false;
+            Score.CompositionStartHit = 0;
+            Score.CompositionStartTargetPosition = -1;
+            Score.CompositionHadBackspace = false;
+        }
+
+        private void RecordCompositionBackspaceWrongIfNeeded()
+        {
+            if (Score.IsComposing && Score.CompositionHadBackspace)
+                LogCompositionTargetWrong();
         }
 
         internal void UpdateTitleProgress(int typedWords)
@@ -7317,6 +7325,12 @@ public async Task SendArticle()
 
                 // bime hit
                 case Key.F14:
+                    if (!Score.IsComposing)
+                    {
+                        Score.IsComposing = true;
+                        Score.CompositionStartHit = Score.Hit;
+                        Score.CompositionStartTargetPosition = ResolveCurrentCommitTargetPosition();
+                    }
                     Score.BimeHit++;
                     break;
                 case Key.F15:
@@ -7324,8 +7338,9 @@ public async Task SendArticle()
                     LogCorrection();
                     break;
                 case Key.F16:
+                    if (Score.IsComposing)
+                        Score.CompositionHadBackspace = true;
                     Score.BimeBacks++;
-                    LogBack();
                     break;
 
                 case Key.ImeProcessed:
@@ -7348,13 +7363,15 @@ public async Task SendArticle()
                     switch (e.ImeProcessedKey)
                     {
                         case Key.Back:
-                            LogBack();
+                            if (Score.IsComposing)
+                                Score.CompositionHadBackspace = true;
                             Score.Backs++;
                             break;
                         default:
                             if (Win32.GetKeyState(Win32.VK_BACK) < 0)
                             {
-                                LogBack();
+                                if (Score.IsComposing)
+                                    Score.CompositionHadBackspace = true;
                                 Score.Backs++;
                             }
                             else
@@ -7364,6 +7381,7 @@ public async Task SendArticle()
                                 {
                                     Score.IsComposing = true;
                                     Score.CompositionStartHit = Score.Hit;
+                                    Score.CompositionStartTargetPosition = ResolveCurrentCommitTargetPosition();
                                 }
                             }
                             break;
@@ -11626,49 +11644,6 @@ public async Task SendArticle()
             return pos;
         }
 
-        internal void LogBack() // 记录 IME 回退；盲打组合态退格不进入错字重打
-        {
-            if (TextInfo.Words.Count == 0)
-                return;
-            string currentMatchText = string.Concat(TextInfo.Words);
-            if (!Config.GetBool("错字重打"))
-                return;
-
-            int pos;
-            string w;
-            if (!IsLookingType)
-            {
-                int nextPendingWordIndex = TextInfo.wordStates.IndexOf(WordStates.NO_TYPE);
-                if (!RetypeTextBuilder.TryResolveBlindImeBackspaceWrongRecord(
-                    TextInfo.Words,
-                    nextPendingWordIndex,
-                    TextInfo.WrongExclude,
-                    out pos,
-                    out w))
-                {
-                    return;
-                }
-            }
-            else
-            {
-                pos = GetLookTyping();
-                w = currentMatchText.Substring(pos, 1);
-            }
-
-            if (pos >= 0)
-            {
-
-                //             if (!TextInfo.BackCounter.ContainsKey(pos))
-                //           {
-                //        TxtBack.Set(w, TxtBack.GetInt(w) + 1);
-                //             TextInfo.BackCounter[pos] = w;
-                //        }
-
-                if (!TextInfo.WrongExclude.Contains(w))
-                    TextInfo.WrongRec[pos] = w;
-            }
-        }
-
         internal void LogCorrection()
         {
             string currentMatchText = string.Concat(TextInfo.Words);
@@ -11711,7 +11686,23 @@ public async Task SendArticle()
         }
 
 
-        private void LogWrong(int pos, string w)
+        private void LogCompositionTargetWrong()
+        {
+            int pos;
+            string w;
+            if (RetypeTextBuilder.TryResolveCompositionTargetWrongRecord(
+                TextInfo.Words,
+                Score.CompositionStartTargetPosition,
+                TextInfo.WrongExclude,
+                out pos,
+                out w))
+            {
+                LogWrong(pos, w);
+            }
+        }
+
+
+        internal void LogWrong(int pos, string w)
         {
             if (!Config.GetBool("错字重打"))
                 return;

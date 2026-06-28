@@ -7,13 +7,11 @@ namespace TypeSunny.Core
 {
     internal static class RetypeTextBuilder
     {
-        public static void ReplaceWithFinalWrongRecords(
+        public static void MergeFinalWrongRecords(
             IDictionary<int, string> wrongRecords,
             IEnumerable<KeyValuePair<int, string>> finalWrongRecords,
             string wrongExclude)
         {
-            wrongRecords.Clear();
-
             if (finalWrongRecords == null)
                 return;
 
@@ -70,16 +68,33 @@ namespace TypeSunny.Core
             return records;
         }
 
-        public static bool TryResolveBlindImeBackspaceWrongRecord(
+        public static bool TryResolveCompositionTargetWrongRecord(
             IList<string> words,
-            int nextPendingWordIndex,
+            int compositionStartTargetPosition,
             string wrongExclude,
             out int position,
             out string word)
         {
             position = -1;
             word = null;
-            return false;
+
+            if (words == null ||
+                compositionStartTargetPosition < 0 ||
+                compositionStartTargetPosition >= words.Count)
+            {
+                return false;
+            }
+
+            string target = words[compositionStartTargetPosition];
+            if (string.IsNullOrEmpty(target))
+                return false;
+
+            if (!string.IsNullOrEmpty(wrongExclude) && wrongExclude.Contains(target))
+                return false;
+
+            position = compositionStartTargetPosition;
+            word = target;
+            return true;
         }
 
         private static void AppendRecords(StringBuilder sb, IDictionary<int, string> records, int repeatCount)

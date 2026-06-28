@@ -19,6 +19,8 @@ namespace TypeSunny.Tests
             Run("old same direction continuation is allowed", OldSameDirectionContinuationIsAllowed);
             Run("opposite direction continuation is allowed", OppositeDirectionContinuationIsAllowed);
             Run("invalid paragraph continuation is not suppressed", InvalidParagraphContinuationIsNotSuppressed);
+            Run("pending slow retype defers local article completion", PendingSlowRetypeDefersLocalArticleCompletion);
+            Run("current slow retype does not defer local article completion", CurrentSlowRetypeDoesNotDeferLocalArticleCompletion);
 
             if (_failures == 0)
             {
@@ -179,6 +181,38 @@ namespace TypeSunny.Tests
                 suppressMilliseconds: 700);
 
             AssertFalse("invalid paragraph should not be suppressed", actual);
+        }
+
+        private static void PendingSlowRetypeDefersLocalArticleCompletion()
+        {
+            bool actual = LocalArticleContinuationPolicy.ShouldDeferCompletionForPendingSlowRetype(
+                slowRetypeEnabled: true,
+                isCurrentSlowRetype: false,
+                slowRecordCount: 1);
+
+            AssertTrue("pending slow retype should defer completion", actual);
+        }
+
+        private static void CurrentSlowRetypeDoesNotDeferLocalArticleCompletion()
+        {
+            bool afterSlowRetype = LocalArticleContinuationPolicy.ShouldDeferCompletionForPendingSlowRetype(
+                slowRetypeEnabled: true,
+                isCurrentSlowRetype: true,
+                slowRecordCount: 1);
+
+            bool noSlowRecords = LocalArticleContinuationPolicy.ShouldDeferCompletionForPendingSlowRetype(
+                slowRetypeEnabled: true,
+                isCurrentSlowRetype: false,
+                slowRecordCount: 0);
+
+            bool slowRetypeDisabled = LocalArticleContinuationPolicy.ShouldDeferCompletionForPendingSlowRetype(
+                slowRetypeEnabled: false,
+                isCurrentSlowRetype: false,
+                slowRecordCount: 1);
+
+            AssertFalse("current slow retype can complete", afterSlowRetype);
+            AssertFalse("no slow records can complete", noSlowRecords);
+            AssertFalse("disabled slow retype can complete", slowRetypeDisabled);
         }
 
         private static void Run(string name, Action test)

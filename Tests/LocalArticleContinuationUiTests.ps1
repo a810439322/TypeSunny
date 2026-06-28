@@ -66,4 +66,13 @@ $nextButtonBlock = Get-Between `
 Assert-Contains 'next button uses guarded local continuation' $nextButtonBlock 'await ContinueLocalArticleAsync(next: true, showFilterBlockedHint: true);'
 Assert-NotContains 'next button does not advance from global preview progress' $nextButtonBlock 'ArticleManager.NextSection();'
 
+$delayStopBlock = Get-Between 'stop helper retype ordering' $mainCode 'RetypeTextBuilder.MergeFinalWrongRecords(' 'bool hasSlow = Config.GetBool'
+$slowDetectIndex = $delayStopBlock.IndexOf('SlowRetypeDetector.BuildSlowRecords(')
+$localArticleIndex = $delayStopBlock.IndexOf('if (StateManager.txtSource == TxtSource.book)')
+if ($slowDetectIndex -lt 0 -or $localArticleIndex -lt 0 -or $slowDetectIndex -gt $localArticleIndex) {
+    throw 'slow retype records must be calculated before local article completion/continuation'
+}
+Assert-Contains 'local article completion checks pending slow retype' $delayStopBlock 'LocalArticleContinuationPolicy.ShouldDeferCompletionForPendingSlowRetype('
+Assert-Contains 'local article slow retype path defers continuation' $delayStopBlock 'hasPendingSlowRetype'
+
 Write-Host 'All local article continuation UI tests passed.'

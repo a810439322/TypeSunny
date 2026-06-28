@@ -10,12 +10,14 @@ namespace TypeSunny.Tests
 
         private static int Main()
         {
-            Run("final wrong records replace transient correction records", FinalWrongRecordsReplaceTransientCorrectionRecords);
-            Run("all right final state clears transient wrong records", AllRightFinalStateClearsTransientWrongRecords);
+            Run("final wrong records merge with historical correction records", FinalWrongRecordsMergeWithHistoricalCorrectionRecords);
+            Run("all right final state keeps historical wrong records", AllRightFinalStateKeepsHistoricalWrongRecords);
+            Run("corrected wrong does not clear slow records", CorrectedWrongDoesNotClearSlowRecords);
             Run("wrong retype text is ordered by source position", WrongRetypeTextIsOrderedBySourcePosition);
             Run("combined retype text keeps wrong records before slow records", CombinedRetypeTextKeepsWrongRecordsBeforeSlowRecords);
             Run("look typing deletion records deleted source word", LookTypingDeletionRecordsDeletedSourceWord);
-            Run("blind IME backspace does not record next pending word", BlindImeBackspaceDoesNotRecordNextPendingWord);
+            Run("canceled composition records composition start target", CanceledCompositionRecordsCompositionStartTarget);
+            Run("canceled composition ignores invalid or excluded target", CanceledCompositionIgnoresInvalidOrExcludedTarget);
 
             if (_failures == 0)
             {
@@ -27,7 +29,7 @@ namespace TypeSunny.Tests
             return 1;
         }
 
-        private static void FinalWrongRecordsReplaceTransientCorrectionRecords()
+        private static void FinalWrongRecordsMergeWithHistoricalCorrectionRecords()
         {
             var records = new Dictionary<int, string>
             {
@@ -38,24 +40,44 @@ namespace TypeSunny.Tests
                 new KeyValuePair<int, string>(2, "C")
             };
 
-            RetypeTextBuilder.ReplaceWithFinalWrongRecords(records, finalRecords, "");
+            RetypeTextBuilder.MergeFinalWrongRecords(records, finalRecords, "");
 
-            AssertEqual("record count", 1, records.Count);
-            AssertFalse("transient correction record removed", records.ContainsKey(1));
+            AssertEqual("record count", 2, records.Count);
+            AssertTrue("historical correction record kept", records.ContainsKey(1));
             AssertTrue("final wrong record kept", records.ContainsKey(2));
+            AssertEqual("historical value", "B", records[1]);
             AssertEqual("final wrong value", "C", records[2]);
         }
 
-        private static void AllRightFinalStateClearsTransientWrongRecords()
+        private static void AllRightFinalStateKeepsHistoricalWrongRecords()
         {
             var records = new Dictionary<int, string>
             {
                 { 0, "A" }
             };
 
-            RetypeTextBuilder.ReplaceWithFinalWrongRecords(records, new KeyValuePair<int, string>[0], "");
+            RetypeTextBuilder.MergeFinalWrongRecords(records, new KeyValuePair<int, string>[0], "");
 
-            AssertEqual("record count", 0, records.Count);
+            AssertEqual("record count", 1, records.Count);
+            AssertEqual("historical value", "A", records[0]);
+        }
+
+        private static void CorrectedWrongDoesNotClearSlowRecords()
+        {
+            var wrong = new Dictionary<int, string>
+            {
+                { 0, "A" }
+            };
+            var slow = new Dictionary<int, string>
+            {
+                { 0, "A" }
+            };
+
+            RetypeTextBuilder.MergeFinalWrongRecords(wrong, new KeyValuePair<int, string>[0], "");
+            string actual = RetypeTextBuilder.BuildCombinedRetypeText(wrong, 1, slow, 1);
+
+            AssertEqual("wrong records stay available", 1, wrong.Count);
+            AssertEqual("wrong and slow records stay available", "AA", actual);
         }
 
         private static void WrongRetypeTextIsOrderedBySourcePosition()
@@ -101,20 +123,47 @@ namespace TypeSunny.Tests
             AssertEqual("deleted source word", "B", records[1]);
         }
 
-        private static void BlindImeBackspaceDoesNotRecordNextPendingWord()
+        private static void CanceledCompositionRecordsCompositionStartTarget()
         {
             int position;
             string word;
-            bool actual = RetypeTextBuilder.TryResolveBlindImeBackspaceWrongRecord(
+            bool actual = RetypeTextBuilder.TryResolveCompositionTargetWrongRecord(
                 new List<string> { "A", "B" },
-                nextPendingWordIndex: 1,
+                compositionStartTargetPosition: 0,
                 wrongExclude: "",
                 position: out position,
                 word: out word);
 
-            AssertFalse("next pending word should not be recorded", actual);
-            AssertEqual("position", -1, position);
-            AssertEqual("word", null, word);
+            AssertTrue("canceled composition should record the target active when coding started", actual);
+            AssertEqual("position", 0, position);
+            AssertEqual("word", "A", word);
+        }
+
+        private static void CanceledCompositionIgnoresInvalidOrExcludedTarget()
+        {
+            int position;
+            string word;
+            bool invalid = RetypeTextBuilder.TryResolveCompositionTargetWrongRecord(
+                new List<string> { "A" },
+                compositionStartTargetPosition: 1,
+                wrongExclude: "",
+                position: out position,
+                word: out word);
+
+            AssertFalse("out-of-range start target should not record", invalid);
+            AssertEqual("invalid position", -1, position);
+            AssertEqual("invalid word", null, word);
+
+            bool excluded = RetypeTextBuilder.TryResolveCompositionTargetWrongRecord(
+                new List<string> { "A" },
+                compositionStartTargetPosition: 0,
+                wrongExclude: "A",
+                position: out position,
+                word: out word);
+
+            AssertFalse("excluded target should not record", excluded);
+            AssertEqual("excluded position", -1, position);
+            AssertEqual("excluded word", null, word);
         }
 
         private static void Run(string name, Action test)

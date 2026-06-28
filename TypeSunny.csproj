@@ -225,6 +225,7 @@
     <Compile Include="Utils\QQHelper.cs" />
     <Compile Include="Core\RetypeCouner.cs" />
     <Compile Include="Core\RetypeTextBuilder.cs" />
+    <Compile Include="Core\SlowRetypeDetector.cs" />
     <Compile Include="Core\Score.cs" />
     <Compile Include="Diff\Snake.cs" />
     <Compile Include="Diff\SplitedDiffRes.cs" />

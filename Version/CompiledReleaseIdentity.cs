@@ -3,7 +3,7 @@ namespace TypeSunny
 {
 internal static class CompiledReleaseIdentity
 {
-public const string Version = "20260627";
+public const string Version = "20260628";
 public static readonly long PackagePublishedUtcTicks = 0L;
 public static System.DateTime PackagePublishedUtc => ReleaseIdentity.FromUtcTicks(PackagePublishedUtcTicks);
 }

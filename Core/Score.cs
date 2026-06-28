@@ -52,6 +52,8 @@ static internal class Score
         public static int WasteCodes = 0;              // 废码次数
         public static bool IsComposing = false;        // 是否正在输入编码（未上屏）
         public static int CompositionStartHit = 0;     // 开始输入编码时的击键数
+        public static int CompositionStartTargetPosition = -1; // 开始输入编码时的目标文本位置
+        public static bool CompositionHadBackspace = false; // 本轮编码期间是否退过码
 
 
 
@@ -66,6 +68,7 @@ static internal class Score
         public static List<string> CommitStr = new List<string>();
         public static List<int> CommitCharCount = new List<int>();    // 每次上屏的字符数
         public static List<string> CommitText = new List<string>();   // 每次上屏的完整文本
+        public static List<int> CommitTargetPosition = new List<int>(); // 每次上屏对应的目标文本位置
 
         public static List<long> BiaoDingImeKeyTime = new List<long>();
         public static List<long> BiaoDingCommitTime = new List<long>();
@@ -209,6 +212,8 @@ static internal class Score
             WasteCodes = 0;
             IsComposing = false;
             CompositionStartHit = 0;
+            CompositionStartTargetPosition = -1;
+            CompositionHadBackspace = false;
 
             ImeKeyTime.Clear();
             KeyTime.Clear();
@@ -217,6 +222,7 @@ static internal class Score
             CommitStr.Clear();
             CommitCharCount.Clear();   // 清空字符数记录
             CommitText.Clear();        // 清空文本记录
+            CommitTargetPosition.Clear();
 
 
 

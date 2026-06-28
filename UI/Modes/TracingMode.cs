@@ -679,6 +679,7 @@ namespace TypeSunny.UI.Modes
             {
                 Score.IsComposing = true;
                 Score.CompositionStartHit = Score.Hit;
+                Score.CompositionStartTargetPosition = CurrentIndex;
             }
         }
 
@@ -812,7 +813,10 @@ namespace TypeSunny.UI.Modes
                 for (int i = 0; i < TextInfo.wordStates.Count; i++)
                 {
                     if (TextInfo.wordStates[i] == WordStates.WRONG)
+                    {
                         Score.Wrong++;
+                        _main.LogWrong(i, TextInfo.Words[i]);
+                    }
                 }
             }
 
